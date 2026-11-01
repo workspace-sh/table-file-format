@@ -4,7 +4,7 @@ import type { ComponentType } from "react";
 import { ContextMenuButton as UntypedContextMenuButton, ContextMenuView as UntypedContextMenuView } from "react-native-ios-context-menu";
 import type { ContextMenuButtonProps, ContextMenuViewProps } from "./contextMenu.types";
 
-export type { ContextMenuButtonProps, ContextMenuConfig, ContextMenuItem, ContextMenuViewProps } from "./contextMenu.types";
+export type { ContextMenuButtonProps, ContextMenuConfig, ContextMenuItem, ContextMenuViewHandle, ContextMenuViewProps } from "./contextMenu.types";
 
 /** A hold on its children shows the menu (UIContextMenuInteraction). */
 export const ContextMenuView = UntypedContextMenuView as ComponentType<ContextMenuViewProps>;

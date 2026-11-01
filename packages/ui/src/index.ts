@@ -39,4 +39,4 @@ export {
   type CellEditStatus,
   type FormulaDetails,
 } from "./cellEditor";
-export { ContextMenuButton, ContextMenuView, type ContextMenuButtonProps, type ContextMenuConfig, type ContextMenuItem, type ContextMenuViewProps } from "./contextMenu";
+export { ContextMenuButton, ContextMenuView, type ContextMenuButtonProps, type ContextMenuConfig, type ContextMenuItem, type ContextMenuViewHandle, type ContextMenuViewProps } from "./contextMenu";
