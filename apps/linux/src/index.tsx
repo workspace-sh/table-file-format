@@ -13,8 +13,8 @@ import { fixturesDir } from "./fixtures.js";
 import { setFormulaEngine } from "@workspace.sh/table-core";
 import { loadEdn } from "@workspace.sh/edn";
 
-// Formulas are worked out by the EDN core (Rust, natively), but those it leaves to `.table`'s own
-// workbook (#638). Without it, the workbook works them all out, as before.
+// Formulas are worked out by the EDN core (Rust, natively), the only evaluator (#710). Without it,
+// the app still starts, warns here, and shows every formula's cell empty.
 setFormulaEngine(await loadEdn({ binding: "native" }).catch((e: unknown) => (console.warn(`formulas aren't worked out, the EDN core didn't load: ${String(e)}`), null)));
 
 // What's named on the command line (a file manager names what it opens), or
