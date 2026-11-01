@@ -23,3 +23,8 @@ export function adoptSystemColors(styles: object): void {
     return mac ? PlatformColor(mac) : undefined;
   });
 }
+
+/** The platform colour (by the name PlatformColor takes) that plays `role` on the Mac, where it's taken. */
+export function systemColorName(role: string): string | undefined {
+  return MAC_ROLES[role];
+}
