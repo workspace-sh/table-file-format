@@ -6,6 +6,8 @@
 export interface BuildInfo {
   /** `2026.10.10.3`: the commit's date and which commit of that day; `+dev` after it when built from uncommitted changes. */
   version: string;
+  /** The branch it was built on; absent or null when built from a commit on its own. */
+  branch?: string | null;
   /** The commit it was built from, short. */
   commit: string;
   /** The commit's date, `2026-10-10`. */
@@ -20,7 +22,7 @@ export function currentBuild(): BuildInfo | null {
   return typeof __TABLE_BUILD__ === "undefined" ? null : (__TABLE_BUILD__ ?? null);
 }
 
-/** A build as one line: `2026.10.10.3 · a7ebcce`. */
+/** A build as one line: `2026.10.10.3 · develop · a7ebcce`. */
 export function buildLabel(build: BuildInfo | null = currentBuild()): string {
-  return build ? `${build.version} · ${build.commit}` : "unnumbered build";
+  return build ? [build.version, build.branch, build.commit].filter(Boolean).join(" · ") : "unnumbered build";
 }
