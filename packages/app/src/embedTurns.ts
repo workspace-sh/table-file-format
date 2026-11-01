@@ -19,6 +19,9 @@ export type EmbedPage = Pick<PageScroll, "now" | "subscribe" | "scrollBy" | "top
 /** How far beyond what's on screen a table is drawn without being scrolled to, in screens. */
 const AHEAD_SCREENS = 2;
 
+/** How long the page's width holds still, while a window is resized, before a drawn table takes the new one. */
+const RESIZE_QUIET_MS = 300;
+
 /** How long a table's height holds still before the next table's turn; and the longest a turn lasts. */
 const SETTLE_QUIET_MS = 300;
 const SETTLE_LIMIT_MS = 800;
@@ -107,8 +110,11 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
 
 /**
  * An embed's turn: `turn` once it's this embed's (until then it draws the
- * room it's kept), with the `host` ref and `onLayout` for the view around
- * it. Only something to draw (`ready`) waits for one.
+ * room it's kept), `settled` once its table is drawn and its height has held
+ * still, `heldAt` while the page's width is changing (the width for what's
+ * drawn to keep until it holds still), with the `host` ref and `onLayout`
+ * (height, and width) for the view around it. Only something to draw
+ * (`ready`) waits for one.
  *
  * Its turn ends once its height has held still a moment (the table measures
  * its columns after its first layout), or after a limit. And drawn above
@@ -119,6 +125,8 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
 export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPage | null) {
   const host = useRef<V>(null);
   const [turn, setTurn] = useState(false);
+  // Drawn, and its height has held still (or the turn's limit passed).
+  const [settledTurn, setSettledTurn] = useState(false);
   const settling = useRef(false);
   const height = useRef<number | null>(null);
   const settled = useRef<(() => void) | null>(null);
@@ -127,10 +135,22 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
   const endTurn = () => {
     if (quiet.current) clearTimeout(quiet.current);
     if (limit.current) clearTimeout(limit.current);
+    if (settled.current) setSettledTurn(true);
     settled.current?.();
     settled.current = null;
   };
   useEffect(() => endTurn, []);
+
+  // Drawn while the page's width changes (a window being resized): the width
+  // it had, which it keeps until the width holds still. At every step of a
+  // resize each of its cells was laid out and moved again; a phone's width
+  // changes at once, so it never holds there.
+  const width = useRef<number | null>(null);
+  const [heldAt, setHeldAt] = useState<number | null>(null);
+  const release = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (release.current) clearTimeout(release.current);
+  }, []);
   useEffect(() => {
     if (!ready || turn) return;
     return queue.wait(host.current, () => new Promise<void>((done) => {
@@ -141,7 +161,16 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
     }));
   }, [queue, ready, turn]);
 
-  const onLayout = (h: number) => {
+  const onLayout = (h: number, w?: number) => {
+    if (w !== undefined) {
+      const was = width.current;
+      width.current = w;
+      if (turn && was !== null && was !== w) {
+        setHeldAt((held) => held ?? was);
+        if (release.current) clearTimeout(release.current);
+        release.current = setTimeout(() => setHeldAt(null), RESIZE_QUIET_MS);
+      }
+    }
     const before = height.current;
     height.current = h;
     if (before !== h && settled.current) {
@@ -154,7 +183,7 @@ export function useEmbedTurn<V>(queue: EmbedQueue, ready: boolean, page: EmbedPa
       if (top !== null && top + before <= page.now().offset) page.scrollBy(h - before);
     });
   };
-  return { host, turn, onLayout };
+  return { host, turn, settled: settledTurn, heldAt, onLayout };
 }
 
 /**
