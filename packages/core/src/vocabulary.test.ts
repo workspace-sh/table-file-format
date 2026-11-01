@@ -88,7 +88,7 @@ test("enum sort/group order follows declared order in object form", () => {
   const sorted = applySort(rows, [{ field: "status", direction: "asc" }], schema);
   assert.deepEqual(sorted.map((r) => r.status), ["todo", "doing", "done"]);
   const grouped = applyGroup(rows, "status", schema);
-  assert.deepEqual(Object.keys(grouped), ["todo", "doing", "done"]);
+  assert.deepEqual([...grouped.keys()], ["todo", "doing", "done"]);
 });
 
 // ---- Multi-target relations (#35) ----
@@ -222,4 +222,35 @@ test("formatValue: relative dates follow the app's locale and clock", () => {
   assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "en-GB", now }), "yesterday");
   assert.equal(formatValue(launched("relative"), "2026-09-25", { locale: "fr-FR", now }), "hier");
   assert.equal(formatValue(launched("relative"), "2026-09-12", { locale: "en-GB", now }), "2 weeks ago");
+});
+
+test("unique: no two rows hold the same value; empty values don't count (#568)", () => {
+  const schema: TableSchema = { fields: [{ name: "email", type: "string", constraints: { unique: true } }] };
+  const errors = validate(schema, [
+    { id: "a", email: "x@y" },
+    { id: "b" },
+    { id: "c", email: "" },
+    { id: "d", email: "x@y" },
+    { id: "e" },
+  ]);
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0]!.rowId, "d");
+  assert.equal(errors[0]!.field, "email");
+});
+
+test("a number that isn't finite isn't a number (#568)", () => {
+  const schema: TableSchema = { fields: [{ name: "n", type: "number" }] };
+  assert.equal(validate(schema, [{ id: "a", n: Infinity as never }]).length, 1);
+  assert.equal(validate(schema, [{ id: "a", n: 1.5 }]).length, 0);
+});
+
+test("a datetime shown in a date format keeps its time, in the viewer's clock (#568)", () => {
+  const field = (format: string) => ({ name: "d", type: "datetime", format }) as Field;
+  const v = "2026-04-01T13:45:00Z";
+  const local = new Date(v);
+  const two = (n: number) => String(n).padStart(2, "0");
+  assert.equal(formatValue(field("iso"), v), `${local.getFullYear()}-${two(local.getMonth() + 1)}-${two(local.getDate())} ${two(local.getHours())}:45`);
+  assert.match(formatValue(field("long"), v, { locale: "en-GB" }), new RegExp(`^${local.getDate()} April 2026, \\d{1,2}:45`));
+  // A date stays a date.
+  assert.equal(formatValue({ name: "d", type: "date", format: "long" } as Field, "2026-04-01", { locale: "en-GB" }), "1 April 2026");
 });

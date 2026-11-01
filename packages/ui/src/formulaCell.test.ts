@@ -47,8 +47,8 @@ test("a formula that doesn't compile says why; one that does shows its stored fo
 });
 
 test("by place in a Sheet view, the row above's balance is outlined for this row", () => {
-  const view = ledger.views.find((v) => v.id === "by-date")!;
-  const order = sheetOrder(ledger, "by-date")!.ids;
+  const view = ledger.views.find((v) => v.id === "87jkeekgwbfgr")!;
+  const order = sheetOrder(ledger, "87jkeekgwbfgr")!.ids;
   const second = order[1]!;
   const cells = formulaInputCells(field(ledger, "balance"), second, view, view.fields!, order);
   assert.ok(cells.has(`${order[0]}\u0000balance`), [...cells].join(", "));
@@ -69,16 +69,55 @@ test("saving a lookup leaves a number field a number", () => {
   const explain = (from: typeof price, draft: string, computeOptions?: typeof options) =>
     explainFormula({ field: from, row, fields: lines.schema.fields.map((f) => (f.name === from.name ? from : f)), draft, editable: true, allRows: lines.rows, ...(computeOptions ? { computeOptions } : {}) });
   // To a number by arithmetic, and back to the bare lookup: its type is the product's price's, a number, either way.
-  const times = explain(price, '=lookup("product", "price") * 1', options);
+  const times = explain(price, '=related("product", "price") * 1', options);
   assert.ok(times.save);
   assert.equal(times.save!.type, undefined);
-  const back = explain({ ...price, ...times.save! }, '=lookup("product", "price")', options);
+  const back = explain({ ...price, ...times.save! }, '=related("product", "price")', options);
   assert.ok(back.save);
   assert.equal(back.save!.type, undefined, "the field stays a number");
   // Without the other table at hand the lookup's type is a guess, and a guess changes nothing.
-  const blind = explain({ ...price, ...times.save! }, '=lookup("product", "price")');
+  const blind = explain({ ...price, ...times.save! }, '=related("product", "price")');
   assert.equal(blind.save!.type, undefined);
   // A lookup that reads text does make a number field text, when that is known.
-  const name = explain(price, '=lookup("product", "name")', options);
+  const name = explain(price, '=related("product", "name")', options);
   assert.equal(name.save!.type, "string");
+});
+
+test("for this row only, a formula is compared with and saved as the cell's own, and previews over the others' (D52)", async () => {
+  const { explainFormula } = await import("./formulaCell");
+  const fields = [
+    { name: "a", type: "number" as const },
+    { name: "b", type: "number" as const, computed: { expr: "(* a 2)", dialect: "table-expr-v1" } },
+  ];
+  const rows = [{ id: "r1", a: 3 }, { id: "r2", a: 5 }];
+  const row = { id: "r1", a: 3, b: 6 };
+  const only = explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows, rowOnly: true });
+  assert.equal(only.saveRow, "(* a 10)");
+  assert.equal(only.save, undefined);
+  assert.deepEqual(only.preview, { value: 30 });
+  // The same as its own formula: nothing to save.
+  assert.equal(explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows, rowOnly: true, own: "(* a 10)" }).changed, false);
+  // For every row, as before.
+  assert.deepEqual(explainFormula({ field: fields[1]!, row, fields, draft: "=a*10", editable: true, allRows: rows }).save?.computed, { expr: "(* a 10)", dialect: "table-expr-v1" });
+});
+
+test("a loop (D60): stuck when repeating would work it out, repeating once the table does, and nothing for another #REF!", async () => {
+  const { LOOP_ITERATION } = await import("./formulaCell");
+  const c = (expr: string) => ({ expr, dialect: "table-expr-v1" });
+  const fields = [
+    { name: "deposit", type: "number" as const },
+    { name: "interest", type: "number" as const, computed: c("(* total 0.1)") },
+    { name: "total", type: "number" as const, computed: c("(+ deposit interest)") },
+    { name: "self", type: "number" as const, computed: c("(+ self 1)") },
+  ];
+  const rows = [{ id: "a", deposit: 900 }];
+  const shownRow = computeRows({ fields }, rows).rows[0]!;
+  const explain = (name: string, meta?: { iteration: { max: number; change: number } }) =>
+    explainFormula({ field: fields.find((f) => f.name === name)!, row: shownRow, fields, draft: "", editable: false, allRows: rows, computeOptions: { tables: { t: { path: "t", schema: { fields }, rows, views: [], meta: meta ?? {} } }, self: "t" } });
+  assert.equal(explain("total").loops, "stuck");
+  assert.equal(explain("total", { iteration: LOOP_ITERATION }).loops, "repeating");
+  // Counting itself up never settles: repeating gives a number, so it's offered too.
+  assert.equal(explain("self").loops, "stuck");
+  // Not a loop: no offer.
+  assert.equal(explain("deposit").loops, undefined);
 });

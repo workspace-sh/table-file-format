@@ -126,6 +126,8 @@ pipes/streams.
 
 ## D12: Long-form bodies live in `bodies/{id}.md`
 
+*Named `bodies/{title}--{id}.md` since D64.*
+
 Optional. Each body is a standalone markdown file named by the row's
 stable system `id`. The Notion *every-row-is-also-a-page* pattern,
 made line-diffable.
@@ -263,7 +265,7 @@ because the web and mobile have no files to hash.
 
 ## D17: Sync posture — op-log transport, files as materialisation
 
-For multi-writer sync (Hypercore/Autobase per workspace-p2p-spike),
+For multi-writer sync (Hypercore/Autobase per the [Workspace Protocol](https://github.com/workspace-sh/workspace-protocol), formerly workspace-p2p-spike),
 the intended model is an op log per writer, Autobase linearisation,
 per-field last-writer-wins, and the `.table/` directory materialised
 from the log as a deterministic checkout. Within a synced workspace
@@ -378,6 +380,16 @@ supersession by log position — the counter stays what it is today: a
 human-facing "the schema changed" signal.
 
 ## D23: Ids are case-safe; validity is loose, minting is opinionated
+
+**Amended 25 Oct 2026 (Leslie):** the alphabet is z-base-32
+(`ybndrfg8ejkmcpqxot1uwisza345h769`), 26 characters, 130 bits, for every
+id `.table` mints: rows, views and history entries, and fields' ids
+(D62) at 13 characters. It is lowercase, so the reasoning below stands;
+it has no look-alikes (`0`/`o`, `1`/`l`); and it is the alphabet
+Workspace and Holepunch write keys and invite codes in, so one alphabet
+runs through `.table` and the protocol under it. Every fixture's ids
+were rewritten to it. Validity stays loose. What follows is the
+original decision, which chose lowercase base36.
 
 Writer-minted ids are 25 chars of lowercase base36 (`0-9a-z`,
 ~129 bits) via `customAlphabet` — no uppercase anywhere in the
@@ -647,6 +659,9 @@ deferred, and when it is built it needs designing against that cost
   aggregation is still deferred, for the performance reasons above;
   when it arrives it gets its own form rather than overloading `sum`.
 
+**Later (D52):** a cell's own formula, kept in `cells/`, is stored in the
+same form and compiled the same way. There is still one stored grammar.
+
 ## D30: Every field type has exactly one JSON encoding
 
 SPEC section 2 named thirteen field types but said how only some of
@@ -754,7 +769,7 @@ one shown. The untaken branch of `if` is never evaluated, so
 `(if (= q 0) 0 (/ p q))` guards a division the way it does in a
 spreadsheet.
 
-**Left out on purpose:** `today`/`now`, because a formula whose value
+**Left out on purpose** (until D55, which brought `today` and `now` back): `today`/`now`, because a formula whose value
 changes with the clock is not pure (D29 relies on purity for
 recompute-on-read and for any future multi-value extension), and
 column totals, which stay deferred for the performance reasons in
@@ -850,20 +865,22 @@ separate `multiselect` type would duplicate `array` for one use.
 **Empty.** An empty array is empty (SPEC "Empty values"): `required`
 rejects it, and a row with no items is none of any list.
 
-## D36: Reading across rows: `column`, `lookup`, `linked`, and lists
+## D36: Reading across rows: `values`, `related`, `linked`, and lists
+
+(`values` and `related` were `column` and `lookup` until D48.)
 
 Totals, rollups and lookups are what Notion, Airtable and spreadsheets do
 across rows, and D29 deferred them because a naive version rebuilds a
 dependency graph over the whole grid. They are now three forms that each
 name what they read, plus lists:
 
-- `(column "q1")` is every row's `q1`.
-- `(lookup "company" "industry")` follows this row's relation to its row.
+- `(values "q1")` is every row's `q1`.
+- `(related "company" "industry")` follows this row's relation to its row.
 - `(linked "deals" "company" "value")` is the `value` of every `deals`
   row whose `company` points at this row: the input of a rollup.
 
 `sum`, `min`, `max`, `average` and `count` take lists, as spreadsheet
-functions take ranges, so a column total is `(sum (column "value"))` and
+functions take ranges, so a column total is `(sum (values "value"))` and
 a rollup is `(sum (linked "deals" "company" "open_value"))`. Arithmetic
 on a list is `#VALUE!`: a list is an input to an aggregate, not a cell
 value.
@@ -947,10 +964,15 @@ a time, each complete before the next (D32 and #124).
    They form a separate, second layer, not an extension of
    OpenFormula. Of the 14:
    - **Shipped in this layer (5):** `networkdays.intl`,
-     `workday.intl`, `amordegrc`, `bahttext` and `usdollar`, each once
-     it has public cases whose licence and origin are verified (SPEC
-     section 2). `usdollar` is a fixed US-format `dollar`, and no engine
-     implements it.
+     `workday.intl`, `amordegrc`, `bahttext` and `usdollar`. Public
+     cases exist for each: the spec's own worked examples, and for the
+     first four LibreOffice's function tests. The layer's suite is
+     built from those and listed with its sources in
+     `conformance/openformula/README.md` before anything ships.
+     IronCalc's test workbooks and Formula.js's tests also cover the
+     `.intl` pair; who wrote their expected answers is recorded there
+     (for IronCalc, not yet verified). `usdollar` is a fixed US-format
+     `dollar`, and no engine implements it.
    - **Backlog (1):** `phonetic` returns the furigana stored with a
      cell's text. A `.table` has nowhere to store furigana, and the
      spec doesn't say what it returns when there is none;
@@ -992,10 +1014,10 @@ A `.table` fixes them, and a file can't change them:
 | HOST-PRECISION-AS-SHOWN | false |
 
 **Why:** these are how Excel, Numbers and Google Sheets behave, and
-`.table` formulas must match what those users expect. Other hosts'
-defaults differ (LibreOffice's are case-sensitive, with regular
-expressions), so a test case records the settings it was written
-under.
+`.table` formulas must match what those users expect. LibreOffice's
+defaults differ (case-sensitive, regular expressions), which the
+conformance suite records per case, so a difference that comes from
+the settings isn't counted against an engine.
 
 ## D40: Right-to-left: layouts mirror, alignment is start and end
 
@@ -1181,3 +1203,398 @@ A table is read through the index once it is large enough that memory is no long
 **Considered:** an index behind every table, for one path through the apps. Against it: a small table is already immediate from text, and would gain a worker, a file about four times the size of its rows, and reads that arrive a moment late; the in-memory path can't go anyway (no SQLite, no space, formulas that read other rows, Sheet views); and on the web everyone would fetch the SQLite engine to open twenty rows.
 
 **To revisit when** the index answers what forces memory today (formulas across rows, Sheet views), and when edit history (D44) and sync are built, which a database behind every table would simplify.
+
+## D46: an address can say how much of a view to show in place: `rows=`, `cards=` and `rest=`
+
+**Decided (13 Oct 2026, with the first table drawn inside a Markdown document). Open to revisit.**
+
+**Builds on** SPEC section 10 (addresses, whose unknown keys every reader ignores).
+
+Where an address is drawn in place (a view inside a document that links to it), `rows=<n>` gives a table or a list the height of n rows, and `cards=<n>` gives a board n cards down each column and a gallery the lines holding n cards. Past that the view scrolls within itself. The keys limit height only, never which rows the view has. With neither, the app uses a height of its own.
+
+It is in the address because the height belongs to one placing of a view, not to the view: the same view sits tall in one document and short in another, every platform reads the same link, and a tool that doesn't know the keys ignores them.
+
+**Considered:** a property of the view in `views.json`. Against it: one height for every place the view is drawn, and a change to the format for something that is about the page around the table. A single key (`show=<n>`) counting whatever the layout shows: against it, the link no longer says what is counted, and a view whose layout changes would silently mean something else. Height in pixels: against it, it is not the same on every platform, and an author thinks in rows.
+
+`rest=more` beside a count draws only the first n and says how many more there are, in a line that shows them when chosen; without it the view scrolls to them. It is a key of its own, not a second pair of counts (`first=`, `top=`), so one count means one thing whether the rest scrolls or waits, and a reader that doesn't know `rest` still shows the right rows at the right height, scrolling.
+
+**To revisit when** a document wants a view narrowed for one placing (a filter or a search in the address), which is a different thing from how much of it is shown.
+
+## D47: a relation's table not in its bundle is the `.table` of that name beside it
+
+**Decided (14 Oct 2026, with relations followed out of an embedded table). Open to revisit.**
+
+**Builds on** D3 (relations name a table, not a path) and SPEC section 2 ("relation").
+
+A relation's `table` that the bundle doesn't hold names `<name>.table` in the same folder: that file's table of that name, or its only table. Missing either, the relation is dangling, its values kept and shown as unresolved. Apps may look further only after this.
+
+It keeps D3's promise (no paths in the format, so moving a folder of files together breaks nothing) and makes the answer the same in every app, rather than whatever each one's search of a workspace finds first. One step only: a file's own relations to further files are resolved when that file is open in its own right, so reading a table never walks a chain of files.
+
+**Considered:** a path in the relation (`"table": "../suppliers.table#table=suppliers"`): against it, D3, and a folder renamed breaks every link into it. Searching the whole workspace by name: against it, two files of one name in different folders give different answers in different apps, and a search costs a walk of every folder.
+
+**To revisit when** a workspace wants one table shared by files in different folders.
+
+## D48: `.table`'s own forms never take an OpenFormula function's name: `column` is `values`, `lookup` is `related`, `concat` is `concatenate`
+
+**Decided by Leslie (14 Oct 2026). Open to revisit.**
+
+**Builds on** D36 (reading across rows) and D38 (functions come from OpenFormula, layer by layer).
+
+Formula meaning is OpenFormula's (D38), so every one of its 393 function names is spoken for. Two of `.table`'s own forms had taken names that mean something else there: `column` (OpenFormula's `COLUMN` is a cell's column number) and `lookup` (`LOOKUP` searches a range). Filling in OpenFormula on top of them would have broken both. They are renamed, and `concat` with them, before anyone depends on the old names:
+
+| Was | Now | Why this name |
+| --- | --- | --- |
+| `(column "spend")` | `(values "spend")` | The word Airtable uses in a rollup for the list of a field's values, summed or counted after. "Sum the values of spend" reads as English. |
+| `(lookup "company" "industry")` | `(related "company" "industry")` | DAX's `RELATED()` (Excel's Power Pivot and Power BI) does exactly this: from the current row, follow the relationship to the one row it points at and read a column there. DAX's `RELATEDTABLE()` is the rows pointing back, which is `.table`'s `linked`, so the pair keeps the same two directions. |
+| `(concat a b)` | `(concatenate a b)` | OpenFormula's own name for this, so it can never clash. Excel's later `CONCAT` joins whole ranges, which ours doesn't. Typed formulas still use `&`. |
+
+`field`, `linked`, `at` and `range` aren't OpenFormula names and stay. `row` and `rows` already mean what OpenFormula's `ROW` and `ROWS` mean (a position and a count) and stay.
+
+**Reading and writing.** A reader takes the former names as the new ones (`FORMER_NAMES` in the reference reader), so files written before this read unchanged; the next save of such a formula stores the new name. The typed form accepts the old names too and compiles them to the new. Nothing in the format version changes: no one depends on the old names yet.
+
+**Considered:** a prefix for every `.table` form (`table.column`, as OpenFormula's `com.microsoft.` names do): can never clash, but it lengthens every formula and keeps a misleading word. `each`, `all`, `every`, `list` for `values`: each has another meaning in common use ("are all true?"), or sounds like making a list rather than reading one. `follow` and `via` for `related`: `follow` is a verb among nouns; `via` reads in the opposite order to its arguments. Airtable, Coda and AppSheet call this field a "Lookup", which is why `lookup` felt natural and why it clashed.
+
+**To revisit when** a later layer (D38) brings a function whose name collides with `values`, `related`, `linked`, `field`, `at` or `range`; none of OpenFormula's or ECMA-376's does.
+
+## D49: a `.table` is a folder or a single file, the same document either way
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.**
+
+**Builds on** D26 (frozen format, additive changes), D27 and D28 (the archive's layout and reference reader and writer).
+
+A `.table` has two forms with the one extension: the **folder form** (the directory every other section describes) and the **file form**, a regular file holding that directory as an archive in section 13's canonical layout. Apps open both, show both as one "Table" item where the platform allows, and save a document in the form it was opened in. A new document is a folder unless the user chooses a file. `.table.zip` is the file form with `.zip` added for sending: the same bytes. (Amended by D50: there is no `.table.zip`; the file form is sent as it is.)
+
+This is how Apple's iWork documents work: a `.numbers` is a package or a single zipped file. Numbers exports two types for the `numbers` extension under one description, `com.apple.iwork.numbers.numbers` (conforming to `com.apple.package`) and `com.apple.iwork.numbers.sffnumbers` (conforming to `public.data`, not to a zip type), and opens both as an editor. Asked about a file itself, macOS gives each form its own type (`sffnumbers` for the zip, `isPackage` false; `numbers` for the folder, `isPackage` true), with the same kind, "Numbers Spreadsheet", and the same icon. A type looked up from the name alone can't tell the forms apart, and Spotlight's metadata reported the zip as the package type, so readers decide by what is on disk.
+
+**Why both forms.**
+- The folder is the format's point: plain files that git diffs and merges, and that sync moves one file at a time (STORAGE-AND-SYNC.md). It stays the default.
+- A single file travels and is kept as people expect a document to be: mail, upload, the web's file inputs, and systems without packages (on Linux and Windows a folder form is always a folder). It is also smaller: the 1,000,000-row example is 165 MB of rows and a 19.6 MB archive.
+- One extension for both means a document keeps its name whichever form it is in, and nobody has to know the difference to open it.
+
+**What changes.** It answers #552 (editing a `.table.zip` in place): a file-form document is edited in the app and saved whole, atomically, never patched entry by entry. Nothing in the bundle changes: a file-form `.table` holds exactly a folder form's files, so `formatVersion` stays 1. Section 13 gains the file form's rules: readers decide by what is on disk; a file-form save carries everything (attachments included, which transport may leave out) except the index; it replaces the file atomically; an app's index of a file-form document lives in the app's own storage. The Apple types are named in section 13 so that every app declares the same ones.
+
+**Considered.**
+- **`.table.zip` only, and keep it for transport** (D27 as it was): a document kept as a file would always show as an archive and open in the archive utility, and its name would carry `.zip`.
+- **The file form as the default**, as iWork's is: it would give up git and per-file sync for every new document, which is what the format is for.
+- **A second extension for the file form** (`.tablez`, as some formats do): one document would have two names, and a renamed file would change what it is.
+- **The file form conforming to `public.zip-archive`**: the system would offer to expand it and show it as an archive; Numbers' single-file type conforms to `public.data` for this reason.
+
+**To revisit when** sync or git needs to work on a file-form document, or a platform's file type for `.table` can't tell the forms apart.
+
+## D50: there is no `.table.zip`: a single-file `.table` is sent as it is
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.** Amends D49, and with it D27's transport name.
+
+D49 kept `.table.zip` as the file form with `.zip` added for sending. Leslie dropped it: "Let's drop the .zip entirely." Both forms of a `.table` are named `<name>.table`, as both forms of a `.numbers` are. A single file is how a `.table` travels and how it's kept by anyone who wants one file; there's no second name for either. Folders stay the default for a new document, and saving as a single file is to be there on every platform an app supports.
+
+**Why.**
+- One name: a document is called the same whether it's a folder, a file, an attachment or a download, and nobody has to choose between two names that mean the same bytes.
+- The case for `.zip` was that it "unzips anywhere". A person who wants the folder from a single-file `.table` can rename it to end `.zip` and unzip it; the layout (section 13) still gives the `.table/` folder directly. Apps open a single-file `.table` without that step.
+
+**What changes.** Apps stop offering and writing `.table.zip`: export and "save a copy" write a single-file `.table`, and open dialogs accept `.table` as either form, told apart by what is on disk (D49). Nothing in the bundle or the archive's layout changes, so `formatVersion` stays 1. A `.table.zip` someone still has is a single-file `.table` under another name: renamed, it opens.
+
+**Considered:** keeping `.table.zip` alongside for sending (D49 as it was): two names for the same bytes, and a sent file opening in an archive utility on many systems rather than in an app that reads it.
+
+**To revisit when** a channel a `.table` must travel through refuses or mangles a file not named `.zip`.
+
+## D51: a table's rows are files in `rows/`, split at about 25 MB, named to sort the same everywhere
+
+**Decided by Leslie (15 Oct 2026). Open to revisit.** Breaking: `formatVersion` 2. Closes #582.
+
+A table's rows were one file, `rows.ndjson`. At a million rows that's 165 MB (442 MB for wider rows), and GitHub warns at 50 MB and refuses 100 MB, so a large table couldn't be kept in git as a folder, the folder form's point (D49). Now every table's rows are NDJSON files in its `rows/` folder, read in name order as one file order (SPEC section 3).
+
+- **Always the folder** (Leslie: "normalise the format"). A small table's is one file, `rows/0001.ndjson`; one rule for every reader and writer, and nothing changes shape as a table grows.
+- **About 25 MB a file.** The aim is only to fit git without a large-file extension, at the least computation: a writer counts the bytes it writes (no cost), starts a new file once the one it's writing passes 25,000,000 bytes, and never rebalances or merges files, so their sizes vary. 25 MB keeps every file well under GitHub's 50 MB warning, with room to grow by edits between splits, and keeps a save (which rewrites only the files it changes, not the whole table) and an archive entry small enough for a phone. That's about 57,000 to 150,000 rows a file for rows of 442 to 165 bytes.
+- **Names: four digits, then letters for splits.** New files at the end take the next number; a file that passes the limit in the middle splits into a name made by adding letters (`0002m` between `0002` and `0003`), so no other file is renamed. Digits then letters sort the same as bytes compare (git, GitHub, a terminal) and as file browsers sort numbers by value (Finder, Explorer, GNOME Files), so the folder lists in file order everywhere; `00025` would sort after `0003` in a browser.
+- **Where the files split isn't canonical.** It depends on how the table was edited, so two writers holding the same rows may split them differently. The rows, in order, and each row's serialisation stay canonical (SPEC section 3).
+- **`formatVersion` 1** (one `rows.ndjson`) is still read, as the table's only rows file; a writer writes `rows/` and removes it.
+
+**Also gained.** A save rewrites only the rows files it changes, not 165 MB for a cell. A single-file `.table` (section 13) holds each rows file as its own entry, so reading or changing part of a large table needn't inflate all of it.
+
+**Considered.**
+- **`rows.0.ndjson`, `rows.1.ndjson` beside the table's other files:** dozens of files next to `schema.json`, and numbers that force renames on a split.
+- **Files of about 1 MB:** hundreds of files at a million rows for no gain; the aim is git's limit, not small diffs (git already stores a changed line as a small delta).
+- **A row count per file:** as cheap, but rows vary in size, so a table of wide rows could still pass 50 MB.
+- **Only for large tables** (`rows.ndjson` until a limit): two layouts for every reader, and a table that changes shape as it grows.
+- **An index file listing the files' order** (Delta Lake, Iceberg, LevelDB's MANIFEST): names stop mattering, but every split edits one shared file, which two people editing in git then clash on.
+- **Content-defined chunking** (Dolt, restic, rsync: a file ends where a row's id hashes to a pattern, so splits depend on the rows, not on edits): any two writers split alike and an insert only ever changes its own file. Kept for later: it needs a size cap beside it, and more to build.
+
+**To revisit when** git hosting's limits change, or two writers splitting differently costs more than it saves.
+
+
+## D52: a cell may have its own formula, kept beside the rows in `cells/`
+
+**Decided by Leslie (22 Oct 2026). Open to revisit.** `formatVersion` 3.
+
+A field's formula is the same for every row, as in Airtable or Notion. A spreadsheet's is per cell. A `.table` should hold what spreadsheet users expect without giving up what it already is (Leslie: "as long as we don't break our own format").
+
+- **A cell's own formula** (`expr`), in any field but `id`. In a computed field it is that row's exception. Its result is never stored, as a computed field's isn't (D21), and is a value like any other: views, other formulas and validation see it as they see a computed field's.
+- **Kept in `cells/`, not in the rows.** The rows files stay plain values that any tool can read as records, no field name is reserved, and a table without cell formulas has no new file. The folder is named and split as `rows/` is (D51), so a table with 250,000 cell formulas fits git the same way.
+- **A typed value beats a formula.** A row with a value where `cells/` has a formula was written by an app that doesn't know `cells/`, after the formula: what the person typed last stands.
+- **Lines aren't lost by accident.** A line whose row or field can't be found is kept, as an unreadable row is (D25): a merge may bring the row back. Only removing the formula, the row or the field removes it.
+- **A version bump.** An older reader ignores `cells/` and shows wrong values, an empty cell or the field's own formula, without knowing it. That is a breaking change, so `cells/` came with `formatVersion` 3.
+- **The stored form doesn't grow.** Only lists, bare words, numbers, strings, `true`, `false`, `nil` and vectors; nothing more of EDN than a formula needs. A function or form joins only if it is one of `.table`'s own or a published standard defines it (D38: OpenFormula first), so it converts to that standard's formula text and back (Leslie: "the stored version should match what we already have and be easily transpilable"). No one application's formula language is the test.
+
+**Considered.**
+- **A cell's formula inside its row** (`"@cells": {…}` on the row): one file to keep in step, but the format's own data among a person's values, and every field name beginning with `@` reserved, which would break a file that already has one.
+
+## D53: a view may colour rows and cells by their values; three more number formats
+
+**Decided by Leslie (23 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
+
+Seven apps were compared: Excel, Numbers, Google Sheets, LibreOffice Calc, Airtable, Notion and Coda. Spreadsheets style each cell (fills, fonts, borders, any colour). Database apps never style a single cell: formats are per field, and colour comes from rules in a view or from coloured choices. `.table` already works the second way. What all seven have, and `.table` didn't, is colour driven by values.
+
+- **Colour rules in a view** (`colors`): a filter and a named colour, for the row or one cell. In the view, not on the cells, so the same table can be coloured differently for different people's work, and the colour always follows the data (PRIOR-ART, "Cell-level decoration").
+- **The choice colours, not hex.** Fourteen names each reader maps onto its own light and dark themes (D43), as choices already are.
+- **`scientific:N`, `fraction`, `:parens`.** Number formats spreadsheets have and an import needs, in the closed vocabulary the field `format` already is.
+
+**Not adopted.** Styling single cells by hand (fills, bold, borders, fonts): only the spreadsheets have it. An importer reports what it can't carry.
+
+## D54: a repeated row `id` is one row, the first; a later copy that differs is kept as it is
+
+**Decided by Leslie (23 Oct 2026). Open to revisit.** Additive: no `formatVersion` change.
+
+New rows go at the end of the last rows file (D51), so two git branches that add rows conflict. Merging the rows files with `merge=union` keeps both sides' lines, and a row changed on both sides comes out twice (#620).
+
+- **The first copy is the row.** Not the last: a reader that hands rows on as it reads them (a large table into its index, a table drawn before its rows are read, #603) can't take back a row it has handed on. The same rule now holds for a cell's formula lines (D52).
+- **A later copy that differs is kept as it is,** as a line the reader can't read is (D25): the two copies are two people's edits, and dropping either quietly is the loss D25 exists to prevent. The person sees it when the table opens, and in the file.
+- **A later copy that is the same exactly is left out.** Union repeats unchanged lines next to changed ones; keeping those would leave every merge with lines to fix that lose nothing when they go.
+- **`merge=union` is advice, not the format.** It's how a person keeps a table in git; the format only says what a reader does with what a merge leaves.
+
+**Not adopted:** the last copy wins (D52's first rule for cells, changed to match); collapsing every repeat on the next save.
+
+## D55: `today`, `now` and `rand` come back
+
+**Decided by Leslie (Oct 2026: "bring back"). Open to revisit.** Additive: no `formatVersion` change.
+
+D32 left `today` and `now` out because a formula whose answer changes with the clock isn't pure. Spreadsheet users expect them (a due date against today, a timestamp), and OpenFormula defines `TODAY()`, `NOW()` and `RAND()`.
+
+- **Read once for a computation.** Every cell worked out together sees the same moment and the same source of chance, as a spreadsheet recalculates. `today` is the reader's own date, as a `date` is stored (`YYYY-MM-DD`); `now` the instant in UTC; `rand` a number from 0 up to 1.
+- **Never stored, never remembered.** Results aren't stored anyway (D21). Nothing keeps them between computations either: a formula that reads the clock or chance isn't its row's alone, so a table that uses one is worked out whole each time it's read, and isn't held in an index, whose results would go stale.
+- **What D29 relies on still holds:** the stored form is the same; only the answer depends on when it's asked.
+
+## D56: an `any` field holds a value of any kind, as a spreadsheet column does
+
+**Drafted for Leslie (23 Oct 2026; "any value: yes"). Open to revisit.** Built: "Any value" in the type picker, and a spreadsheet column mostly of numbers with some words opens as one. Additive: no `formatVersion` change.
+
+A spreadsheet's column holds a number in one row and text in the next. Every `.table` field has one type, so an import had to choose one and lose the rest, or fall back to text and lose the numbers. `any` keeps each value's JSON kind as it is. Sorting goes kind by kind, and a filter compares like with like, so nothing is coerced behind a person's back.
+
+## D57: a cell may have a note
+
+**Drafted for Leslie (23 Oct 2026; "cell comments: yes"). Open to revisit.** Built: Shift+F2, as spreadsheets have it, or a row's Cell Note…; a mark in the cell's corner and the note on hover. Additive: no `formatVersion` change.
+
+A spreadsheet's cell note (Excel's notes, Sheets' notes, Numbers' comments) is text attached to one cell, outside its value. It goes on the cell's `cells/` line (D52) as `note`, beside or instead of an `expr`. A line with only a note leaves the value alone, so a reader that ignores `note` loses nothing it needs. Threaded comments with authors and replies are a collaboration feature: they belong to the app (Workspace's comments), not to the file.
+
+## D58: views freeze rows and columns, hide rows, and merge cells
+
+**Drafted for Leslie (23 Oct 2026; "merged cells, frozen panes, hidden rows and columns: yes"). Open to revisit.** Built: hidden rows; frozen columns (the apps freeze a view's first `frozen.columns` on a wide window, always leaving one to scroll; View Settings sets it: Freeze); frozen rows on Linux and the web (the header stays too, and alone when the view doesn't say). merged cells drawn (`mergedBlocks` in core says which can be). A row's menu merges and unmerges them (Merge Cells…, as B2:C4). Not built yet: frozen rows on iOS and the Mac. Additive: no `formatVersion` change.
+
+- **Frozen** rows and columns are how a view is looked at, so they're the view's (`frozen`), as column widths are.
+- **Hidden rows** are the view's too (`hidden`): a row left out by hand, not by a rule. A Sheet view keeps their numbers, as it does for filtered rows. Hidden columns were already there: a view's `fields`.
+- **Merged cells** are layout, kept in the view (`merged`), in a Sheet view only, and by row id, so a sort can't merge the wrong cells. The cells under a merge keep their values. Nothing in the data changes, so a formula reads them as ever.
+
+## D59: a spreadsheet without a header row
+
+**Drafted for Leslie (23 Oct 2026; "no header: an option"). Open to revisit.** Built: the apps tell a headerless sheet by itself (`firstLineIsData`), a first line of numbers, dates or yes/no where the column below has them.
+
+Not every sheet starts with headings. `tableFromCSV(csv, { header: false })` reads the first line as a row and names the fields for their columns (`A`, `B`, `C`…), each with that as its `title`, for the person to rename. It's a converter's option, not the format's: a `.table` always names its fields.
+
+## D60: circular references may be worked out by iteration
+
+**Drafted for Leslie (23 Oct 2026). Open to revisit.** Built: a table's own `meta.json` asks for it, and a looping cell's formula panel sets it (Repeat Until It Settles: 100 passes, to 0.001, Excel's defaults) and takes it away.
+
+A loop between formulas is `#REF!` (D32): no answer is better than a wrong one. A spreadsheet can instead iterate, repeating the calculation until it settles, for models that mean to loop (interest on a balance that includes the interest). A table may ask for that in `meta.json` (`iteration: { max, change }`), with the spreadsheet's meaning: a loop reads what the pass before gave (0 on the first: from empty, every pass would stay empty, D32), repeat up to `max` passes, stop when no number changes by more than `change`. Without it a loop stays `#REF!`.
+
+**Held, from the same list:** `LET`, `LAMBDA` and named ranges. The stored form takes a function only when a published standard defines it (D52), and OpenFormula 1.4 defines none of these (`LET` and `LAMBDA` are Excel's own). A named range is closest to a name for a place in a Sheet view (D41), which can be drafted when it's wanted.
+
+
+## D61: a failed formula is shown in plain words, marked by its kind
+
+**Leslie (25 Oct 2026, #685).** Built on the web, Linux, iOS and the Mac (#688, #689, #690, #691).
+
+The file and every evaluator keep the spreadsheet codes (`#DIV/0!`, `#VALUE!`, `#NAME?`, `#REF!`, `#NUM!`, D32): they are what a failed formula is, and what reaches anything that uses it. What an app shows is another matter. A code says something went wrong, not what, nor that it can be fixed. So Workspace's apps show a few plain words in every formula syntax, and keep the code where a spreadsheet user looks for it: first in the hover, and beside the words in the formula's panel when formulas are shown Excel style.
+
+The words come from the code and the evaluator's message. Both evaluators (the workbook and the EDN core, #638) give the same messages, and the check that compares them covers the messages too. The words are table-ui's `formulaErrorShow`; each renderer only draws them.
+
+Each kind has its own mark, so a column of errors can be read at a glance before anyone opens one. The kinds are sorted by what fixing one takes:
+
+| Kind | The cell says | Mark (Lucide on the web and Linux / SF Symbol on iOS and the Mac) |
+| --- | --- | --- |
+| Loop | Loops back on itself | `refresh-cw` / `arrow.triangle.2.circlepath` |
+| Points at something gone | No field "price", No table "deals", No view "by-date", Row is gone, No row there, Column isn't in the view | `unlink` / `questionmark.square.dashed` |
+| Doesn't fit the column | Not a date, Not a whole number, Not true or false, Not text, Not a map point (and the like, by the field's type), Number too big | `equal-not` / `notequal` |
+| Can't be worked out | Divides by zero, Wrong kind of value, Wrong number of inputs, Unknown function | `triangle-alert` / `exclamationmark.triangle` |
+
+Hovering, or on iOS the selected cell's details, says what went wrong and where the fix is: opening the formula, whose panel offers Repeat Until It Settles for a loop (D60). A true/false cell whose formula failed shows its error, not an unticked box, which would read as false.
+
+Every one of these is in `fixtures/formula-errors.table`: a row each, its cell's own formula giving that error, for seeing them all at once on each platform.
+
+## D62: every field has an id, and every id is z-base-32
+
+**Leslie (25 Oct 2026).** Built in table-core; every fixture rewritten.
+
+A field was identified by its `name`, kept stable by never renaming it
+(section 2, "Schema evolution"). That made the name do two jobs: the
+readable key in rows and formulas, and the field's identity. Now each
+field also has an `id` (SPEC section 2, "A field's id"): 13 z-base-32
+characters, minted when the field is made, never shown, never changed.
+`name` stays the key, so files stay readable as text, and `title` the
+label. Ids are added beside names, not in their place: rows keyed by
+id would read `{"k3x9q2m7v1pa": 12}` in a text editor, a diff or
+another tool.
+
+**What an id gives, with or without peer-to-peer sync:**
+
+- A link to a field that survives anything done to it, renaming
+  included, once renaming lands.
+- Two people adding "notes" on two devices, or two git branches, make
+  two fields, not one field with two meanings: a new field's id is
+  random.
+- A field removed and another added with its name are different
+  fields, so old values can't be read as the new one's.
+- A field whose name is itself sensitive can be referred to by its id
+  alone, its name kept sealed (the Workspace Protocol's hidden schema
+  entries, `workspace-format.md`).
+
+**Older files.** A field without an id takes one derived from its name
+(FNV-1a, mixed by MurmurHash3's finaliser): the same on every device
+and at every save, so a file opened on two devices doesn't get two sets
+of ids. Readers do this, so a file another tool wrote still opens.
+
+**Cost.** On the rig, a random field id takes about 1 µs, a row id
+about 2 µs, a derived field id about 3 µs, once per field; a phone a
+few times that. Ids are made once, when the thing is made.
+
+**The alphabet** (D23, amended), weighed against the others, at about
+62 bits:
+
+| Alphabet | Characters | Length | Against it |
+| --- | --- | --- | --- |
+| Decimal | `0-9` | 19 | long; tools read it as a number |
+| Hex | `0-9a-f` | 16 | long |
+| RFC 4648 base32 | `A-Z2-7` | 13 | upper case by convention |
+| Crockford base32 | `0-9A-Z` less `ILOU` | 13 | a second alphabet beside the protocol's |
+| **z-base-32** (chosen) | `ybndrfg8ejkmcpqxot1uwisza345h769` | 13 | one character longer than base36 |
+| Base36 (D23 as first made) | `0-9a-z` | 12 | look-alikes; not the protocol's |
+| Base58 | no `0OIl` | 11 | mixed case: unsafe as file names |
+| Base62 | `0-9a-zA-Z` | 11 | mixed case |
+| Base64url | `A-Za-z0-9-_` | 11 | mixed case, punctuation |
+| Base85 | printable ASCII | 10 | quotes and slashes break JSON and links |
+| Proquints | syllables | 4 groups | long; for reading aloud |
+| Word lists | words | 6 words | longest |
+
+z-base-32 is lowercase, has no look-alikes, wastes none of the random
+bits (32 is a power of two), and is what Workspace and Holepunch
+already write.
+
+
+## D63: a field may be renamed, and every use of its name is rewritten
+
+**Leslie leaned towards it when field ids were agreed (25 Oct 2026); built 26 Oct 2026.**
+
+A field's `name` was never to change ("Schema evolution", before): it
+was both the key rows and formulas read it by and the field's identity,
+so changing it would break everything that named it. With D62 the
+field has an `id` for its identity, and the name is only the key. So a
+field may now be renamed, as a spreadsheet's column may: the new name is
+written everywhere the old one was used, in one save, and the `id`
+stays.
+
+**Where a name is used**, all rewritten (table-core's `renameField`):
+
+- the field itself, and `primaryKey`;
+- every row's key;
+- every view's keys that name a field: `fields`, `sort`, `filter`,
+  `group`, `columnWidths`, `totals`, `colors`, `merged`,
+  `calendar_range`, `board_field`, `gallery_field` and `calendar_field`;
+- `cells/` lines;
+- every formula that reads it, in its table or another of the same
+  `.table`: a bare word, and `field`, `values`, `related`, `linked`,
+  `at` and `range`. A formula that doesn't read it is left as it is,
+  to the byte; one that does is written in the stored form's canonical
+  spelling; one in another dialect is left;
+- every relation whose `field` is it.
+
+**Not rewritten:** `history.ndjson`, which records what was (its lines
+before the rename name the field as it was then), and links in other
+documents. A link that names the field by `id` (SPEC section 10) still
+finds it; one that names it by name doesn't.
+
+**Not yet:** a table held in the index (a large one) has its rows
+there, and renaming would write every row again, so its fields aren't
+renamed in the apps yet.
+
+The `title` stays what a person reads, and changing it changes nothing
+else. Renaming is for when the name formulas read should change too.
+
+## D64: a row's page is named for its row; a view's id is short
+
+**Leslie (27 Oct 2026).** A `.table` is to be read by people, even when
+they don't edit it, and `bodies/wexwuo344aoowkqiieeb8fk56z.md` tells a
+person nothing. A page is now `bodies/atlas-freight--wexwuo344aoowkqiieeb8fk56z.md`:
+the row's title, `--`, its id (SPEC section 7).
+
+- **The id still decides.** The reader takes the row from the id after
+  the first `--` and never from the title, so a stale or hand-edited
+  title breaks nothing, and a plain `{id}.md` still reads.
+- **The id stays whole.** It is the row's own id, 26 characters; a
+  shorter one would be a second id per row.
+- **A new title renames the page** at the next save, so the folder reads
+  like the table. It is one file moved, and only for a row with a page.
+- **Titles are slugs:** lowercase for case-insensitive file systems,
+  letters and digits in any script, at most 40 characters.
+
+**A view's id is 13 characters,** as a field's is (D62). The length
+follows how many there can be: rows and history entries run to
+millions, minted on many devices and merged, so 26 (130 bits); a
+table's views and fields are a handful each, so 13 (65 bits), which
+also keeps links short. Views stayed at 26 when D23's amendment came
+before D62 set the shorter length; that was never a decision. Views
+already minted at 26 stay valid: a reader takes any id.
+
+## D65: what's typed is kept, never refused for good
+
+**Leslie (27 Oct 2026).** An editor that refuses an edit locks the reader in
+a cell they may not know how to fix, or loses what they typed. The rule is
+Google Sheets' and Numbers': what's typed is kept, and the cell says what's
+wrong.
+
+- **Leaving a cell keeps the edit at once.** A tap on another cell, or the
+  editor closing, never asks and never drops.
+- **A key asks once.** Enter or Return with a problem says what it is; the
+  same draft entered again is kept. (An early year, D42, already worked
+  this way.)
+- **A value the column can't hold** is kept as typed, as a string; the
+  cell shows "Not a number" (and the like), and validation reports it, as
+  for any value of the wrong type in a file.
+- **A formula that reads** is kept as it stands, an unknown function as a
+  call to it, which shows `#NAME?` (`compileFormula`'s
+  `keepUnknownFunctions`).
+- **A formula that doesn't read** is kept as typed, without its `=`. SPEC
+  section 5 already says what a reader does with an `expr` that doesn't
+  parse: the cell is empty and the reader reports it. The apps report it
+  in the cell itself, "Formula can't be read", so it's never an empty cell
+  with no reason.
+- **Undo** puts back what was there before, as for any edit.
+
+Considered and not taken: Excel's and Airtable's, refusing until it's fixed
+or cancelled, which is the lock or the loss; and a mix (keep what reads,
+drop what doesn't), which has no rule a reader could guess.
+
+## D66: a table can say where it came from
+
+Decided 27 Oct 2026. Either `meta.json` may carry `source`: `{ uri,
+format, retrieved_at }`, the address it came from, the media type it was
+in, and when it was read (SPEC section 5).
+
+It records origin and does nothing else. Reading, computing and writing
+are the same with or without it, and no app fetches the address. That
+keeps it safe to copy from a file someone sends: an address in it is a
+fact about the past, not an instruction.
+
+One object, not a list: a table made by merging several sources says so
+in its description. A media type rather than a name of our own, because
+one exists for every format worth naming. The same idea as a TextBundle's
+`sourceURL` in its `info.json`, so a document and a table copied from the
+web carry their origin the same way.
+

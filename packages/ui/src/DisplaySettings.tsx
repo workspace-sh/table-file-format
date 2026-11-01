@@ -1,5 +1,5 @@
 // The app's own display settings (locale, default date format, formula
-// syntax), handed to
+// syntax, the resize handles' look), handed to
 // every cell without threading a prop through each view. Personal
 // preferences, never written into a `.table/` (SPEC section 4).
 
@@ -11,16 +11,27 @@ export interface DisplaySettings extends DisplayOptions {
   /** Which syntax formulas are shown in (#76). Absent: Excel style. */
   formulaSyntax?: FormulaSyntax;
   /**
+   * The tables (their keys) whose formulas this viewer shows in stored form,
+   * chosen table by table and kept on this device: `formulaSyntax` is worked
+   * out from it for the table on screen. Absent: none.
+   */
+  storedFormulaTables?: string[];
+  /**
    * Which way the interface reads (D40), from the language it's shown
    * in (`textDirection`). Absent: left to right. Styles mirror by
    * themselves; this is for what they can't, like which way a drag
    * widens a column.
    */
   direction?: TextDirection;
+  /**
+   * How a selected cell's resize handles look on touch: pills with grip
+   * bars, or short grabber bars on its edges. Absent: pills.
+   */
+  resizeHandles?: "grabbers";
 }
 
 /** Which display setting a row of the Display controls sets. */
-export type DisplaySettingKind = "locale" | "dateFormat" | "formulaSyntax";
+export type DisplaySettingKind = "locale" | "dateFormat" | "formulaSyntax" | "resizeHandles";
 
 /**
  * One row of the Display controls: what it's called, the choices, which is

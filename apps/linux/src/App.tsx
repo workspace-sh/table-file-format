@@ -4,6 +4,7 @@
 // sidebar has them. What a view shows comes from table-app's `showView`,
 // the same function the web demo calls.
 
+import { css } from "@gtkx/css";
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
 import * as Adw from "@gtkx/gi/adw";
@@ -19,13 +20,14 @@ import {
   AdwPreferencesPage,
   AdwHeaderBar,
   AdwOverlaySplitView,
+  AdwToastOverlay,
   AdwSpinner,
   AdwStatusPage,
   AdwToolbarView,
   AdwWindowTitle,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel, GtkMenuButton, GtkPopoverMenu, GtkProgressBar, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
-import { GMenu, GSimpleAction } from "@gtkx/jsx/gio";
+import { GtkBox, GtkButton, GtkEntry, GtkGestureClick, GtkLabel, GtkMenuButton, GtkOverlay, GtkPopoverMenu, GtkProgressBar, GtkToggleButton, GtkListBox, GtkListBoxRow, GtkScrolledWindow, GtkSearchEntry } from "@gtkx/jsx/gtk";
+import { GMenu, GSimpleAction, GSimpleActionGroup } from "@gtkx/jsx/gio";
 import { quit } from "@gtkx/react";
 import {
   derive,
@@ -36,8 +38,14 @@ import {
   tooLargeToArchiveText,
   type Derived,
   type ViewCallbacks,
-  archiveFileName,
+  singleFileName,
   bundleToArchive,
+  canClose,
+  closedIn,
+  isSpreadsheetFile,
+  openSpreadsheet,
+  spreadsheetText,
+  withHistories,
   fromBundle,
   exportFailedText,
   openArchive,
@@ -57,37 +65,79 @@ import {
   displayChoices,
   loadDisplay,
   type KeyValueStore,
-  bundleTables,
+  relatedTables,
   rowTitleFor,
   tableNameOf,
   loadArrangements,
   type Confirm,
   type NamePrompt,
+  type Place,
+  loadingViewRows,
+  departedText,
+  storedTableRows,
+  changedElsewherePrompt,
+  sheetReaders,
+  asStored,
+  ingestingText,
 } from "@workspace.sh/table-app";
 import { useTableApp, type SaveState } from "@workspace.sh/table-app/react";
-import { attachFile, attachmentsIn, bundlesIn, loadLibrary, openIndexHost, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
-import { readFileSync, writeFileSync } from "node:fs";
-import { basename } from "node:path";
+import { loadClosed, saveClosed } from "./closedFiles.js";
+import { measureWith, measuring } from "./measure.js";
+import { appendHistory, attachFile, attachmentsIn, bundlesIn, discardSingleFileEdits, keepSingleFileEdits, loadLibrary, openIndexHost, openSingleFile, readRows, saveBundle, type IndexHost, type Library } from "@workspace.sh/table-app/node";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { FilePane, FilesSidebar } from "./Files.js";
-import { newId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
-import { useIndexedTables } from "./useIndexedTables.js";
+import { addressedView, HISTORY_FILE, newId, newViewId, type ParsedTable, type Row, type View, type ViewRows } from "@workspace.sh/table-core";
+import { FewRows, useIndexedTables } from "@workspace.sh/table-gtk/embed";
 import {
   AttachmentsProvider,
-  BoardView,
-  CalendarView,
   DisplayControls,
   DisplaySettingsProvider,
-  GalleryView,
-  ListView,
+  LayoutView,
   RowPage,
-  TableView,
   ViewSettings,
-  type ViewProps,
 } from "@workspace.sh/table-gtk";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 /** A line of the sidebar: table-app's tree, flattened for a ListBox. */
 type Entry = SidebarEntry;
+
+/**
+ * A .table file's heading in the sidebar, with its menu on a right-click:
+ * Close File, as the Mac's sidebar has it. The menu hangs from a button
+ * laid over the heading that is never seen or pressed itself (a popover
+ * needs a widget of its own to open from). The last file open can't be
+ * closed, and has no menu.
+ */
+function FileHeader({ title, onClose, children }: { title: string; onClose?: () => void; children: ReactNode }) {
+  const button = useRef<Gtk.MenuButton | null>(null);
+  const heading = (
+    <GtkBox marginTop={12} spacing={2}>
+      {children}
+    </GtkBox>
+  );
+  if (!onClose) return heading;
+  return (
+    <GtkOverlay
+      controllers={<GtkGestureClick button={3} onPressed={() => button.current?.popup()} />}
+      actionGroups={<GSimpleActionGroup prefix="file" actions={<GSimpleAction name="close" onActivate={onClose} />} />}
+      overlays={
+        <GtkMenuButton
+          ref={button}
+          opacity={0}
+          canTarget={false}
+          canFocus={false}
+          halign={Gtk.Align.START}
+          valign={Gtk.Align.END}
+          tooltipText={`File Actions for ${title}`}
+          popover={<GtkPopoverMenu hasArrow={false} menuModel={<GMenu items={[{ label: "Close File", action: "file.close" }]} />} />}
+        />
+      }
+    >
+      {heading}
+    </GtkOverlay>
+  );
+}
 
 function Sidebar({
   entries,
@@ -95,6 +145,7 @@ function Sidebar({
   onSelect,
   onNewTable,
   onToggleFile,
+  onCloseFile,
 }: {
   entries: Entry[];
   selected: number;
@@ -103,6 +154,8 @@ function Sidebar({
   onNewTable: (bundle: string) => void;
   /** Fold a .table file's tables away, or show them again. */
   onToggleFile: (bundle: string) => void;
+  /** Close a .table file (it asks first). */
+  onCloseFile: (bundle: string) => void;
 }) {
   return (
     <GtkScrolledWindow vexpand hscrollbarPolicy={Gtk.PolicyType.NEVER}>
@@ -123,7 +176,7 @@ function Sidebar({
             case "bundle":
               return (
                 <GtkListBoxRow key={`b:${entry.bundle.bundle}`} selectable={false} activatable={false}>
-                  <GtkBox marginTop={12} spacing={2}>
+                  <FileHeader title={entry.bundle.title} onClose={entry.bundle.closable ? () => onCloseFile(entry.bundle.bundle) : undefined}>
                     <GtkButton
                       iconName={entry.bundle.folded ? "pan-end-symbolic" : "pan-down-symbolic"}
                       cssClasses={["flat", "circular"]}
@@ -137,7 +190,7 @@ function Sidebar({
                       tooltipText={`New Table in ${entry.bundle.title}`}
                       onClicked={() => onNewTable(entry.bundle.bundle)}
                     />
-                  </GtkBox>
+                  </FileHeader>
                 </GtkListBoxRow>
               );
             case "table":
@@ -162,22 +215,6 @@ function Sidebar({
   );
 }
 
-/** The table-gtk view for a layout, as the web demo's `renderView` picks the table-ui one. */
-function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {
-  switch (layout) {
-    case "board":
-      return <BoardView {...props} />;
-    case "gallery":
-      return <GalleryView {...props} />;
-    case "list":
-      return <ListView {...props} />;
-    case "calendar":
-      return <CalendarView {...props} />;
-    default:
-      return <TableView {...props} />;
-  }
-}
-
 /** What the header can do to the table's views, and this viewer's own arrangement of it. */
 interface ViewActions {
   onAddView: () => void;
@@ -187,6 +224,8 @@ interface ViewActions {
   arranged: boolean;
   onArrange: (patch: Partial<View>) => void;
   onSaveForEveryone: () => void;
+  /** How many formulas read the view on screen by place (D41). */
+  sheetReaders: number;
   onReset: () => void;
 }
 
@@ -197,11 +236,13 @@ function TablePane({
   callbacks,
   saving,
   onRetrySave,
+  onSettleElsewhere,
   viewActions,
   onSearch,
   settingsOpen,
   onSettings,
   revision,
+  findRequest,
   navigation,
   menu,
   source,
@@ -218,25 +259,41 @@ function TablePane({
   tables: Record<string, ParsedTable>;
   tableKey: string;
   /** What the views can ask the app to change: table-app's viewCallbacks, and attaching a file. */
-  callbacks: ViewCallbacks & { onAttachFile: (rowId: string, field: string) => void };
+  callbacks: ViewCallbacks & {
+    onAttachFile: (rowId: string, field: string) => void;
+    newFieldRequest?: number;
+    onPlace?: (place: { rowId?: string; field?: string }) => void;
+    onScrollPlace?: (top: NonNullable<Place["top"]>) => void;
+    restorePlace?: { place: Pick<Place, "rowId" | "field" | "top">; n: number } | null;
+  };
   saving: SaveState;
   onRetrySave: () => void;
+  /** A save found this single file changed elsewhere: what's done with the edits, asked in place. */
+  onSettleElsewhere: (file: string, how: "copy" | "discard") => void;
   viewActions: ViewActions;
   onSearch: (text: string) => void;
   /** View Settings shown: from its button, or for a view just made. */
   settingsOpen: boolean;
-  onSettings: (open: boolean) => void;
+  /** Open or close the view's settings; `revert` closes them putting the view back as it was when they opened. */
+  onSettings: (open: boolean, revert?: boolean) => void;
   /** Bumped when a settings change is refused, so its controls show the view as it still is. */
   revision: number;
+  /** Bumped by Find in View: the keyboard goes to the search box. */
+  findRequest: number;
   /** Back and forward, at the header's start. */
   navigation: ReactNode;
   /** The primary menu, at the header's end. */
   menu: ReactNode;
 }) {
   const { table, view, shown, summary, breadcrumb } = derived;
+  // Find in View puts the keyboard in the search box.
+  const searchRef = useRef<Gtk.SearchEntry | null>(null);
+  useEffect(() => {
+    if (findRequest > 0) searchRef.current?.grabFocus();
+  }, [findRequest]);
   // The rows of a large table still being read, shown until its own view's rows are here.
   const showReading = view.layout === "table" && !source && !!reading;
-  const related = useMemo(() => bundleTables(tables, bundleOf(tableKey)), [tables, tableKey]);
+  const related = useMemo(() => relatedTables(tables, bundleOf(tableKey)), [tables, tableKey]);
 
   return (
     <AdwToolbarView
@@ -260,6 +317,7 @@ function TablePane({
       }
     >
       <GtkBox orientation={Gtk.Orientation.VERTICAL}>
+        {saving.kind === "failed" && saving.changedElsewhere ? <ChangedElsewhereBar file={saving.changedElsewhere} onAnswer={onSettleElsewhere} /> : null}
         <GtkBox spacing={12} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
           {/* While a large table is read, how far that has got is in the count's place. */}
           {building ? (
@@ -281,15 +339,24 @@ function TablePane({
                 <GtkLabel label={summary.schemaChangedLabel} tooltipText={summary.schemaChangedHint} cssClasses={["warning"]} />
               </>
             ) : null}
+            {/* Its index couldn't be made: said here, on the table, not as an alert. */}
+            {summary.held ? (
+              <>
+                <GtkLabel label="·" cssClasses={["dim-label"]} />
+                <GtkLabel name="held-in-memory" label={summary.held.label} tooltipText={summary.held.hint} cssClasses={["warning"]} />
+              </>
+            ) : null}
           </GtkBox>
-          <GtkSearchEntry placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
+          <GtkSearchEntry ref={searchRef} placeholderText="Search rows" sensitive={!building} onSearchChanged={(entry) => onSearch(entry.getText())} />
         </GtkBox>
         {building && !showReading ? (
           <AdwStatusPage
             vexpand
             title="Getting This Table Ready"
             description={
-              building.total > 0
+              table.loading
+                ? "Reading its rows."
+                : building.total > 0
                 ? `${building.done.toLocaleString()} of ${building.total.toLocaleString()} rows read. This happens once; it opens straight away after.`
                 : "Reading its rows. This happens once; it opens straight away after."
             }
@@ -351,6 +418,7 @@ function TablePane({
                   bodies={table.bodies}
                   relatedTables={related}
                   allRows={table.rows}
+        cells={table.cells}
                   tableKey={tableNameOf(tableKey)}
                   sheet={shown.sheet}
                   {...callbacks}
@@ -379,7 +447,9 @@ function TablePane({
           personal={viewActions.arranged}
           onSaveForEveryone={viewActions.onSaveForEveryone}
           onReset={viewActions.onReset}
+          sheetReaders={viewActions.sheetReaders}
           onClose={() => onSettings(false)}
+          onCancel={() => onSettings(false, true)}
           revision={revision}
         />
       ) : null}
@@ -387,52 +457,7 @@ function TablePane({
   );
 }
 
-/** The most rows a layout that draws every row it's given is handed, of a table held in the index. */
-const LAYOUT_ROWS = 5000;
-
-/**
- * A view's rows out of the index, all of them, for a layout that isn't the
- * table's: when there are few enough. Otherwise it says how to get there.
- */
-function FewRows({ source, children }: { source: ViewRows; children: (rows: Row[]) => ReactNode }) {
-  const [read, setRead] = useState<{ version: string; rows: Row[] } | null>(null);
-  const few = source.count <= LAYOUT_ROWS;
-  useEffect(() => {
-    if (!few) return;
-    let current = true;
-    void Promise.resolve(source.rows(0, source.count)).then((rows) => current && setRead({ version: source.version, rows }));
-    return () => {
-      current = false;
-    };
-  }, [source, few]);
-  if (!few) {
-    return (
-      <AdwStatusPage
-        vexpand
-        title="Too Many Rows for This Layout"
-        description={`This view shows ${source.count.toLocaleString()} rows. Layouts other than Table show up to ${LAYOUT_ROWS.toLocaleString()}: add a filter in View Settings, search, or change the layout to Table.`}
-      />
-    );
-  }
-  // The last rows read stay until the next arrive, so an edit doesn't blank the view.
-  return read ? <>{children(read.rows)}</> : <GtkBox vexpand />;
-}
-
-/** A view with only what the head of a file can show: its fields and sizes, not its order, filters, groups or totals. */
-function asStored(view: View): View {
-  const { sort: _sort, order: _order, filter: _filter, group: _group, totals: _totals, ...rest } = view;
-  return rest;
-}
-
 const NO_ROWS: Row[] = [];
-
-/** What the line above the first rows says while the index is made. */
-function ingestingText(view: View): string {
-  const arranged = !!(view.sort?.length || view.order?.length || view.filter?.length || view.group);
-  return arranged
-    ? "Showing rows as stored, as they're read. This view's sorting, filters and groups, and search and editing, are ready once the table is read. This happens once."
-    : "Showing rows as stored, as they're read. Search and editing are ready once the table is read. This happens once.";
-}
 
 /** A path from GTK's file chooser, set up by `ask`; null when it's dismissed. */
 async function choosePath(ask: (dialog: Gtk.FileDialog) => Promise<Gio.File>): Promise<string | null> {
@@ -445,23 +470,53 @@ async function choosePath(ask: (dialog: Gtk.FileDialog) => Promise<Gio.File>): P
   }
 }
 
-/** A .table.zip file to choose, and no other kind. */
-function zipFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
+/**
+ * What Open… offers: a single-file `.table`, a `.table` folder (by its
+ * manifest: a file dialog picks files or folders, never both, so a folder is
+ * opened by picking anything in it), and spreadsheets.
+ */
+function openFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
   const filter = Gtk.FileFilter.new();
-  filter.setName(".table.zip");
-  filter.addPattern("*.zip");
+  filter.setName("Tables and spreadsheets");
+  for (const pattern of ["*.table", "meta.json", "*.csv", "*.tsv", "*.tab", "*.txt"]) filter.addPattern(pattern);
+  dialog.setDefaultFilter(filter);
+  return dialog;
+}
+
+/** A single-file `.table` to save as (D50). */
+function tableFilter(dialog: Gtk.FileDialog): Gtk.FileDialog {
+  const filter = Gtk.FileFilter.new();
+  filter.setName("Table");
+  filter.addPattern("*.table");
   dialog.setDefaultFilter(filter);
   return dialog;
 }
 
 const chooseFileToAttach = () => choosePath((d) => d.open(null, null));
-const chooseFolderToOpen = () => choosePath((d) => d.selectFolder(null, null));
-const chooseZipToOpen = () => choosePath((d) => zipFilter(d).open(null, null));
-const chooseZipToSave = (name: string) =>
+const chooseToOpenFile = () => choosePath((d) => openFilter(d).open(null, null));
+/** A spreadsheet kept as text: comma, tab or otherwise separated. */
+const chooseSpreadsheetToOpen = () =>
+  choosePath((d) => {
+    const filter = Gtk.FileFilter.new();
+    filter.setName("Spreadsheets (CSV, TSV, text)");
+    for (const pattern of ["*.csv", "*.tsv", "*.tab", "*.txt"]) filter.addPattern(pattern);
+    d.setDefaultFilter(filter);
+    return d.open(null, null);
+  });
+const chooseFileToSave = (name: string) =>
   choosePath((d) => {
     d.setInitialName(name);
-    return zipFilter(d).save(null, null);
+    return tableFilter(d).save(null, null);
   });
+
+/** The `.table` folder a picked path is in (its manifest, or anything deeper), or the path itself. */
+export function tableFolderOf(path: string): string {
+  const parts = path.split("/");
+  for (let i = parts.length - 1; i > 0; i--) {
+    if (parts[i - 1]!.endsWith(".table") && existsSync(parts.slice(0, i).join("/")) && statSync(parts.slice(0, i).join("/")).isDirectory()) return parts.slice(0, i).join("/");
+  }
+  return path;
+}
 
 /** A question from table-app (a Confirm), asked as an alert; closing it is Cancel. */
 function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (response: string) => void }) {
@@ -483,7 +538,7 @@ function ConfirmDialog({ prompt, onResponse }: { prompt: Confirm; onResponse: (r
 
 /** Ask for a name, worded by table-app's namePrompt; what's typed goes to `onName` as it is. */
 function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (typed: string) => void; onClose: () => void }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(prompt.value ?? "");
   return (
     <AdwAlertDialog
       heading={prompt.heading}
@@ -498,7 +553,7 @@ function NameDialog({ prompt, onName, onClose }: { prompt: NamePrompt; onName: (
         onClose();
       }}
     >
-      <GtkEntry placeholderText={prompt.placeholder} activatesDefault onChanged={(e) => setName(e.getText())} />
+      <GtkEntry text={prompt.value ?? ""} placeholderText={prompt.placeholder} activatesDefault onChanged={(e) => setName(e.getText())} />
     </AdwAlertDialog>
   );
 }
@@ -514,6 +569,30 @@ function SaveStatus({ state, onRetry }: { state: SaveState; onRetry: () => void 
   // Not written: says why, and tries again when pressed.
   return <GtkButton iconName="dialog-warning-symbolic" cssClasses={["flat", "error"]} tooltipText={`Not saved: ${state.message}. Try Again`} onClicked={onRetry} />;
 }
+
+/**
+ * A single file changed elsewhere, so a save didn't write over it: said in
+ * place, above the table, with what can be done with the edits. Nothing
+ * waits on it (no blocking alert for a file's state); it stays until one is
+ * chosen, and the edits stay in the working folder meanwhile.
+ */
+function ChangedElsewhereBar({ file, onAnswer }: { file: string; onAnswer: (file: string, how: "copy" | "discard") => void }) {
+  const prompt = changedElsewherePrompt(file);
+  const choices = prompt.responses.filter((r): r is typeof r & { id: "copy" | "discard" } => r.id === "copy" || r.id === "discard");
+  return (
+    <GtkBox name="changed-elsewhere" spacing={12} cssClasses={[elsewhereBar]}>
+      <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} hexpand valign={Gtk.Align.CENTER}>
+        <GtkLabel label={prompt.heading} xalign={0} wrap cssClasses={["heading"]} />
+        <GtkLabel label={prompt.body} xalign={0} wrap />
+      </GtkBox>
+      {choices.map((r) => (
+        <GtkButton key={r.id} label={r.label} valign={Gtk.Align.CENTER} cssClasses={r.destructive ? ["destructive-action"] : ["suggested-action"]} onClicked={() => onAnswer(file, r.id)} />
+      ))}
+    </GtkBox>
+  );
+}
+
+const elsewhereBar = css({ padding: "10px 12px", backgroundColor: "alpha(@warning_bg_color, 0.18)", borderBottom: "1px solid alpha(@warning_bg_color, 0.4)" });
 
 /** How long after the last edit its bundle is written. */
 const SAVE_DELAY_MS = 400;
@@ -533,10 +612,12 @@ export function App({
   initialView,
   settings,
   newFilesIn,
+  pageStillMs,
+  departedMs = 3500,
   chooseFile = chooseFileToAttach,
-  chooseFolder = chooseFolderToOpen,
-  chooseZip = chooseZipToOpen,
-  chooseZipSaveAs = chooseZipToSave,
+  chooseToOpen = chooseToOpenFile,
+  chooseSpreadsheet = chooseSpreadsheetToOpen,
+  chooseSaveAs = chooseFileToSave,
   resetExamples,
   openIndex = openIndexHost,
   indexedFrom,
@@ -552,14 +633,18 @@ export function App({
   settings?: KeyValueStore;
   /** The folder new .table files are made in (the examples' own); absent, none can be made. */
   newFilesIn?: string;
+  /** How long a page being typed in is still before its changes go to its table's history as one event; a minute when absent. */
+  pageStillMs?: number;
+  /** How long the toast counting rows taken out of the view stays after the last (3.5 s); a test that's slow under load needs longer. */
+  departedMs?: number;
   /** Ask for a file to attach; a path, or null when none was chosen. */
   chooseFile?: () => Promise<string | null>;
-  /** Ask for a .table folder to open. */
-  chooseFolder?: () => Promise<string | null>;
-  /** Ask for a .table.zip to open. */
-  chooseZip?: () => Promise<string | null>;
-  /** Ask where to save a .table.zip, suggesting `name`. */
-  chooseZipSaveAs?: (name: string) => Promise<string | null>;
+  /** Ask for something to open: a single-file `.table`, anything in a `.table` folder, or a spreadsheet. */
+  chooseToOpen?: () => Promise<string | null>;
+  /** Ask for a spreadsheet (CSV, TSV and the like) to open as a new .table. */
+  chooseSpreadsheet?: () => Promise<string | null>;
+  /** Ask where to save a single-file `.table`, suggesting `name`. */
+  chooseSaveAs?: (name: string) => Promise<string | null>;
   /**
    * Put the examples back as they shipped, in `newFilesIn`, and read them,
    * keyed apart from `held`. Absent: there's no demo data to reset.
@@ -579,6 +664,13 @@ export function App({
   const closing = useRef(false);
   // Set once the indexed tables' hook below has run: a write can only come after.
   const saveIndexed = useRef<(bundles: string[], tables: Record<string, ParsedTable>) => Promise<void>>(async () => {});
+  const closeIndexed = useRef<(bundle: string) => Promise<void>>(async () => {});
+  // Where each file held is on disk, kept past its closing: the write that follows needs it.
+  const lastPaths = useRef(new Map<string, string>());
+  // The app's own copy of a file: one in the examples' folder, which is the app's to make and remove.
+  const ownCopy = (path: string) => !!newFilesIn && path.startsWith(`${newFilesIn}/`);
+  // A table's own folder, for its history: set below, where the paths are known.
+  const historyDir = useRef<(key: string) => string | undefined>(() => undefined);
   const { state, dispatch, display: shownDisplay, saving, flush } = useTableApp(() => {
     // The examples, in newFilesIn, are the demo's own, and a reset puts them
     // back; a folder named on the command line or opened is the viewer's.
@@ -586,12 +678,20 @@ export function App({
     // `--open` names where to start (a link lands on the Tables side);
     // otherwise table-app's first table, and the side the viewer left.
     const startKey = initialTable && library.tables[initialTable] ? initialTable : undefined;
+    // A view by its id, or by its name as the viewer sees it ("Pipeline"): ids are opaque (D23).
+    const startView = startKey && initialView
+      ? addressedView(library.tables[startKey]!.views, initialView)?.id
+      : undefined;
     return initialAppState({
       tables: library.tables,
       bundles: library.bundles,
       opened: Object.fromEntries(Object.entries(library.paths).filter(([, path]) => !inExamples(path))),
+      ...(library.singleFiles ? { singleFiles: library.singleFiles } : {}),
       stored: { sidebar: loadSidebarPrefs(store), arrangements: loadArrangements(store), display: loadDisplay(store) },
-      ...(startKey ? { start: { tablePath: startKey, ...(initialView ? { viewId: initialView } : {}) } } : {}),
+      ...(startKey ? { start: { tablePath: startKey, ...(startView ? { viewId: startView } : {}) } } : {}),
+      // Each edit goes to its table's history.ndjson (SPEC section 14).
+      writesHistory: true,
+      closed: loadClosed(store),
     });
   }, {
     store,
@@ -599,32 +699,132 @@ export function App({
     // Each bundle to where it is on disk. A reset holds writing while it puts the examples back.
     write: async (bundles, tables, metas) => {
       if (resetting.current) return false;
-      const paths = Object.fromEntries(bundles.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
-      await Promise.all(bundles.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
-      await saveIndexed.current(bundles, tables);
+      // A file closed: its index is let go, and the app's own copy of it (one in the examples' folder)
+      // is removed. A folder of the viewer's own stays where it is.
+      const closed = closedIn(bundles, metas);
+      for (const bundle of closed) {
+        const path = lastPaths.current.get(bundle);
+        await closeIndexed.current(bundle);
+        if (path && ownCopy(path)) rmSync(path, { recursive: true, force: true });
+        lastPaths.current.delete(bundle);
+      }
+      const held = bundles.filter((b) => !closed.includes(b));
+      const paths = Object.fromEntries(held.map((b) => [b, pathOf(b)]).filter(([, p]) => p !== undefined) as [string, string][]);
+      await Promise.all(held.map((b) => saveBundle({ ...library, paths }, tables, metas, b)));
+      await saveIndexed.current(held, tables);
     },
+    // What was edited, added to the table's history in its folder. A table with nowhere on disk keeps it to write.
+    appendHistory: async (key, events) => {
+      if (resetting.current || !historyDir.current(key)) return false;
+      await appendHistory(historyDir.current(key)!, events);
+    },
+    ...(pageStillMs !== undefined ? { pageStillMs } : {}),
   }, ownLocale);
+  historyDir.current = (key) => (pathOf(bundleOf(key)) ? tableDir(key) : undefined);
   const { tables, bundles } = state;
 
+  // Where a new .table file, or one opened from an archive, is made: the examples' folder when the
+  // app has that library, else beside the first .table folder opened (the folder being worked in).
+  const firstOpened = Object.values(state.opened)[0];
+  const filesIn = newFilesIn ?? (firstOpened ? dirname(firstOpened) : undefined);
   // Where a bundle is on disk: the folder it was opened from, else the new-files folder.
-  const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (newFilesIn ? `${newFilesIn}/${bundle}.table` : undefined);
+  const pathOf = (bundle: string): string | undefined => state.opened[bundle] ?? (filesIn ? `${filesIn}/${bundle}.table` : undefined);
   // A table's own folder, where its attachments/ is.
   const tableDir = (key: string) => `${pathOf(bundleOf(key))}/tables/${tableNameOf(key)}`;
+  for (const bundle of Object.keys(bundles)) {
+    const path = pathOf(bundle);
+    if (path) lastPaths.current.set(bundle, path);
+  }
+  // The examples closed here are kept, so the next launch doesn't copy them back.
+  useEffect(() => saveClosed(store, state.closed), [store, state.closed]);
+  // Close a file: every file here is a folder on disk, and only the app's own copies go with it.
+  const closeFile = (bundle: string) => {
+    const path = pathOf(bundle);
+    dispatch({ type: "close", bundle, fromFolder: !(path && ownCopy(path)) });
+  };
 
+  // A table's history as its file holds it now, for the Files side to show.
+  const historyText = (key: string): string | undefined => {
+    const file = pathOf(bundleOf(key)) ? join(tableDir(key), HISTORY_FILE) : undefined;
+    return file && existsSync(file) ? readFileSync(file, "utf8") : undefined;
+  };
   const deriveOptions = {
     locale: ownLocale,
     newTableIn: "none" as const,
     attachmentsOf: (key: string) => (pathOf(bundleOf(key)) ? attachmentsIn(tableDir(key)) : []),
+    // A table's history is a file in its folder: listed when it is there.
+    hasHistory: (key: string) => !!pathOf(bundleOf(key)) && existsSync(join(tableDir(key), HISTORY_FILE)),
     fileNameOf: (bundle: string) => pathOf(bundle)?.split("/").pop(),
   };
   const tell = (heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } });
+  // Said in passing: GNOME's toast, which goes by itself and stops nothing.
+  const note = (text: string) => {
+    const toast = Adw.Toast.new(text);
+    toast.setUseMarkup(false);
+    toastOverlay.current?.addToast(toast);
+  };
   // Tables held in the index: their rows are read, edited and saved there.
   const indexed = useIndexedTables({ state, dispatch, view: derive(state, deriveOptions).shown.view, pathOf, openIndex, tell });
   saveIndexed.current = indexed.save;
+  closeIndexed.current = indexed.closeBundle;
+  // Tables opened without their rows (loadLibrary's rowsLater): drawn at once, their rows read after, the one on screen first.
+  const readingRows = useRef(new Set<string>());
+  useEffect(() => {
+    const waiting = Object.keys(state.tables).filter((k) => state.tables[k]!.loading && !readingRows.current.has(k));
+    waiting.sort((a, b) => (a === state.active ? -1 : b === state.active ? 1 : 0));
+    for (const key of waiting) {
+      readingRows.current.add(key);
+      readRows(key, state.tables[key]!).then(dispatch, (error: unknown) => tell(`Couldn't read the rows of ${tableNameOf(key)}`, error instanceof Error ? error.message : String(error)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.tables, state.active]);
+  // Rows a checkbox or a choice took out of the view (#598): one toast counts them, Undo puts them back.
+  // GNOME's own toast, kept while it's up and retitled as the count goes on; it goes 3.5 s after the last.
+  const toastOverlay = useRef<Adw.ToastOverlay | null>(null);
+  const departedToast = useRef<Adw.Toast | null>(null);
+  useEffect(() => {
+    const departed = state.departed;
+    if (!departed) {
+      const shown = departedToast.current;
+      departedToast.current = null;
+      shown?.dismiss();
+      return;
+    }
+    const table = state.tables[departed.key];
+    if (!table || !toastOverlay.current) return;
+    const view = table.views.find((v) => v.id === departed.viewId);
+    const { label } = departedText(departed, table, view?.name ?? "the view");
+    let toast = departedToast.current;
+    if (toast) toast.setTitle(label);
+    else {
+      toast = Adw.Toast.new(label);
+      toast.setUseMarkup(false);
+      toast.setButtonLabel("_Undo");
+      toast.setPriority(Adw.ToastPriority.HIGH);
+      // Gone when the app says, not on GNOME's own clock: the count restarts it.
+      toast.setTimeout(0);
+      const made = toast;
+      made.connect("button-clicked", () => dispatch({ type: "putBackDeparted" }));
+      made.connect("dismissed", () => {
+        if (departedToast.current !== made) return;
+        departedToast.current = null;
+        dispatch({ type: "departedDone" });
+      });
+      departedToast.current = made;
+      toastOverlay.current.addToast(made);
+    }
+    const shown = toast;
+    const timer = setTimeout(() => shown.dismiss(), departedMs);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.departed]);
+  const loadingTable = state.tables[state.active]?.loading;
+  const loadingRows = useMemo(() => (loadingTable ? loadingViewRows(state.active, loadingTable.estimate) : undefined), [state.active, loadingTable]);
   const derived = derive(state, {
     ...deriveOptions,
     ...(indexed.source ? { indexedShown: { count: indexed.source.count, inView: indexed.source.inView } } : {}),
   });
+  if (measuring) measureWith(dispatch);
   // The layout reads the way the display language does (D40), the whole app included.
   useEffect(() => {
     Gtk.Widget.setDefaultDirection(derived.direction === "rtl" ? Gtk.TextDirection.RTL : Gtk.TextDirection.LTR);
@@ -639,8 +839,17 @@ export function App({
   // Bumped when a settings change is answered Cancel, so its controls show the view as it still is.
   const [refused, setRefused] = useState(0);
 
+  // The main menu's New Field: the table's own new-field editor, each time it's chosen.
+  const [newFieldRequest, setNewFieldRequest] = useState(0);
+  // Find in View: the keyboard goes to the search box, each time it's chosen.
+  const [findRequest, setFindRequest] = useState(0);
   const callbacks = {
     ...viewCallbacks(state, dispatch, newId),
+    newFieldRequest,
+    // Where you are in the view, kept with history: Back and Forward put the cell and the scroll place back.
+    onPlace: (place: { rowId?: string; field?: string }) => dispatch({ type: "place", place: { rowId: place.rowId, field: place.field } }),
+    onScrollPlace: (top: NonNullable<Place["top"]>) => dispatch({ type: "place", place: { top } }),
+    restorePlace: state.restoring ? { place: state.restoring.place, n: state.restoring.n } : null,
     // The file is copied into the table's attachments/ and the cell set to its name.
     onAttachFile: (rowId: string, field: string) => {
       void chooseFile().then((source) => {
@@ -654,41 +863,88 @@ export function App({
     },
   };
   const viewActions: ViewActions = {
-    onAddView: () => dispatch({ type: "addView", id: newId() }),
+    onAddView: () => dispatch({ type: "addView", id: newViewId() }),
     ...(derived.table.views.length > 1 ? { onDeleteView: () => dispatch({ type: "deleteView" }) } : {}),
     arranged: derived.arranged,
     onArrange: (patch) => dispatch({ type: "arrange", patch }),
     onSaveForEveryone: () => dispatch({ type: "saveForEveryone" }),
     onReset: () => dispatch({ type: "resetArrangement" }),
+    sheetReaders: sheetReaders(state.tables, state.active, derived.shown.view),
   };
 
+  // Open…: a .table folder is edited where it is; a single-file .table or a spreadsheet becomes a .table folder beside the new files.
+  const open = async () => {
+    const picked = await chooseToOpen();
+    if (picked) await openPath(picked);
+  };
+  // What Open… picked, or a file manager asked to open (onOpen): one already open is shown, not opened again.
+  const openPath = async (picked: string) => {
+    const path = tableFolderOf(picked);
+    const held = Object.entries({ ...state.opened, ...state.singleFiles }).find(([, at]) => at === path)?.[0];
+    const first = held === undefined ? undefined : Object.keys(state.tables).find((key) => bundleOf(key) === held);
+    if (first !== undefined) return dispatch({ type: "showTable", key: first });
+    // A file that isn't there is said in passing, never by an alert that waits (workspace#711).
+    if (!existsSync(path)) return note(openFailedText(basename(path), "it isn't there"));
+    if (statSync(path).isDirectory()) return openFolder(path);
+    if (isSpreadsheetFile(path)) return openFile(path);
+    return openSingle(path);
+  };
+  // A single-file .table, edited as its working folder in this user's cache and packed back into it after each write (D49).
+  const openSingle = async (path: string) => {
+    try {
+      const opened = await openSingleFile(path, Object.keys(bundles), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
+      const problems = Object.values(opened.problems).flat();
+      if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
+      dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
+    } catch (error) {
+      tell(openFailedText(basename(path), error));
+    }
+  };
+  // A single file changed elsewhere since it was opened, so not saved over: its edits kept as a copy beside it
+  // (opened, and shown), or let go; either way the file is read again as it now is.
+  const settleChangedElsewhere = async (file: string, how: "copy" | "discard") => {
+    try {
+      const key = Object.entries(state.singleFiles ?? {}).find(([, at]) => at === file)?.[0];
+      if (key !== undefined) await closeIndexed.current(key);
+      const copy = how === "copy" ? await keepSingleFileEdits(file) : null;
+      if (how === "discard") await discardSingleFileEdits(file);
+      if (key !== undefined) {
+        const fresh = await openSingleFile(file, Object.keys(bundles).filter((b) => b !== key), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
+        dispatch({ type: "replaced", library: fresh });
+      }
+      if (copy) await openSingle(copy);
+      // Nothing of it is left to write: the warning goes.
+      await flush();
+    } catch (error) {
+      tell(`Couldn't ${how === "copy" ? "keep your edits" : "let your edits go"}`, error instanceof Error ? error.message : String(error));
+    }
+  };
   // A .table folder from disk, edited where it is.
-  const openFolder = async () => {
-    const path = await chooseFolder();
-    if (!path) return;
-    const opened = await loadLibrary([path], Object.keys(bundles), indexedFrom === undefined ? {} : { indexedFrom });
+  const openFolder = async (path: string) => {
+    const opened = await loadLibrary([path], Object.keys(bundles), { rowsLater: true, ...(indexedFrom === undefined ? {} : { indexedFrom }) });
     const problems = Object.values(opened.problems).flat();
     if (Object.keys(opened.tables).length === 0) return tell(openFailedText(basename(path), problems.join("; ") || "there's no table in it"));
     dispatch({ type: "opened", library: opened, ...(problems.length > 0 ? { skipped: problems } : {}) });
   };
-  // A .table.zip becomes a .table folder beside the new files, written as it opens.
-  const openZip = async () => {
-    const path = await chooseZip();
-    if (!path || !newFilesIn) return;
+  // A spreadsheet someone already has becomes a .table folder beside the new files, written as it opens.
+  const openFile = async (path: string) => {
+    if (!filesIn) return tell(openFailedText(basename(path), "this app was started on its own folders, with nowhere to put a new .table"));
     try {
       // Named apart from the tables held and from any folder already there.
-      const onDisk = bundlesIn(newFilesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
-      const opened = await openArchive(new Uint8Array(readFileSync(path)), [...Object.keys(bundles), ...onDisk]);
+      const onDisk = bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, ""));
+      const taken = [...Object.keys(bundles), ...onDisk];
+      const bytes = new Uint8Array(readFileSync(path));
+      const opened = isSpreadsheetFile(path) ? openSpreadsheet(spreadsheetText(bytes), basename(path), taken) : await openArchive(bytes, taken);
       const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
       dispatch({ type: "opened", library, ...(opened.skipped.length > 0 ? { skipped: opened.skipped } : {}) });
     } catch (error) {
       tell(openFailedText(basename(path), error));
     }
   };
-  // The open table's .table, every table in it, as one .table.zip.
-  const exportZip = async () => {
+  // The open table's .table, every table in it, as one single-file .table (D50).
+  const exportFile = async () => {
     const key = bundleOf(state.active);
-    const path = await chooseZipSaveAs(archiveFileName(key));
+    const path = await chooseSaveAs(singleFileName(key));
     if (!path) return;
     try {
       // A table held in the index has its rows read out of it for the archive, which is made in memory.
@@ -700,9 +956,16 @@ export function App({
           return tell(heading, `${body} The .table folder itself can be copied as it is.`);
         }
         const { indexed: _held, ...rest } = t;
-        whole[k] = { ...rest, rows: await indexed.everyRow(k) };
+        whole[k] = { ...rest, ...storedTableRows(t, await indexed.everyRow(k)) };
       }
-      writeFileSync(path, await bundleToArchive(key, toBundle(whole, bundles, key)));
+      // Each table's edit history goes with it, as its file holds it once what is still to write is written.
+      await flush();
+      const going = Object.fromEntries(Object.entries(whole).filter(([k]) => bundleOf(k) === key));
+      const withHistory = await withHistories(going, (k) => {
+        const history = pathOf(key) ? join(tableDir(k), HISTORY_FILE) : undefined;
+        return history && existsSync(history) ? readFileSync(history, "utf8") : undefined;
+      });
+      writeFileSync(path, await bundleToArchive(key, toBundle(withHistory, bundles, key)));
     } catch (error) {
       tell(exportFailedText(basename(path), error));
     }
@@ -734,9 +997,15 @@ export function App({
   // window with its accelerator, and in the primary menu. Those Linux
   // doesn't do are left out.
   const run: Partial<Record<AppCommandId, () => void>> = {
-    ...(newFilesIn ? { "new-file": () => dispatch({ type: "create", making: { kind: "file" } }), "open-zip": () => void openZip() } : {}),
-    "open-folder": () => void openFolder(),
-    "export-zip": () => void exportZip(),
+    ...(filesIn
+      ? {
+          // Named apart from every .table folder already there, held or not: a new file never lands in another's folder.
+          "new-file": () =>
+            dispatch({ type: "create", making: { kind: "file", taken: bundlesIn(filesIn).map((folder) => basename(folder).replace(/\.table$/, "")) } }),
+        }
+      : {}),
+    open: () => void open(),
+    "export-file": () => void exportFile(),
     // With the open page's row, as the web's address and the Mac's link have it.
     "copy-link": () => Gdk.Display.getDefault()?.getClipboard().setContent(Gdk.ContentProvider.newForValue(derived.address)),
     "tables-mode": () => dispatch({ type: "setFilesSide", files: false }),
@@ -753,6 +1022,21 @@ export function App({
   const menuSections = ["File", "Edit", "View", "Go"]
     .map((menu) => ({ section: commands.filter((c) => c.menu === menu).map((c) => ({ label: c.label, action: `win.${c.id}` })) }))
     .filter((s) => s.section.length > 0);
+  // A field is added to a table as it's laid out as one: with the files it's made in, after them.
+  const canAddField = (derived.view.layout ?? "table") === "table" && state.sidebar.files !== true;
+  // The table's own commands, where the Mac has them in its menu bar: a row and a field in File, finding in Edit, the view's settings in View.
+  const section = (menu: string) => menuSections[["File", "Edit", "View", "Go"].filter((m) => commands.some((c) => c.menu === m)).indexOf(menu)]?.section;
+  const onTables = state.sidebar.files !== true && tables[state.active] !== undefined;
+  if (canAddField) section("File")?.push({ label: "New Row", action: "win.new-row" }, { label: "New Field…", action: "win.new-field" });
+  // The file on screen, closed from the menu as from its heading in the sidebar.
+  const canCloseFile = canClose(bundles, bundleOf(state.active));
+  // A spreadsheet someone already has (CSV, TSV and the like), opened as a new .table file.
+  if (filesIn) section("File")?.push({ label: "Open Spreadsheet…", action: "win.open-spreadsheet" });
+  if (canCloseFile) section("File")?.push({ label: "Close File", action: "win.close-file" });
+  if (onTables) {
+    section("Edit")?.push({ label: "Find in View…", action: "win.find" });
+    section("View")?.push({ label: state.settingsOpen ? "Hide View Settings" : "Show View Settings", action: "win.view-settings" });
+  }
   if (resetExamples) menuSections.push({ section: [{ label: "Reset Demo Data…", action: "win.reset-data" }] });
   // The app's own: this viewer's display settings, and what build this is.
   menuSections.push({ section: [{ label: "Display…", action: "win.display" }, { label: "About Tables", action: "win.about" }] });
@@ -780,7 +1064,28 @@ export function App({
   const pageTable = state.openPage !== null ? tables[state.active] : undefined;
 
   return (
-    <AdwApplication actionAccels={commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] }))}>
+    <AdwApplication
+      // A file manager opening a .table while this runs: the second launch hands its files here (index.tsx).
+      flags={Gio.ApplicationFlags.HANDLES_OPEN}
+      onOpen={(files, _n, _hint, self) => {
+        void (async () => {
+          for (const file of files) {
+            const path = file.getPath();
+            if (path) await openPath(path);
+          }
+          // Opening isn't activating: at launch the window comes up only now, and later this brings it forward.
+          self.activate();
+          windowRef.current?.present();
+        })();
+      }}
+      actionAccels={[
+        ...commands.map((c) => ({ detailedActionName: `win.${c.id}`, accels: [gtkAccelOf(c)] })),
+        { detailedActionName: "win.new-field", accels: ["<Control><Shift><Alt>n"] },
+        { detailedActionName: "win.new-row", accels: ["<Control><Shift>n"] },
+        { detailedActionName: "win.find", accels: ["<Control>f"] },
+        { detailedActionName: "win.view-settings", accels: ["<Control><Alt>v"] },
+      ]}
+    >
       <AdwApplicationWindow
         ref={windowRef}
         title="Tables"
@@ -813,6 +1118,12 @@ export function App({
         }
         actions={[
           ...commands.map((c) => <GSimpleAction key={c.id} name={c.id} enabled={c.enabled ?? true} onActivate={() => run[c.id]?.()} />),
+          <GSimpleAction key="new-field" name="new-field" enabled={canAddField} onActivate={() => setNewFieldRequest((n) => n + 1)} />,
+          <GSimpleAction key="close-file" name="close-file" enabled={canCloseFile} onActivate={() => closeFile(bundleOf(state.active))} />,
+          <GSimpleAction key="open-spreadsheet" name="open-spreadsheet" enabled={!!filesIn} onActivate={() => void chooseSpreadsheet().then((path) => (path ? openFile(path) : undefined))} />,
+          <GSimpleAction key="new-row" name="new-row" enabled={canAddField} onActivate={() => void callbacks.onAddRow()} />,
+          <GSimpleAction key="find" name="find" enabled={onTables} onActivate={() => setFindRequest((n) => n + 1)} />,
+          <GSimpleAction key="view-settings" name="view-settings" enabled={onTables} onActivate={() => dispatch({ type: "settings", open: !state.settingsOpen })} />,
           ...(resetExamples ? [<GSimpleAction key="reset-data" name="reset-data" onActivate={() => setConfirmReset(true)} />] : []),
           <GSimpleAction key="display" name="display" onActivate={() => setDisplayOpen(true)} />,
           <GSimpleAction key="about" name="about" onActivate={() => setAboutOpen(true)} />,
@@ -821,6 +1132,7 @@ export function App({
         <DisplaySettingsProvider value={shownDisplay}>
           {/* An attachment is a file in its table's attachments/ folder. */}
           <AttachmentsProvider value={(file) => (held ? attachmentPath({ ...tables[state.active]!, path: tableDir(state.active) }, file) : undefined)}>
+          <AdwToastOverlay ref={toastOverlay}>
           <AdwOverlaySplitView
             collapsed={narrow}
             showSidebar={sidebarShown}
@@ -841,7 +1153,7 @@ export function App({
                         <GtkToggleButton label="Files" active={derived.mode === "files"} onToggled={(b) => b.getActive() && dispatch({ type: "setFilesSide", files: true })} />
                       </GtkBox>
                     }
-                    start={newFilesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
+                    start={filesIn ? <GtkButton iconName="document-new-symbolic" tooltipText="New .table File" onClicked={() => run["new-file"]?.()} /> : undefined}
                   />
                 }
               >
@@ -864,6 +1176,7 @@ export function App({
                     }}
                     onNewTable={(bundle) => dispatch({ type: "create", making: { kind: "table", bundle } })}
                     onToggleFile={(bundle) => dispatch({ type: "toggleFile", bundle })}
+                    onCloseFile={closeFile}
                   />
                 )}
               </AdwToolbarView>
@@ -873,7 +1186,7 @@ export function App({
               <AttachmentsProvider
                 value={(file) => (shownAttachment && tables[shownAttachment.tableKey] ? attachmentPath({ ...tables[shownAttachment.tableKey]!, path: tableDir(shownAttachment.tableKey) }, file) : undefined)}
               >
-                <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path)} attachmentName={shownAttachment?.name} />
+                <FilePane file={shownFile} text={fileText(tables, bundles, shownFile.bundle, shownFile.path, historyText)} attachmentName={shownAttachment?.name} />
               </AttachmentsProvider>
             ) : held ? (
               <TablePane
@@ -885,21 +1198,24 @@ export function App({
                 callbacks={callbacks}
                 saving={saving}
                 onRetrySave={() => void flush()}
+                onSettleElsewhere={(file, how) => void settleChangedElsewhere(file, how)}
                 viewActions={viewActions}
                 onSearch={(text) => dispatch({ type: "search", text })}
                 settingsOpen={state.settingsOpen}
-                onSettings={(open) => dispatch({ type: "settings", open })}
+                onSettings={(open, revert) => dispatch({ type: "settings", open, ...(revert ? { revert } : {}) })}
+                findRequest={findRequest}
                 revision={refused}
                 navigation={navigation}
                 menu={primaryMenu}
                 source={indexed.source}
-                building={indexed.building}
-                reading={indexed.reading}
+                building={indexed.building ?? (loadingTable ? { done: 0, total: loadingTable.estimate } : null)}
+                reading={indexed.reading ?? loadingRows}
               />
             ) : (
               <AdwStatusPage title="No tables" description="Name a .table folder on the command line." />
             )}
           </AdwOverlaySplitView>
+          </AdwToastOverlay>
           {aboutOpen ? (
             // Which build this is (docs/VERSIONING.md): what a person testing it quotes.
             <AdwAboutDialog
@@ -916,7 +1232,7 @@ export function App({
               <AdwToolbarView topBar={<AdwHeaderBar />}>
                 <AdwPreferencesPage>
                   <DisplayControls
-                    rows={displayChoices(state.display, ownLocale, "System")}
+                    rows={displayChoices(state.display, ownLocale, "System", state.active || undefined)}
                     onChoose={(kind, value) => dispatch({ type: "display", choice: { kind, value } })}
                   />
                 </AdwPreferencesPage>

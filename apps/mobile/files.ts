@@ -1,14 +1,14 @@
-// .table.zip in and out on a phone: chosen with the system's document
-// picker, and handed to the share sheet (Save to Files, AirDrop, Mail…).
-// Reading and writing the archive is table-app's (openArchive,
-// bundleToArchive), as on the web, macOS and Linux; so is the wording of
-// what went wrong.
+// A .table in and out on a phone: what Open… offers in the system's picker
+// (documents.ts opens it where it is), a single file's bytes read as a copy
+// (measuring), a spreadsheet made a .table, and a single file handed to the
+// share sheet (Save to Files, AirDrop, Mail…). Reading and writing the
+// archive is table-app's (openArchive, bundleToArchive), as on the web,
+// macOS and Linux; so is the wording of what went wrong.
 
-import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import type { BundleMeta, ParsedTable, Row } from "@workspace.sh/table-core";
-import { archiveFileName, bundleToArchive, fromBundle, toBundle, type Library } from "@workspace.sh/table-app";
+import { TABLE_TYPES, type BundleMeta, type ParsedTable, type Row } from "@workspace.sh/table-core";
+import { singleFileName, bundleToArchive, fromBundle, openSpreadsheet, spreadsheetText, toBundle, type Library } from "@workspace.sh/table-app";
 import { openZip } from "./indexHost";
 
 /** What opening an archive gave: a library to take in, what was skipped, the file's name, and its large tables' first rows by `bundle/table`. */
@@ -55,32 +55,49 @@ export async function readZip(bytes: Uint8Array, held: Iterable<string>, name: s
   };
 }
 
-/** Ask for a .table.zip and read it, named apart from `held`. Null when nothing was chosen. */
-export async function chooseZip(held: Iterable<string>): Promise<OpenedZip | null> {
-  const picked = await DocumentPicker.getDocumentAsync({
-    type: ["application/zip", "application/x-zip-compressed", "public.zip-archive"],
-    copyToCacheDirectory: true,
-  });
-  if (picked.canceled || !picked.assets[0]) return null;
-  const asset = picked.assets[0];
-  let bytes;
+/** A spreadsheet's bytes (CSV, TSV and the like) as a new .table file to take in, named apart from `held`. */
+export function readSpreadsheet(bytes: Uint8Array, held: Iterable<string>, name: string): OpenedZip {
+  let opened;
   try {
-    bytes = await new File(asset.uri).bytes();
+    opened = openSpreadsheet(spreadsheetText(bytes), name, held);
   } catch (error) {
-    throw new ZipError(asset.name, error);
+    throw new ZipError(name, error);
   }
-  return readZip(bytes, held, asset.name);
+  return {
+    library: { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} },
+    skipped: opened.skipped,
+    name,
+    first: {},
+  };
 }
 
-/** A bundle as a .table.zip, offered to the share sheet. Resolves once the sheet is done. */
+/**
+ * What Open… offers in the system's picker: a .table in either form (its
+ * folder form is a package, one item), or a spreadsheet someone already has,
+ * which becomes a new .table file.
+ */
+export const OPEN_TYPES = [
+  TABLE_TYPES.folder,
+  TABLE_TYPES.file,
+  "public.comma-separated-values-text",
+  "public.tab-separated-values-text",
+  "public.plain-text",
+];
+
+/**
+ * A bundle as a single-file .table, offered to the share sheet (Save to Files, AirDrop, Mail…).
+ * `files` are what a document holds besides its tables (attachments, files no reader knows), so
+ * they go with it. Resolves once the sheet is done.
+ */
 export async function shareZip(
   bundle: string,
   tables: Record<string, ParsedTable>,
   bundles: Record<string, BundleMeta>,
+  files: Record<string, Uint8Array> = {},
 ): Promise<void> {
-  const file = new File(Paths.cache, archiveFileName(bundle));
+  const file = new File(Paths.cache, singleFileName(bundle));
   if (file.exists) file.delete();
   file.create();
-  file.write(await bundleToArchive(bundle, toBundle(tables, bundles, bundle)));
-  await Sharing.shareAsync(file.uri, { mimeType: "application/zip", UTI: "public.zip-archive", dialogTitle: archiveFileName(bundle) });
+  await file.write(await bundleToArchive(bundle, { ...toBundle(tables, bundles, bundle), files }));
+  await Sharing.shareAsync(file.uri, { mimeType: "application/octet-stream", UTI: TABLE_TYPES.file, dialogTitle: singleFileName(bundle) });
 }

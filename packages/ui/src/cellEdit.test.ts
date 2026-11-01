@@ -33,11 +33,12 @@ test("a draft the column holds is saved; the same value is not saved again", () 
   assert.deepEqual(commitDraft(count, 4, "4", "key", null), { kind: "unchanged" });
 });
 
-test("a draft the column can't hold is refused with the reason, or dropped on leaving", () => {
-  const refused = commitDraft(count, 3, "2.5", "key", null);
-  assert.equal(refused.kind, "problem");
-  assert.equal(refused.kind === "problem" && refused.check.message, "“2.5” isn't a whole number.");
-  assert.deepEqual(commitDraft(count, 3, "2.5", "blur", null), { kind: "dropped" });
+test("a draft the column can't hold is said once, then kept as typed; leaving keeps it outright (D65)", () => {
+  const asked = commitDraft(count, 3, "2.5", "key", null);
+  assert.equal(asked.kind, "problem");
+  assert.equal(asked.kind === "problem" && asked.check.message, "“2.5” isn't a whole number. Press Enter again to keep it as typed.");
+  assert.deepEqual(commitDraft(count, 3, "2.5", "key", asked.kind === "problem" ? asked.queried : null), { kind: "save", value: "2.5" });
+  assert.deepEqual(commitDraft(count, 3, "2.5", "blur", null), { kind: "save", value: "2.5" });
 });
 
 test("an early year is asked about once, then kept; leaving keeps it outright", () => {
@@ -90,7 +91,7 @@ test("a relation is picked from its related table's rows, by their titles", asyn
   assert.equal(relatesMany({ name: "x", type: "array", relation: { table: "t", field: "id" } }), true);
   const options = relationOptions(company, related);
   assert.equal(options.length, tables["companies"]!.rows.length);
-  assert.deepEqual(options[0], { value: "co-northwind", label: "Northwind Traders" });
+  assert.deepEqual(options[0], { value: "znqnjiyryfpbdjfb57fzm6119k", label: "Northwind Traders" });
   assert.deepEqual(relationOptions(company, {}), []);
 });
 
@@ -102,4 +103,35 @@ test("toggling a many-relation keeps the related table's order; dangling ids sta
   assert.deepEqual(relationToggled(contacts, [ids[2]], ids[0]!, related), [ids[0], ids[2]]);
   assert.deepEqual(relationToggled(contacts, [ids[0], "gone"], ids[1]!, related), [ids[0], ids[1], "gone"]);
   assert.equal(relationToggled(contacts, [ids[0]], ids[0]!, related), undefined);
+});
+
+test("`=` typed in a stored field's cell is its own formula; typed over one, a value or nothing takes its place (D52)", async () => {
+  const { cellFormulaDraft, commitDraft } = await import("./cellEdit");
+  const fields = [{ name: "price", type: "number" as const }, { name: "qty", type: "number" as const }];
+  const qty = fields[1]!;
+  assert.deepEqual(commitDraft(qty, 3, "=price * 2", "key", null, { fields }), { kind: "formula", expr: "(* price 2)" });
+  assert.equal(commitDraft(qty, 3, "=price *", "key", null, { fields }).kind, "problem");
+  // Kept as typed on leaving, or entered again (D65): its cell says it can't be read.
+  assert.deepEqual(commitDraft(qty, 3, "=price *", "blur", null, { fields }), { kind: "formula", expr: "price *" });
+  assert.deepEqual(commitDraft(qty, 3, "=price *", "key", "=price *", { fields }), { kind: "formula", expr: "price *" });
+  // One that reads keeps an unknown function, to show #NAME?.
+  assert.deepEqual(commitDraft(qty, 3, "=frobnicate(price)", "blur", null, { fields }), { kind: "formula", expr: "(frobnicate price)" });
+  // The same formula again changes nothing.
+  assert.deepEqual(commitDraft(qty, 6, "=price*2", "key", null, { fields, own: "(* price 2)" }), { kind: "unchanged" });
+  // Typed over it: the value, even the one it shows, and nothing at all.
+  assert.deepEqual(commitDraft(qty, 6, "6", "key", null, { fields, own: "(* price 2)" }), { kind: "save", value: 6 });
+  assert.deepEqual(commitDraft(qty, 6, "", "key", null, { fields, own: "(* price 2)" }), { kind: "save", value: null });
+  // Without a way to give a cell a formula, `=` is text like any other (and not a number).
+  assert.equal(commitDraft(qty, 3, "=price * 2", "key", null).kind, "problem");
+  assert.equal(cellFormulaDraft("(* price 2)"), "=price * 2");
+  assert.equal(cellFormulaDraft("(* price 2)", undefined, "stored"), "=(* price 2)");
+  // Edited without its `=`, which the editor draws before the box: the stored form exactly as stored.
+  const { cellFormulaText, FORMULA_PREFIX } = await import("./cellEdit");
+  assert.equal(cellFormulaText("(* price 2)"), "price * 2");
+  assert.equal(cellFormulaText("(* price   2)", undefined, "stored"), "(* price   2)");
+  // Saved with its `=` put back, in either syntax, it's the same formula.
+  for (const [text, syntax] of [["price * 2", "excel"], ["(* price 2)", "stored"]] as const) {
+    const r = commitDraft({ name: "n", type: "number" }, 1, FORMULA_PREFIX + text, "key", null, { fields: [{ name: "price", type: "number" }, { name: "n", type: "number" }] });
+    assert.deepEqual(r, { kind: "formula", expr: "(* price 2)" }, syntax);
+  }
 });

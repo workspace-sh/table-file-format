@@ -6,7 +6,7 @@
   "description": "The .table demo on Linux: GTK4 and libadwaita through GTKX, rendering table-core with table-gtk.",
   "scripts": {
     "dev": "gtkx dev",
-    "build": "gtkx build",
+    "build": "gtkx build && mkdir -p dist/native && cp ../../edn/js/native/edn.linux-x64.node dist/native/",
     "start": "node dist/bundle.mjs",
     "codegen": "gtkx codegen",
     "typecheck": "gtkx codegen && tsc -p .",

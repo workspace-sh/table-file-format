@@ -7,20 +7,26 @@
 // SQL is the indexer's, run by core's oo1Driver.
 //
 // A large table never reaches the page as rows. Its archive is read here:
-// the table's rows.ndjson is taken as bytes, streamed into the index, and
+// the table's rows are taken as bytes, streamed into the index, and
 // kept as a file beside it, which stays the truth (SPEC section 8). The
 // page gets the first rows to show meanwhile, and how far the reading is.
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app";
+import { loadEdn } from "@workspace.sh/edn";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app/worker";
 import {
+  FIRST_ROWS_FILE,
+  alterIndex,
   buildSearchIndex,
+  fillIndex,
   indexKey,
   oo1Driver,
   queryIndex,
   rowsBeingBuilt,
+  setFormulaEngine,
   setIndexKey,
   storedRows,
+  type CellFormula,
   type LazyZipEntry,
   type Row,
   type SqlDriver,
@@ -38,9 +44,12 @@ export type Request = { id: number } & (
       | { op: "all"; sql: string; params: SqlValue[] }
       | { op: "batch"; sql: string; params: SqlValue[][] }
       | { op: "ensure"; name: string; schema: TableSchema }
+      | { op: "held"; name: string }
       | { op: "build"; name: string; schema: TableSchema }
       | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[]; whole?: boolean }
       | { op: "search"; name: string }
+      | { op: "alter"; name: string; from: TableSchema; to: TableSchema; restore?: string[] }
+      | { op: "fill"; name: string; schema: TableSchema }
       | { op: "rows"; request: RowsRequest }
       | { op: "peek"; name: string; start: number; end: number }
       | { op: "persistent" }
@@ -93,8 +102,8 @@ const timed = (entry: { what: string; ms: number; waited: number }): void => {
   if (timings.length >= 500) timings.shift();
   timings.push(entry);
 };
-// Large tables read from an archive and not yet in the index, by `bundle/table`: their rows.ndjson, still compressed.
-const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+// Large tables read from an archive and not yet in the index, by `bundle/table`: their rows, still compressed.
+const waiting = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
 
 const post = (response: Response) => (self as unknown as Worker).postMessage(response);
 
@@ -235,7 +244,7 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
   const from = req.from ?? INDEXED_FROM;
   const first: Record<string, Row[]> = {};
   const counts: Record<string, number> = {};
-  const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string> }>();
+  const large = new Map<string, { rows: LazyZipEntry; bodies: Record<string, string>; cells?: CellFormula[] }>();
   const opened = await openArchive(req.bytes, req.taken, {
     // A large table's rows are left compressed: only their start is read here, so the
     // page has rows to show at once, however large the table. The rest is read by `ensure`.
@@ -248,7 +257,7 @@ async function openZip(req: Request & { op: "openZip" }): Promise<OpenedLarge> {
       const figures = 10 ** Math.max(0, String(judged).length - 2);
       const count = head.length >= rows.size ? linesInBytes(head) : Math.round(judged / figures) * figures;
       if (count < from) return false;
-      large.set(name, { rows, bodies: table.bodies });
+      large.set(name, { rows, bodies: table.bodies, ...(table.cells ? { cells: table.cells } : {}) });
       first[name] = firstRowsInBytes(head, FIRST_ROWS);
       counts[name] = count;
       return true;
@@ -276,6 +285,7 @@ async function ensure(on: On, id: number, name: string, schema: TableSchema, aga
         schema,
         rows: { chunks: fresh.rows.chunks(), size: fresh.rows.size, keep: (chunk) => file && (at += file.write(chunk, { at })) },
         bodies: fresh.bodies,
+        ...(fresh.cells ? { cells: fresh.cells } : {}),
         key: "saved",
         onProgress: progress,
       });
@@ -306,6 +316,14 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
   if (req.op === "open") return undefined;
   if (req.op === "persistent") return persistent;
   if (req.op === "storage") return persistent ? "kept" : (noStorage ?? "none");
+  if (req.op === "held") {
+    // No index to be had: the table's rows from the archive just read, into the page's memory, with the lines they couldn't read kept (#567).
+    const entry = waiting.get(`${req.bundle}/${req.name}`);
+    if (!entry) return null;
+    const held = { ...readHeldRows(entry.rows, FIRST_ROWS_FILE), ...(entry.cells ? { cells: entry.cells } : {}) };
+    waiting.delete(`${req.bundle}/${req.name}`);
+    return held;
+  }
   if (!driver) throw new Error("the database is not open");
   switch (req.op) {
     case "exec":
@@ -321,6 +339,8 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
       return serve!(req.request);
     case "peek":
       return rowsBeingBuilt(driver, req.name, req.start, req.end);
+    case "alter":
+      return alterIndex(driver, req.name, req.from, req.to, req.restore ? { restore: req.restore } : {});
     case "close":
       held.get(bundle)?.db.close();
       held.delete(bundle);
@@ -345,7 +365,7 @@ const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
 // a build is one transaction, and would take the write with it if it failed.
 const building = new Map<string, Promise<unknown>>();
 const writes = (req: Request): boolean =>
-  req.op === "ensure" || req.op === "build" || req.op === "save" || req.op === "search" || req.op === "run" || req.op === "exec" || req.op === "batch" || (req.op === "rows" && req.request.ask === "edits");
+  req.op === "ensure" || req.op === "build" || req.op === "save" || req.op === "search" || req.op === "alter" || req.op === "fill" || req.op === "run" || req.op === "exec" || req.op === "batch" || (req.op === "rows" && req.request.ask === "edits");
 
 /** Resolves once the messages already sent to this worker have been taken in. (A channel to itself: a timer would be held back to 4 ms a time.) */
 const turnstile = new MessageChannel();
@@ -466,20 +486,23 @@ function save(req: Request & { op: "save" }): void {
   );
 }
 
-/** A search index is made a step at a time, each behind whatever the page asked meanwhile. */
-function searchStep(req: Request & { op: "search" }): void {
+/**
+ * A search index, or what a change of fields left to work out (fillIndex),
+ * is made a step at a time, each behind whatever the page asked meanwhile.
+ */
+function step(req: Request & { op: "search" | "fill" }): void {
   // The page comes first: a step waits until it has asked for nothing for a moment.
   // So does a save: its rows are the person's edits on their way to the file.
-  if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => searchStep(req), QUIET_MS / 2);
+  if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => step(req), QUIET_MS / 2);
   inTurn(async () => {
     await use(req.bundle);
     const from = performance.now();
-    const more = driver ? await buildSearchIndex(driver, req.name, SEARCH_STEP) : false;
-    timed({ what: "search step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
+    const more = !driver ? false : req.op === "search" ? await buildSearchIndex(driver, req.name, SEARCH_STEP) : await fillIndex(driver, req.name, req.schema, SEARCH_STEP);
+    timed({ what: `${req.op} step`, ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
     return more;
   }).then(
     (more) => {
-      if (more) setTimeout(() => searchStep(req), 0);
+      if (more) setTimeout(() => step(req), 0);
       else post({ id: req.id, ok: true });
     },
     (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
@@ -488,7 +511,7 @@ function searchStep(req: Request & { op: "search" }): void {
 
 function take(req: Request): void {
   if (req.op === "ensure" || req.op === "build") return build(req);
-  if (req.op === "search") return searchStep(req);
+  if (req.op === "search" || req.op === "fill") return step(req);
   if (req.op === "save") return save(req);
   lastAsked = Date.now();
   void inTurn(async () => {
@@ -506,10 +529,17 @@ function take(req: Request): void {
   });
 }
 
-self.onmessage = (e: MessageEvent<Request>) => {
+// Nothing is taken before the EDN core is in, so every formula this worker works out is the core's, as
+// the page's are. Requests still go in the order they came.
+const formulas = loadEdn().then(
+  (edn) => setFormulaEngine(edn),
+  (e: unknown) => console.warn(`index worker: formulas aren't worked out, the EDN core didn't load: ${String(e)}`),
+);
+
+self.onmessage = (e: MessageEvent<Request>) => void formulas.then(() => {
   const req = e.data;
   // A write to a bundle that is being built waits for the build.
   const busy = "bundle" in req && writes(req) ? building.get(req.bundle) : undefined;
   if (busy) void busy.then(() => take(req));
   else take(req);
-};
+});

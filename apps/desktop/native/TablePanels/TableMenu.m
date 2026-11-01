@@ -17,7 +17,9 @@
 // macOS asks before ending the app.
 // Development only: postKey(characters, keyCode, modifiers) brings the app
 // forward (a typed key implies it's frontmost) and posts a key press to its
-// own event queue, so it goes where a typed one would; titles(menu)
+// own event queue, so it goes where a typed one would; postClick(x, y)
+// posts a click there too, at a point measured from the content's top
+// left as React measures, so it lands on whatever is under it; titles(menu)
 // resolves with a menu's item titles; setWindowWidth(width) resizes the
 // main window, as dragging its edge would; pressAlertButton(title) clicks
 // the button titled so in a sheet shown on a window (an alert), resolving
@@ -26,6 +28,7 @@
 #import <AppKit/AppKit.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
+#import "TablePanels-Swift.h"
 
 @interface TableMenu : RCTEventEmitter <RCTBridgeModule>
 @end
@@ -35,6 +38,14 @@
   NSMutableSet<NSString *> *_disabled;
   BOOL _observed;
   BOOL _unsaved;
+  /// Edit › Undo and Redo, once they are the table's as well as a text field's (setUndo).
+  NSMenuItem *_undoItem;
+  NSMenuItem *_redoItem;
+  BOOL _canUndo;
+  BOOL _canRedo;
+  /// What the two items say when they'd act on the table: "Undo Edit Title".
+  NSString *_undoTitle;
+  NSString *_redoTitle;
 }
 
 RCT_EXPORT_MODULE();
@@ -51,7 +62,7 @@ RCT_EXPORT_MODULE();
 
 - (NSArray<NSString *> *)supportedEvents
 {
-  return @[ @"menu", @"quit" ];
+  return @[ @"menu", @"quit", @"search" ];
 }
 
 - (void)startObserving
@@ -61,12 +72,29 @@ RCT_EXPORT_MODULE();
                                            selector:@selector(shouldTerminate:)
                                                name:@"TableDesktopShouldTerminate"
                                              object:nil];
+  // The toolbar's buttons and its search field (TableToolbar.swift).
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarCommand:) name:@"TableDesktopCommand" object:nil];
+  [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(toolbarSearch:) name:@"TableDesktopSearch" object:nil];
 }
 
 - (void)stopObserving
 {
   _observed = NO;
   [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopShouldTerminate" object:nil];
+  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopCommand" object:nil];
+  [[NSNotificationCenter defaultCenter] removeObserver:self name:@"TableDesktopSearch" object:nil];
+}
+
+- (void)toolbarCommand:(NSNotification *)notification
+{
+  if (!_observed) return;
+  [self sendEventWithName:@"menu" body:@{ @"id" : notification.userInfo[@"id"] ?: @"" }];
+}
+
+- (void)toolbarSearch:(NSNotification *)notification
+{
+  if (!_observed) return;
+  [self sendEventWithName:@"search" body:@{ @"text" : notification.userInfo[@"text"] ?: @"" }];
 }
 
 - (void)shouldTerminate:(NSNotification *)notification
@@ -167,6 +195,8 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
   if (_disabled == nil) _disabled = [NSMutableSet new];
   if (enabled) [_disabled removeObject:itemId];
   else [_disabled addObject:itemId];
+  // The toolbar's buttons are on and off as their menu items are.
+  TableToolbar.disabled = _disabled;
   NSMenuItem *item = _items[itemId];
   if (item == nil) {
     NSMenu *menu = topLevelMenuMade(menuTitle);
@@ -187,7 +217,60 @@ RCT_EXPORT_METHOD(setItem:(NSString *)itemId
 // AppKit enables an item whose target answers its action; this says which don't, for now.
 - (BOOL)validateMenuItem:(NSMenuItem *)item
 {
+  if (item == _undoItem || item == _redoItem) {
+    // Text being typed has its own undo; anywhere else it is the table's.
+    // The item says which, and what: "Undo Typing", or the table's own words.
+    NSUndoManager *typing = [self typingUndoManager];
+    if (typing != nil) {
+      item.title = item == _undoItem ? typing.undoMenuItemTitle : typing.redoMenuItemTitle;
+      return item == _undoItem ? typing.canUndo : typing.canRedo;
+    }
+    item.title = item == _undoItem ? _undoTitle : _redoTitle;
+    return item == _undoItem ? _canUndo : _canRedo;
+  }
   return ![_disabled containsObject:item.representedObject];
+}
+
+/// The undo manager of the text being typed in the key window, when that is where the keyboard is.
+- (NSUndoManager *)typingUndoManager
+{
+  NSResponder *first = NSApp.keyWindow.firstResponder;
+  return [first isKindOfClass:[NSText class]] ? first.undoManager : nil;
+}
+
+/// Edit › Undo and Redo (⌘Z, ⇧⌘Z) undo the table's last edit, and redo it,
+/// whenever no text is being typed; in a text field they stay the text's
+/// own. The items are AppKit's, in their usual place: they are given this
+/// as their target, and are enabled by whichever of the two they'd act on.
+RCT_EXPORT_METHOD(setUndo:(BOOL)canUndo canRedo:(BOOL)canRedo undoTitle:(NSString *)undoTitle redoTitle:(NSString *)redoTitle)
+{
+  _canUndo = canUndo;
+  _canRedo = canRedo;
+  _undoTitle = undoTitle;
+  _redoTitle = redoTitle;
+  if (_undoItem != nil) return;
+  for (NSMenuItem *item in topLevelMenu(@"Edit").itemArray) {
+    if (item.action == @selector(undo:)) _undoItem = item;
+    else if (item.action == @selector(redo:)) _redoItem = item;
+  }
+  _undoItem.target = self;
+  _undoItem.action = @selector(undoChosen:);
+  _redoItem.target = self;
+  _redoItem.action = @selector(redoChosen:);
+}
+
+- (void)undoChosen:(NSMenuItem *)item
+{
+  NSUndoManager *typing = [self typingUndoManager];
+  if (typing != nil) [typing undo];
+  else if (_observed) [self sendEventWithName:@"menu" body:@{ @"id" : @"undo" }];
+}
+
+- (void)redoChosen:(NSMenuItem *)item
+{
+  NSUndoManager *typing = [self typingUndoManager];
+  if (typing != nil) [typing redo];
+  else if (_observed) [self sendEventWithName:@"menu" body:@{ @"id" : @"redo" }];
 }
 
 RCT_EXPORT_METHOD(copyText:(NSString *)text)
@@ -217,6 +300,190 @@ RCT_EXPORT_METHOD(postKey:(NSString *)characters
                                    isARepeat:NO
                                      keyCode:(unsigned short)keyCode.unsignedShortValue];
   [NSApp postEvent:event atStart:NO];
+}
+
+RCT_EXPORT_METHOD(postClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
+{
+  [NSApp activateIgnoringOtherApps:YES];
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  // The point is in the React view, which measures down from its top left.
+  NSView *root = TableShell.rootView ?: window.contentView;
+  NSPoint inRoot = NSMakePoint(x.doubleValue, root.isFlipped ? y.doubleValue : root.bounds.size.height - y.doubleValue);
+  NSPoint at = [root convertPoint:inRoot toView:nil];
+  for (NSNumber *type in @[@(NSEventTypeLeftMouseDown), @(NSEventTypeLeftMouseUp)]) {
+    NSEvent *event = [NSEvent mouseEventWithType:(NSEventType)type.unsignedIntegerValue
+                                        location:at
+                                   modifierFlags:0
+                                       timestamp:NSProcessInfo.processInfo.systemUptime
+                                    windowNumber:window.windowNumber
+                                         context:nil
+                                     eventNumber:0
+                                      clickCount:1
+                                        pressure:1];
+    [NSApp postEvent:event atStart:NO];
+  }
+}
+
+/// Development only: turn the scroll wheel by `lines` (positive scrolls
+/// down the page) over a point in the window, measured from its top left,
+/// so it reaches panes outside React's view too (the inspector).
+RCT_EXPORT_METHOD(postScroll:(nonnull NSNumber *)x y:(nonnull NSNumber *)y lines:(nonnull NSNumber *)lines)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSPoint inWindow = NSMakePoint(x.doubleValue, NSHeight(window.frame) - y.doubleValue);
+  CGEventRef scroll = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 1, -lines.intValue);
+  if (scroll == NULL) return;
+  NSPoint onScreen = [window convertPointToScreen:inWindow];
+  // Quartz measures down from the top of the main screen.
+  CGEventSetLocation(scroll, CGPointMake(onScreen.x, NSMaxY(NSScreen.screens.firstObject.frame) - onScreen.y));
+  NSEvent *event = [NSEvent eventWithCGEvent:scroll];
+  CFRelease(scroll);
+  NSView *under = [window.contentView.superview hitTest:inWindow] ?: window.contentView;
+  [under scrollWheel:event];
+}
+
+/// Development only: a right-click at a point in the content, as postClick's left one.
+RCT_EXPORT_METHOD(postRightClick:(nonnull NSNumber *)x y:(nonnull NSNumber *)y)
+{
+  [NSApp activateIgnoringOtherApps:YES];
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSView *root = TableShell.rootView ?: window.contentView;
+  NSPoint inRoot = NSMakePoint(x.doubleValue, root.isFlipped ? y.doubleValue : root.bounds.size.height - y.doubleValue);
+  NSPoint at = [root convertPoint:inRoot toView:nil];
+  for (NSNumber *type in @[@(NSEventTypeRightMouseDown), @(NSEventTypeRightMouseUp)]) {
+    NSEvent *event = [NSEvent mouseEventWithType:(NSEventType)type.unsignedIntegerValue
+                                        location:at
+                                   modifierFlags:0
+                                       timestamp:NSProcessInfo.processInfo.systemUptime
+                                    windowNumber:window.windowNumber
+                                         context:nil
+                                     eventNumber:0
+                                      clickCount:1
+                                        pressure:1];
+    [NSApp postEvent:event atStart:NO];
+  }
+}
+
+/// A toolbar button's label and hint, by its command's id.
+RCT_EXPORT_METHOD(setToolbarLabel:(NSString *)commandId label:(NSString *)label)
+{
+  [TableToolbar.shared setLabel:label for:commandId];
+}
+
+/// Which side of the sidebar the toolbar's switch shows: tables, or files.
+RCT_EXPORT_METHOD(setFilesMode:(BOOL)files)
+{
+  [TableToolbar.shared setFilesMode:files];
+}
+
+/// The search field's text, when the app changes it.
+RCT_EXPORT_METHOD(setSearchText:(NSString *)text)
+{
+  [TableToolbar.shared setSearch:text];
+}
+
+/// Put the cursor in the toolbar's search field.
+RCT_EXPORT_METHOD(focusSearch)
+{
+  [TableToolbar.shared focusSearch];
+}
+
+/// What has the keyboard: development only. Resolves with the first
+/// responder's class, and for a text view whether it can be edited and how
+/// much text it holds.
+RCT_EXPORT_METHOD(firstResponder:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  NSResponder *first = window.firstResponder;
+  NSMutableDictionary *said = [@{ @"class" : NSStringFromClass(first.class) ?: @"none", @"key" : @(window.isKeyWindow) } mutableCopy];
+  if ([first isKindOfClass:NSTextView.class]) {
+    NSTextView *text = (NSTextView *)first;
+    said[@"editable"] = @(text.isEditable);
+    said[@"length"] = @(text.string.length);
+    said[@"fieldEditor"] = @(text.isFieldEditor);
+  }
+  resolve(said);
+}
+
+/// Text typed in the toolbar's search field: development only, as postKey is.
+RCT_EXPORT_METHOD(postSearch:(NSString *)text)
+{
+  [TableToolbar.shared setSearch:text];
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopSearch" object:nil userInfo:@{ @"text" : text }];
+}
+
+/// A toolbar button pressed, by its command's id: development only, as postKey is.
+/// Development only: choose an item of a menu in the menu bar by its title, as a click on it does.
+/// A title ending in "…" matches by what comes before it ("Undo…" is Undo whatever it says it undoes).
+/// Answers "chosen: <title>", "disabled: <title>" (it is there but greyed) or "none".
+RCT_EXPORT_METHOD(chooseMenuItem:(NSString *)menuTitle
+                  title:(NSString *)title
+                  resolve:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+{
+  NSMenu *menu = topLevelMenu(menuTitle);
+  [menu update];
+  NSInteger at = [menu indexOfItemWithTitle:title];
+  if (at < 0 && [title hasSuffix:@"…"]) {
+    NSString *start = [title substringToIndex:title.length - 1];
+    for (NSInteger i = 0; i < menu.numberOfItems; i++) {
+      if ([[menu itemAtIndex:i].title hasPrefix:start]) {
+        at = i;
+        break;
+      }
+    }
+  }
+  if (at < 0) return resolve(@"none");
+  NSMenuItem *item = [menu itemAtIndex:at];
+  if (!item.enabled) return resolve([@"disabled: " stringByAppendingString:item.title]);
+  NSString *said = [@"chosen: " stringByAppendingString:item.title];
+  [menu performActionForItemAtIndex:at];
+  resolve(said);
+}
+
+RCT_EXPORT_METHOD(postCommand:(NSString *)commandId)
+{
+  [[NSNotificationCenter defaultCenter] postNotificationName:@"TableDesktopCommand" object:nil userInfo:@{ @"id" : commandId }];
+}
+
+static void adoptScrollViews(NSView *view, NSView *root, NSMutableArray<NSString *> *found)
+{
+  if ([view isKindOfClass:NSScrollView.class]) {
+    NSScrollView *scroll = (NSScrollView *)view;
+    NSRect inRoot = [scroll convertRect:scroll.bounds toView:root];
+    // The one that starts at the pane's top and fills it: the view's own scroll, not a table's sideways one.
+    if (NSMinY(inRoot) <= 1 && NSHeight(inRoot) > NSHeight(root.bounds) * 0.6) {
+      scroll.automaticallyAdjustsContentInsets = YES;
+      [found addObject:[NSString stringWithFormat:@"%@ %@ insets top %.0f", scroll.class, NSStringFromRect(inRoot), scroll.contentInsets.top]];
+    }
+  }
+  for (NSView *sub in view.subviews) adoptScrollViews(sub, root, found);
+}
+
+/// Let the system inset the view's scroll under the toolbar itself, which is
+/// what it softens content behind a toolbar for: React Native's scroll view
+/// turns that off. Resolves with what it found, for a script to read.
+RCT_EXPORT_METHOD(adoptToolbarInsets:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSMutableArray<NSString *> *found = [NSMutableArray new];
+  NSView *root = TableShell.rootView;
+  if (root != nil) adoptScrollViews(root, root, found);
+  resolve(found);
+}
+
+/// How far the toolbar comes down over the content, in points: what's under it starts this far down.
+RCT_EXPORT_METHOD(topInset:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  resolve(@(window == nil ? 0 : NSHeight(window.frame) - NSMaxY(window.contentLayoutRect)));
+}
+
+/// The window's title and the line under it: the view on screen, and where it lives.
+RCT_EXPORT_METHOD(setWindowTitle:(NSString *)title subtitle:(NSString *)subtitle)
+{
+  NSWindow *window = NSApp.mainWindow ?: NSApp.windows.firstObject;
+  window.title = title;
+  window.subtitle = subtitle;
 }
 
 RCT_EXPORT_METHOD(setWindowWidth:(nonnull NSNumber *)width)

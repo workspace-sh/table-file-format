@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  addressedView,
   parseAddress,
   formatAddress,
   resolveRow,
@@ -198,5 +199,47 @@ describe("resolveRow", () => {
       Promise.resolve(path === "docs/projects.table" ? table : null);
     const row = await resolveRow("docs/projects.table#row=p1", asyncLookup);
     assert.equal(row?.id, "p1");
+  });
+});
+
+describe("escaping (SPEC section 10)", () => {
+  it("an id any string may be survives the round trip", () => {
+    const addr: Address = { tablePath: "crm.table", tableName: "deals & co", rowId: "a&b=c#d%e/f", fieldName: "net = gross" };
+    const text = formatAddress(addr);
+    assert.equal(text, "crm.table#table=deals%20%26%20co&row=a%26b%3Dc%23d%25e%2Ff&field=net%20%3D%20gross");
+    assert.deepEqual(parseAddress(text), addr);
+  });
+
+  it("a writer's own ids read the same, encoded or not", () => {
+    assert.equal(formatAddress({ tablePath: "crm.table", tableName: "deals", rowId: "dl-1" }), "crm.table#table=deals&row=dl-1");
+    // Written before values were encoded, and not valid percent-encoding: read as it stands.
+    assert.equal(parseAddress("crm.table#row=50%off")?.rowId, "50%off");
+  });
+});
+
+describe("addressedView", () => {
+  const views = [
+    { id: "juycicwios88m", name: "By date" },
+    { id: "pipeline", name: "Pipeline" },
+    { id: "mufe9nmjruiq5", name: "By date" },
+  ];
+
+  it("finds a view by its id first", () => {
+    assert.equal(addressedView(views, "mufe9nmjruiq5")?.id, "mufe9nmjruiq5");
+    assert.equal(addressedView(views, "pipeline")?.id, "pipeline");
+  });
+
+  it("else by its name, ignoring case, as the link was written with a space encoded", () => {
+    const parsed = parseAddress("budget.table#table=ledger&view=by%20DATE");
+    assert.equal(parsed?.viewId, "by DATE");
+    assert.equal(addressedView(views, parsed!.viewId!)?.id, "juycicwios88m");
+  });
+
+  it("takes the first of two views with one name, in views.json's order", () => {
+    assert.equal(addressedView(views, "By date")?.id, "juycicwios88m");
+  });
+
+  it("finds nothing for a name no view has", () => {
+    assert.equal(addressedView(views, "Board"), undefined);
   });
 });

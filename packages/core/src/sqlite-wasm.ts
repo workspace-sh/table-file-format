@@ -68,5 +68,6 @@ export function oo1Driver(db: Oo1Database): SqlDriver {
       const s = prepared(sql);
       for (const params of lists) stepOnce(s, params);
     },
+    inProcess: true,
   };
 }

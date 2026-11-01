@@ -3,7 +3,7 @@
 // use, how a typed filter value becomes a stored one, and which field a
 // layout starts from. Views are SPEC section 4.
 
-import { enumOptions, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
+import { enumOptions, type EnumColor, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewColorRule, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
 
 export const OPERATOR_LABELS: Record<FilterOperator, string> = {
   eq: "is",
@@ -29,6 +29,8 @@ const DATES: FieldType[] = ["date", "datetime", "time"];
 export function operatorsFor(field: Field | undefined): FilterOperator[] {
   const type = field?.type ?? "string";
   if (type === "boolean") return ["eq", "neq", "empty", "not_empty"];
+  // Any kind of value (D56): what text and numbers are asked, more or less than comparing like with like.
+  if (type === "any") return ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "not_contains", "empty", "not_empty", "in", "not_in"];
   // A list (a multi-select, say) is asked about its items (D35).
   if (type === "array") return ["contains", "not_contains", "in", "not_in", "empty", "not_empty"];
   if (NUMERIC.includes(type) || DATES.includes(type)) {
@@ -51,6 +53,8 @@ function one(field: Field | undefined, raw: string): unknown {
     const n = Number(text);
     return text !== "" && Number.isFinite(n) ? n : text;
   }
+  // Any kind (D56): a number typed is a number, so more or less than compares numbers.
+  if (type === "any" && /^-?(0|[1-9]\d{0,14})(\.\d+)?$/.test(text)) return Number(text);
   return text;
 }
 
@@ -205,6 +209,119 @@ export function picksChoice(field: Field | undefined, operator: FilterOperator):
   return enumOptions(field).length > 0 && ["eq", "neq", "contains", "not_contains"].includes(operator);
 }
 
+// ─── Colour rules (SPEC section 4, D53) ────────────────────────────────
+
+/** The choice colours a rule can take, in the palette's order. */
+export const RULE_COLORS: EnumColor[] = ["red", "orange", "yellow", "lime", "green", "mint", "teal", "cyan", "blue", "indigo", "purple", "pink", "brown", "gray"];
+
+/** A colour's name as it's shown: "Red". */
+export function colorLabel(color: string): string {
+  return color.charAt(0).toUpperCase() + color.slice(1);
+}
+
+/** The view's colour rules, as it holds them (none is an empty list). */
+export function colorRulesOf(view: Pick<View, "colors">): ViewColorRule[] {
+  return Array.isArray(view.colors) ? view.colors : [];
+}
+
+/** Colour rules set; none at all is no `colors`. */
+export function colorRulesPatch(next: ViewColorRule[]): Partial<View> {
+  return { colors: next.length ? next : undefined };
+}
+
+/** A new rule: the first field's first condition, the next colour not yet used, the whole row. Null when there's no field. */
+export function newColorRule(live: Field[], rules: ViewColorRule[]): ViewColorRule | null {
+  const filter = newFilter(live);
+  if (!filter) return null;
+  const used = new Set(rules.map((r) => r.color));
+  return { filter: [filter], color: RULE_COLORS.find((c) => !used.has(c)) ?? "red" };
+}
+
+/** One rule changed, the rest kept in their order: the first that matches wins, so order matters. */
+export function withColorRule(rules: ViewColorRule[], index: number, rule: ViewColorRule | null): ViewColorRule[] {
+  const next = rules.slice();
+  if (rule === null) next.splice(index, 1);
+  else next[index] = rule;
+  return next;
+}
+
+/**
+ * A rule's first condition replaced: what a settings panel edits. A rule
+ * with more conditions (written by another app) keeps the rest, and the
+ * panel says how many.
+ */
+export function withFirstCondition(rule: ViewColorRule, filter: ViewFilter): ViewColorRule {
+  return { ...rule, filter: [filter, ...rule.filter.slice(1)] };
+}
+
+/** What a rule colours: a field's name, or "" for the whole row. */
+export function colorTargetPatch(rule: ViewColorRule, target: string): ViewColorRule {
+  const { field: _was, ...rest } = rule;
+  return target ? { ...rest, field: target } : rest;
+}
+
+/** A row hidden by hand in a view (D58): its id added; none left is no `hidden`. */
+export function hiddenPatch(view: Pick<View, "hidden">, rowId: string, hide: boolean): Partial<View> {
+  const now = new Set(view.hidden ?? []);
+  if (hide) now.add(rowId);
+  else now.delete(rowId);
+  return { hidden: now.size > 0 ? [...now] : undefined };
+}
+
+/** What a view says of the rows it hides by hand: "2 rows hidden", or null for none. */
+export function hiddenRowsText(view: Pick<View, "hidden">): string | null {
+  const n = view.hidden?.length ?? 0;
+  return n === 0 ? null : `${n} ${n === 1 ? "row" : "rows"} hidden`;
+}
+
+/** The most columns a view's setting offers to freeze. */
+const MOST_FROZEN = 5;
+
+/**
+ * How many of a table view's first columns stay put (`frozen.columns`,
+ * D58): the first alone when it doesn't say.
+ */
+export function frozenColumnsOf(view: Pick<View, "frozen">): number {
+  return view.frozen?.columns ?? 1;
+}
+
+/**
+ * The choices for a view's frozen columns, of the `shown` columns it has:
+ * none, or the first one, two… up to all but one, so something is left to
+ * scroll (and no more than five).
+ */
+export function frozenOptions(shown: number): { value: string; label: string }[] {
+  const options = [{ value: "0", label: "None" }, { value: "1", label: "First column" }];
+  for (let n = 2; n <= Math.min(MOST_FROZEN, shown - 1); n++) options.push({ value: String(n), label: `First ${n} columns` });
+  return options;
+}
+
+/** A view frozen at its first `columns`: the first alone is said by saying nothing, and frozen rows are kept. */
+export function frozenPatch(view: Pick<View, "frozen">, columns: number): Partial<View> {
+  const { columns: _, ...rest } = view.frozen ?? {};
+  const next = columns === 1 ? rest : { ...rest, columns };
+  return { frozen: Object.keys(next).length > 0 ? next : undefined };
+}
+
+/** How many of a table view's first rows stay at the top with its header (`frozen.rows`, D58): none when it doesn't say. */
+export function frozenRowsOf(view: Pick<View, "frozen">): number {
+  return view.frozen?.rows ?? 0;
+}
+
+/** The choices for a view's frozen rows: the header alone, or it and the first row, two… up to five. */
+export function frozenRowOptions(): { value: string; label: string }[] {
+  const options = [{ value: "0", label: "Header only" }, { value: "1", label: "First row" }];
+  for (let n = 2; n <= MOST_FROZEN; n++) options.push({ value: String(n), label: `First ${n} rows` });
+  return options;
+}
+
+/** A view frozen at its first `rows`: none is said by saying nothing, and frozen columns are kept. */
+export function frozenRowsPatch(view: Pick<View, "frozen">, rows: number): Partial<View> {
+  const { rows: _, ...rest } = view.frozen ?? {};
+  const next = rows === 0 ? rest : { ...rest, rows };
+  return { frozen: Object.keys(next).length > 0 ? next : undefined };
+}
+
 /** What a view settings panel takes, whatever draws it: the web one and table-gtk's. */
 export interface ViewSettingsProps {
   view: View;
@@ -225,6 +342,17 @@ export interface ViewSettingsProps {
   personal?: boolean;
   onSaveForEveryone?: () => void;
   onReset?: () => void;
+  /** How many formulas read this view by place (D41): said beside the Sheet switch, as they depend on it. */
+  sheetReaders?: number;
+}
+
+/** What the Sheet switch means, and, while formulas read this view by place, that they depend on it. */
+export function sheetNote(view: View, readers = 0): string {
+  const what = "Letter the columns and number the rows, so formulas can use =B7.";
+  if (view.coordinates !== true || readers === 0) return what;
+  return readers === 1
+    ? `${what} A formula reads this sheet by place: it shows #REF! if this stops being a sheet.`
+    : `${what} ${readers} formulas read this sheet by place: they show #REF! if this stops being a sheet.`;
 }
 
 /** A table view made a Sheet view, or not (D41): off is no `coordinates` at all. */

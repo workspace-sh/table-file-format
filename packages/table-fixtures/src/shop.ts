@@ -5,7 +5,7 @@ import type { ParsedBundle } from "@workspace.sh/table-core";
 export const shopBundle: ParsedBundle = {
   "meta": {
     "format": "table",
-    "formatVersion": 1,
+    "formatVersion": 3,
     "title": "Shop",
     "description": "A small coffee shop: customers, products, orders and the lines on each, linked together.",
     "tables": [
@@ -23,6 +23,7 @@ export const shopBundle: ParsedBundle = {
       "schema": {
         "fields": [
           {
+            "id": "ek788rsnx5gzi",
             "name": "number",
             "type": "string",
             "title": "Order",
@@ -32,6 +33,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "8kggyzjcrbp75",
             "name": "customer",
             "type": "string",
             "title": "Customer",
@@ -41,11 +43,13 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "qs5wtma53wsox",
             "name": "ordered",
             "type": "date",
             "title": "Ordered"
           },
           {
+            "id": "ct5d6ndk38c8d",
             "name": "status",
             "type": "string",
             "title": "Status",
@@ -80,12 +84,14 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "nm9efu6zgd3zo",
             "name": "shipping",
             "type": "number",
             "title": "Shipping",
             "format": "currency:GBP"
           },
           {
+            "id": "nqjnkkiyyier1",
             "name": "items",
             "type": "number",
             "title": "Items",
@@ -96,6 +102,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "b8qqo6ndauzug",
             "name": "subtotal",
             "type": "number",
             "title": "Subtotal",
@@ -107,6 +114,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "y9cxdk3dhxqur",
             "name": "total",
             "type": "number",
             "title": "Total",
@@ -118,12 +126,13 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "q7es69q4j14e6",
             "name": "city",
             "type": "string",
             "title": "City",
             "description": "Looked up from the order's customer (D36).",
             "computed": {
-              "expr": "(lookup \"customer\" \"city\")",
+              "expr": "(related \"customer\" \"city\")",
               "dialect": "table-expr-v1"
             }
           }
@@ -132,113 +141,113 @@ export const shopBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "or-1001",
+          "id": "ob4xghd7r9hqqs3ake4us1nt63",
           "number": "#1001",
-          "customer": "cu-ada",
+          "customer": "bj1ghy45ym894an5x1ku56gur5",
           "ordered": "2026-08-03",
           "status": "delivered",
           "shipping": 3.5
         },
         {
-          "id": "or-1002",
+          "id": "tkxyjc9eye14wwhp1qu1ct5dhd",
           "number": "#1002",
-          "customer": "cu-chloe",
+          "customer": "zt6cy3mx5fb7ozkbdb5knwy5qr",
           "ordered": "2026-08-05",
           "status": "delivered",
           "shipping": 0
         },
         {
-          "id": "or-1003",
+          "id": "a8k5z7ap4qsoy8d1d8gaj98ixf",
           "number": "#1003",
-          "customer": "cu-ben",
+          "customer": "sqewfr5b4hunz4qe33ebcmy9s4",
           "ordered": "2026-08-11",
           "status": "delivered",
           "shipping": 3.5
         },
         {
-          "id": "or-1004",
+          "id": "e4978orkencyqquqdychdambwp",
           "number": "#1004",
-          "customer": "cu-ada",
+          "customer": "bj1ghy45ym894an5x1ku56gur5",
           "ordered": "2026-08-17",
           "status": "refunded",
           "shipping": 3.5
         },
         {
-          "id": "or-1005",
+          "id": "s6q8azgi1ro6hcmhdgw5wysc83",
           "number": "#1005",
-          "customer": "cu-dev",
+          "customer": "cwaamegmih8i4g7unp6d4amh3y",
           "ordered": "2026-08-24",
           "status": "delivered",
           "shipping": 3.5
         },
         {
-          "id": "or-1006",
+          "id": "c3hydaasocm1mqdt9f4qahukpc",
           "number": "#1006",
-          "customer": "cu-ewa",
+          "customer": "b44yqmx5oun9kmb51dh8q4qqtb",
           "ordered": "2026-08-29",
           "status": "shipped",
           "shipping": 3.5
         },
         {
-          "id": "or-1007",
+          "id": "uiiz5asdafqto7468giry8g45z",
           "number": "#1007",
-          "customer": "cu-chloe",
+          "customer": "zt6cy3mx5fb7ozkbdb5knwy5qr",
           "ordered": "2026-09-02",
           "status": "delivered",
           "shipping": 0
         },
         {
-          "id": "or-1008",
+          "id": "o8ee5ux7cxjpwdmrnbeadp6tgz",
           "number": "#1008",
-          "customer": "cu-finn",
+          "customer": "juhsk7aiywrpx1cexhe5ipgiuf",
           "ordered": "2026-09-06",
           "status": "shipped",
           "shipping": 4.5
         },
         {
-          "id": "or-1009",
+          "id": "3gj7ys9pzwkxp7i3dm7bjjufz6",
           "number": "#1009",
-          "customer": "cu-grace",
+          "customer": "u7f71dnitqr9fspst36zszspec",
           "ordered": "2026-09-10",
           "status": "paid",
           "shipping": 0
         },
         {
-          "id": "or-1010",
+          "id": "am8adqxn1oubmfri713euckx7x",
           "number": "#1010",
-          "customer": "cu-ada",
+          "customer": "bj1ghy45ym894an5x1ku56gur5",
           "ordered": "2026-09-14",
           "status": "paid",
           "shipping": 3.5
         },
         {
-          "id": "or-1011",
+          "id": "kf3rpts54th5zw6q8mf64wuqqe",
           "number": "#1011",
-          "customer": "cu-hugo",
+          "customer": "igiw397mrupoxa6j6xjk54bzw4",
           "ordered": "2026-09-18",
           "status": "pending",
           "shipping": 3.5
         },
         {
-          "id": "or-1012",
+          "id": "5tbaybjdk4tzbwkq9on45j6q54",
           "number": "#1012",
-          "customer": "cu-ben",
+          "customer": "sqewfr5b4hunz4qe33ebcmy9s4",
           "ordered": "2026-09-20",
           "status": "paid",
           "shipping": 3.5
         },
         {
-          "id": "or-1013",
+          "id": "g86jbr7d4znp78r4xc7zzns3he",
           "number": "#1013",
-          "customer": "cu-chloe",
+          "customer": "zt6cy3mx5fb7ozkbdb5knwy5qr",
           "ordered": "2026-09-23",
           "status": "pending",
           "shipping": 0
         },
         {
-          "id": "or-1014",
+          "id": "rsa389qbeuffe1hzot7ixz69xj",
           "number": "#1014",
-          "customer": "cu-dev",
+          "customer": "cwaamegmih8i4g7unp6d4amh3y",
           "ordered": "2026-09-25",
           "status": "pending",
           "shipping": 3.5
@@ -246,7 +255,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "all",
+          "id": "hnmryzi51j6jz",
           "name": "All orders",
           "layout": "table",
           "sort": [
@@ -274,7 +283,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "fulfilment",
+          "id": "j79j66pjaafew",
           "name": "Fulfilment",
           "layout": "board",
           "board_field": "status",
@@ -286,13 +295,13 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "calendar",
+          "id": "m45au98xccumq",
           "name": "Calendar",
           "layout": "calendar",
           "calendar_field": "ordered"
         },
         {
-          "id": "to-ship",
+          "id": "zhccfwcqrmbk1",
           "name": "To ship",
           "layout": "table",
           "filter": [
@@ -324,12 +333,34 @@ export const shopBundle: ParsedBundle = {
         "title": "Orders",
         "description": "Each order a customer placed."
       },
-      "path": "fixtures/shop.table/tables/orders"
+      "path": "fixtures/shop.table/tables/orders",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "ob4xghd7r9hqqs3ake4us1nt63",
+            "tkxyjc9eye14wwhp1qu1ct5dhd",
+            "a8k5z7ap4qsoy8d1d8gaj98ixf",
+            "e4978orkencyqquqdychdambwp",
+            "s6q8azgi1ro6hcmhdgw5wysc83",
+            "c3hydaasocm1mqdt9f4qahukpc",
+            "uiiz5asdafqto7468giry8g45z",
+            "o8ee5ux7cxjpwdmrnbeadp6tgz",
+            "3gj7ys9pzwkxp7i3dm7bjjufz6",
+            "am8adqxn1oubmfri713euckx7x",
+            "kf3rpts54th5zw6q8mf64wuqqe",
+            "5tbaybjdk4tzbwkq9on45j6q54",
+            "g86jbr7d4znp78r4xc7zzns3he",
+            "rsa389qbeuffe1hzot7ixz69xj"
+          ]
+        }
+      ]
     },
     "customers": {
       "schema": {
         "fields": [
           {
+            "id": "rghwqogkxjjs8",
             "name": "name",
             "type": "string",
             "title": "Customer",
@@ -338,6 +369,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "rrw119rwcjag3",
             "name": "email",
             "type": "string",
             "title": "Email",
@@ -347,16 +379,19 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "q7es69q4j14e6",
             "name": "city",
             "type": "string",
             "title": "City"
           },
           {
+            "id": "xmeqq5g45mirc",
             "name": "since",
             "type": "date",
             "title": "Customer since"
           },
           {
+            "id": "8oeaytgn4b3t8",
             "name": "order_count",
             "type": "number",
             "title": "Orders",
@@ -367,6 +402,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "puzgc95iwatw5",
             "name": "lifetime_value",
             "type": "number",
             "title": "Lifetime value",
@@ -382,56 +418,56 @@ export const shopBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "cu-ada",
+          "id": "bj1ghy45ym894an5x1ku56gur5",
           "name": "Ada Okafor",
           "email": "ada@example.com",
           "city": "Manchester",
           "since": "2025-03-14"
         },
         {
-          "id": "cu-ben",
+          "id": "sqewfr5b4hunz4qe33ebcmy9s4",
           "name": "Ben Hartley",
           "email": "ben@example.com",
           "city": "Leeds",
           "since": "2025-06-02"
         },
         {
-          "id": "cu-chloe",
+          "id": "zt6cy3mx5fb7ozkbdb5knwy5qr",
           "name": "Chloé Martin",
           "email": "chloe@example.com",
           "city": "London",
           "since": "2024-11-20"
         },
         {
-          "id": "cu-dev",
+          "id": "cwaamegmih8i4g7unp6d4amh3y",
           "name": "Dev Patel",
           "email": "dev@example.com",
           "city": "Birmingham",
           "since": "2026-01-09"
         },
         {
-          "id": "cu-ewa",
+          "id": "b44yqmx5oun9kmb51dh8q4qqtb",
           "name": "Ewa Nowak",
           "email": "ewa@example.com",
           "city": "Bristol",
           "since": "2025-09-30"
         },
         {
-          "id": "cu-finn",
+          "id": "juhsk7aiywrpx1cexhe5ipgiuf",
           "name": "Finn Walsh",
           "email": "finn@example.com",
           "city": "Glasgow",
           "since": "2026-04-18"
         },
         {
-          "id": "cu-grace",
+          "id": "u7f71dnitqr9fspst36zszspec",
           "name": "Grace Lin",
           "email": "grace@example.com",
           "city": "London",
           "since": "2026-07-01"
         },
         {
-          "id": "cu-hugo",
+          "id": "igiw397mrupoxa6j6xjk54bzw4",
           "name": "Hugo Silva",
           "email": "hugo@example.com",
           "city": "Cardiff",
@@ -440,7 +476,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "all",
+          "id": "hnmryzi51j6jz",
           "name": "All customers",
           "layout": "table",
           "totals": {
@@ -450,7 +486,7 @@ export const shopBundle: ParsedBundle = {
           }
         },
         {
-          "id": "top",
+          "id": "apzifyeyrctux",
           "name": "Top customers",
           "layout": "table",
           "sort": [
@@ -467,7 +503,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "by-city",
+          "id": "3quwu3444q51s",
           "name": "By city",
           "layout": "table",
           "group": {
@@ -484,12 +520,28 @@ export const shopBundle: ParsedBundle = {
         "title": "Customers",
         "description": "People who order from the shop."
       },
-      "path": "fixtures/shop.table/tables/customers"
+      "path": "fixtures/shop.table/tables/customers",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "bj1ghy45ym894an5x1ku56gur5",
+            "sqewfr5b4hunz4qe33ebcmy9s4",
+            "zt6cy3mx5fb7ozkbdb5knwy5qr",
+            "cwaamegmih8i4g7unp6d4amh3y",
+            "b44yqmx5oun9kmb51dh8q4qqtb",
+            "juhsk7aiywrpx1cexhe5ipgiuf",
+            "u7f71dnitqr9fspst36zszspec",
+            "igiw397mrupoxa6j6xjk54bzw4"
+          ]
+        }
+      ]
     },
     "products": {
       "schema": {
         "fields": [
           {
+            "id": "rghwqogkxjjs8",
             "name": "name",
             "type": "string",
             "title": "Product",
@@ -498,6 +550,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "dut55job7adfd",
             "name": "sku",
             "type": "string",
             "title": "SKU",
@@ -507,6 +560,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "eszjd9en1u3er",
             "name": "category",
             "type": "string",
             "title": "Category",
@@ -536,6 +590,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "xiyakxmw7ii5m",
             "name": "price",
             "type": "number",
             "title": "Price",
@@ -545,6 +600,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "mwducew9zqd66",
             "name": "stock",
             "type": "integer",
             "title": "In stock",
@@ -553,6 +609,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "g8iukiwnptueh",
             "name": "units_sold",
             "type": "number",
             "title": "Units sold",
@@ -563,6 +620,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "pet45mnhqbk7n",
             "name": "revenue",
             "type": "number",
             "title": "Revenue",
@@ -578,7 +636,7 @@ export const shopBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "pr-house",
+          "id": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "name": "House blend, 250 g",
           "sku": "COF-001",
           "category": "coffee",
@@ -586,7 +644,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 40
         },
         {
-          "id": "pr-ethiopia",
+          "id": "99f9rh1upykhpm8hqgocy8dcdt",
           "name": "Ethiopia Yirgacheffe, 250 g",
           "sku": "COF-002",
           "category": "coffee",
@@ -594,7 +652,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 22
         },
         {
-          "id": "pr-decaf",
+          "id": "8yni337fhkej6p95fhg4g9dni3",
           "name": "Swiss water decaf, 250 g",
           "sku": "COF-003",
           "category": "coffee",
@@ -602,7 +660,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 15
         },
         {
-          "id": "pr-sencha",
+          "id": "qcupmwhx8z417nisu3iz1axg9r",
           "name": "Sencha green tea, 100 g",
           "sku": "TEA-001",
           "category": "tea",
@@ -610,7 +668,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 30
         },
         {
-          "id": "pr-earl",
+          "id": "y37pw16qtpzop8uazkmxabk1wj",
           "name": "Earl Grey, 100 g",
           "sku": "TEA-002",
           "category": "tea",
@@ -618,7 +676,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 28
         },
         {
-          "id": "pr-v60",
+          "id": "jf4a9dhmjmhatb496bbguo485w",
           "name": "Pour-over dripper",
           "sku": "EQP-001",
           "category": "equipment",
@@ -626,7 +684,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 8
         },
         {
-          "id": "pr-grinder",
+          "id": "ufs5khxeq6srikbgnenm1gk11t",
           "name": "Hand grinder",
           "sku": "EQP-002",
           "category": "equipment",
@@ -634,7 +692,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 5
         },
         {
-          "id": "pr-kettle",
+          "id": "pms7u6snpaizxau7e9pgonwgp3",
           "name": "Gooseneck kettle",
           "sku": "EQP-003",
           "category": "equipment",
@@ -642,7 +700,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 6
         },
         {
-          "id": "pr-mug",
+          "id": "9n6pm887izr8okqbdkawyqud5s",
           "name": "Enamel mug",
           "sku": "MER-001",
           "category": "merch",
@@ -650,7 +708,7 @@ export const shopBundle: ParsedBundle = {
           "stock": 50
         },
         {
-          "id": "pr-tote",
+          "id": "n16m34d35agej3rymwcjdqhbho",
           "name": "Canvas tote",
           "sku": "MER-002",
           "category": "merch",
@@ -660,7 +718,7 @@ export const shopBundle: ParsedBundle = {
       ],
       "views": [
         {
-          "id": "catalogue",
+          "id": "c7by3xraxgzc6",
           "name": "Catalogue",
           "layout": "table",
           "totals": {
@@ -670,7 +728,7 @@ export const shopBundle: ParsedBundle = {
           }
         },
         {
-          "id": "by-category",
+          "id": "ww8mpspmg15jb",
           "name": "By category",
           "layout": "board",
           "board_field": "category",
@@ -681,7 +739,7 @@ export const shopBundle: ParsedBundle = {
           ]
         },
         {
-          "id": "best-sellers",
+          "id": "rzq9gx8aeh8ta",
           "name": "Best sellers",
           "layout": "table",
           "sort": [
@@ -702,12 +760,30 @@ export const shopBundle: ParsedBundle = {
         "title": "Products",
         "description": "What the shop sells."
       },
-      "path": "fixtures/shop.table/tables/products"
+      "path": "fixtures/shop.table/tables/products",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "ckdfth9ap3e5k5zyxwcx4zy5zy",
+            "99f9rh1upykhpm8hqgocy8dcdt",
+            "8yni337fhkej6p95fhg4g9dni3",
+            "qcupmwhx8z417nisu3iz1axg9r",
+            "y37pw16qtpzop8uazkmxabk1wj",
+            "jf4a9dhmjmhatb496bbguo485w",
+            "ufs5khxeq6srikbgnenm1gk11t",
+            "pms7u6snpaizxau7e9pgonwgp3",
+            "9n6pm887izr8okqbdkawyqud5s",
+            "n16m34d35agej3rymwcjdqhbho"
+          ]
+        }
+      ]
     },
     "lines": {
       "schema": {
         "fields": [
           {
+            "id": "jubpyw8ycy4ek",
             "name": "order",
             "type": "string",
             "title": "Order",
@@ -720,6 +796,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "e5ftmj6ihzran",
             "name": "product",
             "type": "string",
             "title": "Product",
@@ -732,6 +809,7 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "buzu1few1xqz4",
             "name": "quantity",
             "type": "integer",
             "title": "Quantity",
@@ -740,17 +818,19 @@ export const shopBundle: ParsedBundle = {
             }
           },
           {
+            "id": "8bm6engmac1ih",
             "name": "unit_price",
             "type": "number",
             "title": "Unit price",
             "format": "currency:GBP",
             "description": "Looked up from the product (D36).",
             "computed": {
-              "expr": "(lookup \"product\" \"price\")",
+              "expr": "(related \"product\" \"price\")",
               "dialect": "table-expr-v1"
             }
           },
           {
+            "id": "8nj5bdwnbdxp4",
             "name": "line_total",
             "type": "number",
             "title": "Line total",
@@ -766,177 +846,177 @@ export const shopBundle: ParsedBundle = {
       },
       "rows": [
         {
-          "id": "li-01",
-          "order": "or-1001",
-          "product": "pr-house",
+          "id": "de5mgeh4f39jwgr3qpi4uaqqoq",
+          "order": "ob4xghd7r9hqqs3ake4us1nt63",
+          "product": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "quantity": 2
         },
         {
-          "id": "li-02",
-          "order": "or-1001",
-          "product": "pr-mug",
+          "id": "toxne1d316tpys51uo5h98es95",
+          "order": "ob4xghd7r9hqqs3ake4us1nt63",
+          "product": "9n6pm887izr8okqbdkawyqud5s",
           "quantity": 1
         },
         {
-          "id": "li-03",
-          "order": "or-1002",
-          "product": "pr-ethiopia",
+          "id": "93ekm9whzqf76xw5hxgu6c86dz",
+          "order": "tkxyjc9eye14wwhp1qu1ct5dhd",
+          "product": "99f9rh1upykhpm8hqgocy8dcdt",
           "quantity": 1
         },
         {
-          "id": "li-04",
-          "order": "or-1002",
-          "product": "pr-v60",
+          "id": "7ngqn78jj1ibgctieo4eyifqad",
+          "order": "tkxyjc9eye14wwhp1qu1ct5dhd",
+          "product": "jf4a9dhmjmhatb496bbguo485w",
           "quantity": 1
         },
         {
-          "id": "li-05",
-          "order": "or-1002",
-          "product": "pr-grinder",
+          "id": "6py7dcyy844x7d94rj7ucn611f",
+          "order": "tkxyjc9eye14wwhp1qu1ct5dhd",
+          "product": "ufs5khxeq6srikbgnenm1gk11t",
           "quantity": 1
         },
         {
-          "id": "li-06",
-          "order": "or-1003",
-          "product": "pr-sencha",
+          "id": "efd6zra6swmrge1hubwfkmbi3x",
+          "order": "a8k5z7ap4qsoy8d1d8gaj98ixf",
+          "product": "qcupmwhx8z417nisu3iz1axg9r",
           "quantity": 2
         },
         {
-          "id": "li-07",
-          "order": "or-1003",
-          "product": "pr-earl",
+          "id": "5fyi9typx1j3a341194t1kzwtc",
+          "order": "a8k5z7ap4qsoy8d1d8gaj98ixf",
+          "product": "y37pw16qtpzop8uazkmxabk1wj",
           "quantity": 1
         },
         {
-          "id": "li-08",
-          "order": "or-1004",
-          "product": "pr-kettle",
+          "id": "suxypc3ifyquw4wg93xc9x6yao",
+          "order": "e4978orkencyqquqdychdambwp",
+          "product": "pms7u6snpaizxau7e9pgonwgp3",
           "quantity": 1
         },
         {
-          "id": "li-09",
-          "order": "or-1005",
-          "product": "pr-house",
+          "id": "7t547qrugwq4o7fiir4ndyiokt",
+          "order": "s6q8azgi1ro6hcmhdgw5wysc83",
+          "product": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "quantity": 3
         },
         {
-          "id": "li-10",
-          "order": "or-1006",
-          "product": "pr-decaf",
+          "id": "gdogk96o5uiirb98uach5bbg1g",
+          "order": "c3hydaasocm1mqdt9f4qahukpc",
+          "product": "8yni337fhkej6p95fhg4g9dni3",
           "quantity": 1
         },
         {
-          "id": "li-11",
-          "order": "or-1006",
-          "product": "pr-tote",
+          "id": "saurh16yxct6cwzaz814myk37e",
+          "order": "c3hydaasocm1mqdt9f4qahukpc",
+          "product": "n16m34d35agej3rymwcjdqhbho",
           "quantity": 2
         },
         {
-          "id": "li-12",
-          "order": "or-1007",
-          "product": "pr-ethiopia",
+          "id": "p8mcz7g8duuhks3qxhk7a7ufxj",
+          "order": "uiiz5asdafqto7468giry8g45z",
+          "product": "99f9rh1upykhpm8hqgocy8dcdt",
           "quantity": 2
         },
         {
-          "id": "li-13",
-          "order": "or-1007",
-          "product": "pr-mug",
+          "id": "tsmhgs4mmthqb493ss5yfr5o45",
+          "order": "uiiz5asdafqto7468giry8g45z",
+          "product": "9n6pm887izr8okqbdkawyqud5s",
           "quantity": 2
         },
         {
-          "id": "li-14",
-          "order": "or-1008",
-          "product": "pr-grinder",
+          "id": "3hayxcuyz5dj3h71cqo4nwzgz8",
+          "order": "o8ee5ux7cxjpwdmrnbeadp6tgz",
+          "product": "ufs5khxeq6srikbgnenm1gk11t",
           "quantity": 1
         },
         {
-          "id": "li-15",
-          "order": "or-1008",
-          "product": "pr-house",
+          "id": "uwwx9tmzbt5fuqufxchm3g34jc",
+          "order": "o8ee5ux7cxjpwdmrnbeadp6tgz",
+          "product": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "quantity": 1
         },
         {
-          "id": "li-16",
-          "order": "or-1009",
-          "product": "pr-kettle",
+          "id": "w6r93shq4czys5jipo7egk6hyg",
+          "order": "3gj7ys9pzwkxp7i3dm7bjjufz6",
+          "product": "pms7u6snpaizxau7e9pgonwgp3",
           "quantity": 1
         },
         {
-          "id": "li-17",
-          "order": "or-1009",
-          "product": "pr-v60",
+          "id": "eorn6hbxwd3mbmemwpfcu5jzqq",
+          "order": "3gj7ys9pzwkxp7i3dm7bjjufz6",
+          "product": "jf4a9dhmjmhatb496bbguo485w",
           "quantity": 1
         },
         {
-          "id": "li-18",
-          "order": "or-1009",
-          "product": "pr-ethiopia",
+          "id": "mgkekcbabitryzq33o7tea373c",
+          "order": "3gj7ys9pzwkxp7i3dm7bjjufz6",
+          "product": "99f9rh1upykhpm8hqgocy8dcdt",
           "quantity": 1
         },
         {
-          "id": "li-19",
-          "order": "or-1010",
-          "product": "pr-house",
+          "id": "jnnguooh1eah79u8gd54jw64yi",
+          "order": "am8adqxn1oubmfri713euckx7x",
+          "product": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "quantity": 2
         },
         {
-          "id": "li-20",
-          "order": "or-1010",
-          "product": "pr-earl",
+          "id": "g766d6zpqq79nd8dkoj58kkejh",
+          "order": "am8adqxn1oubmfri713euckx7x",
+          "product": "y37pw16qtpzop8uazkmxabk1wj",
           "quantity": 2
         },
         {
-          "id": "li-21",
-          "order": "or-1011",
-          "product": "pr-sencha",
+          "id": "raezs6ytz9u3uzjzcaxis483fu",
+          "order": "kf3rpts54th5zw6q8mf64wuqqe",
+          "product": "qcupmwhx8z417nisu3iz1axg9r",
           "quantity": 1
         },
         {
-          "id": "li-22",
-          "order": "or-1011",
-          "product": "pr-tote",
+          "id": "8h9b9zta7c7ef5isad6jqpj3xn",
+          "order": "kf3rpts54th5zw6q8mf64wuqqe",
+          "product": "n16m34d35agej3rymwcjdqhbho",
           "quantity": 1
         },
         {
-          "id": "li-23",
-          "order": "or-1012",
-          "product": "pr-decaf",
+          "id": "bxcx9dmxk689hzrcyh3g4jdjbr",
+          "order": "5tbaybjdk4tzbwkq9on45j6q54",
+          "product": "8yni337fhkej6p95fhg4g9dni3",
           "quantity": 2
         },
         {
-          "id": "li-24",
-          "order": "or-1013",
-          "product": "pr-mug",
+          "id": "x116ohdh5q9uir6kmoqoq37mg8",
+          "order": "g86jbr7d4znp78r4xc7zzns3he",
+          "product": "9n6pm887izr8okqbdkawyqud5s",
           "quantity": 4
         },
         {
-          "id": "li-25",
-          "order": "or-1013",
-          "product": "pr-house",
+          "id": "j91dirf6pfzkm8gzm1u8mfrkqc",
+          "order": "g86jbr7d4znp78r4xc7zzns3he",
+          "product": "ckdfth9ap3e5k5zyxwcx4zy5zy",
           "quantity": 2
         },
         {
-          "id": "li-26",
-          "order": "or-1014",
-          "product": "pr-grinder",
+          "id": "i59pury4wysddwwe8r13pdgje9",
+          "order": "rsa389qbeuffe1hzot7ixz69xj",
+          "product": "ufs5khxeq6srikbgnenm1gk11t",
           "quantity": 1
         },
         {
-          "id": "li-27",
-          "order": "or-1014",
-          "product": "pr-ethiopia",
+          "id": "e8xre1pt5euitfkdg9ew1ymrwc",
+          "order": "rsa389qbeuffe1hzot7ixz69xj",
+          "product": "99f9rh1upykhpm8hqgocy8dcdt",
           "quantity": 1
         },
         {
-          "id": "li-28",
-          "order": "or-1014",
-          "product": "pr-earl",
+          "id": "garnzpybp1mjqe7jd5we8sw7ia",
+          "order": "rsa389qbeuffe1hzot7ixz69xj",
+          "product": "y37pw16qtpzop8uazkmxabk1wj",
           "quantity": 1
         }
       ],
       "views": [
         {
-          "id": "all",
+          "id": "hnmryzi51j6jz",
           "name": "All lines",
           "layout": "table",
           "totals": {
@@ -950,7 +1030,42 @@ export const shopBundle: ParsedBundle = {
         "title": "Order lines",
         "description": "What's on each order: a product and how many."
       },
-      "path": "fixtures/shop.table/tables/lines"
+      "path": "fixtures/shop.table/tables/lines",
+      "rowFiles": [
+        {
+          "name": "0001.ndjson",
+          "ids": [
+            "de5mgeh4f39jwgr3qpi4uaqqoq",
+            "toxne1d316tpys51uo5h98es95",
+            "93ekm9whzqf76xw5hxgu6c86dz",
+            "7ngqn78jj1ibgctieo4eyifqad",
+            "6py7dcyy844x7d94rj7ucn611f",
+            "efd6zra6swmrge1hubwfkmbi3x",
+            "5fyi9typx1j3a341194t1kzwtc",
+            "suxypc3ifyquw4wg93xc9x6yao",
+            "7t547qrugwq4o7fiir4ndyiokt",
+            "gdogk96o5uiirb98uach5bbg1g",
+            "saurh16yxct6cwzaz814myk37e",
+            "p8mcz7g8duuhks3qxhk7a7ufxj",
+            "tsmhgs4mmthqb493ss5yfr5o45",
+            "3hayxcuyz5dj3h71cqo4nwzgz8",
+            "uwwx9tmzbt5fuqufxchm3g34jc",
+            "w6r93shq4czys5jipo7egk6hyg",
+            "eorn6hbxwd3mbmemwpfcu5jzqq",
+            "mgkekcbabitryzq33o7tea373c",
+            "jnnguooh1eah79u8gd54jw64yi",
+            "g766d6zpqq79nd8dkoj58kkejh",
+            "raezs6ytz9u3uzjzcaxis483fu",
+            "8h9b9zta7c7ef5isad6jqpj3xn",
+            "bxcx9dmxk689hzrcyh3g4jdjbr",
+            "x116ohdh5q9uir6kmoqoq37mg8",
+            "j91dirf6pfzkm8gzm1u8mfrkqc",
+            "i59pury4wysddwwe8r13pdgje9",
+            "e8xre1pt5euitfkdg9ew1ymrwc",
+            "garnzpybp1mjqe7jd5we8sw7ia"
+          ]
+        }
+      ]
     }
   },
   "path": "fixtures/shop.table"

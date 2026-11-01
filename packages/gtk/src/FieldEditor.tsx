@@ -6,20 +6,25 @@
 import type * as Adw from "@gtkx/gi/adw";
 import * as Gtk from "@gtkx/gi/gtk";
 import {
-  AdwActionRow,
   AdwComboRow,
   AdwDialog,
   AdwEntryRow,
+  AdwExpanderRow,
   AdwHeaderBar,
   AdwPreferencesGroup,
   AdwPreferencesPage,
   AdwSwitchRow,
   AdwToolbarView,
 } from "@gtkx/jsx/adw";
-import { GtkBox, GtkButton, GtkEntry, GtkLabel } from "@gtkx/jsx/gtk";
-import { defaultAlignFor, enumOptions, type CompileResult, type Field, type Grid } from "@workspace.sh/table-core";
+import { GtkBox, GtkButton, GtkLabel } from "@gtkx/jsx/gtk";
+import { defaultAlignFor, enumOptions, renameProblem, type CompileResult, type EnumOption, type Field, type Grid } from "@workspace.sh/table-core";
 import {
   addableChoices,
+  CHOICE_COLOURS,
+  choiceColour,
+  choiceLabel,
+  choicesPatch,
+  movedChoices,
   ALIGN_CHOICES,
   alignLabel,
   alignPatch,
@@ -42,8 +47,10 @@ import {
   formulaPlaceholder,
 } from "@workspace.sh/table-ui/shared";
 import { useState } from "react";
+import { columnsFor, FormulaEntry } from "./FormulaEntry.js";
 import { StringList } from "./StringList.js";
 import { useSelected } from "./useSelected.js";
+import { pillClass, styles, useDark } from "./theme.js";
 
 /** A combo row over values, showing labels; the selection set once its model is in. */
 function Combo({
@@ -101,13 +108,23 @@ export interface FieldEditorProps {
   fields: Field[];
   onUpdate: (patch: Partial<Field>) => void;
   onAddChoice: (value: string) => void;
+  /** Remove a choice; rows holding it lose it (the app asks first). Absent: choices can't be removed here. */
+  onRemoveChoice?: (value: string) => void;
+  /** Delete the field (the app asks first). */
+  onDelete?: () => void;
+  /** Close, putting the field back as it was when the editor opened. Absent: there's no Cancel. */
+  onCancel?: () => void;
+  /** Rename the field: its name becomes `to` everywhere it's used. Absent: the name is shown, not edited. */
+  onRename?: (to: string) => void;
   onMove: (delta: -1 | 1) => void;
   onClose: () => void;
   /** The sheet, when the view shows coordinates: `=B7` can be typed and is shown (D34). */
   grid?: Grid;
 }
 
-export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onMove, onClose, grid }: FieldEditorProps) {
+export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, onAddChoice, onRemoveChoice, onDelete, onCancel, onRename, onMove, onClose, grid }: FieldEditorProps) {
+  // Why the name typed can't be the field's, until it's typed again.
+  const [nameProblem, setNameProblem] = useState<string | null>(null);
   const display = useDisplaySettings();
   const rtl = useDirection() === "rtl";
   const [choiceDraft, setChoiceDraft] = useState("");
@@ -115,12 +132,43 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
   const formula = field.computed ? fieldFormula(field, fields, formulaDraft, grid) : null;
   const format = formatState(field, fields, display);
   const auto = alignLabel(defaultAlignFor(field.type), rtl).toLowerCase();
+  const dark = useDark();
+  const choices = enumOptions(field);
+  const setChoices = (next: EnumOption[]) => {
+    if (next !== choices) onUpdate(choicesPatch(field, next));
+  };
 
   return (
     <AdwDialog title={field.title ?? field.name} contentWidth={520} contentHeight={640} onClosed={onClose}>
-      <AdwToolbarView topBar={<AdwHeaderBar />}>
+      <AdwToolbarView
+        topBar={
+          // Changes are made as they're chosen; Cancel puts the field back as it was when this opened.
+          <AdwHeaderBar start={onCancel ? <GtkButton label="Cancel" onClicked={onCancel} /> : undefined} />
+        }
+      >
         <AdwPreferencesPage>
-          <AdwPreferencesGroup description={`${field.computed ? "Formula" : friendlyType(field.type)} · stored as “${field.name}”`}>
+          <AdwPreferencesGroup
+            description={
+              onRename
+                ? `${field.computed ? "Formula" : friendlyType(field.type)}. ${nameProblem ?? "Formulas read the field by its name: renaming it renames it in every formula."}`
+                : `${field.computed ? "Formula" : friendlyType(field.type)} · stored as “${field.name}”`
+            }
+          >
+            {onRename ? (
+              <AdwEntryRow
+                title="Name"
+                text={field.name}
+                showApplyButton
+                cssClasses={nameProblem ? ["error"] : []}
+                onChanged={() => setNameProblem(null)}
+                onApply={(row) => {
+                  const to = row.getText();
+                  const problem = renameProblem({ schema: { fields } }, field.name, to);
+                  if (problem) setNameProblem(problem);
+                  else if (to !== field.name) onRename(to);
+                }}
+              />
+            ) : null}
             <AdwEntryRow title="Title" text={field.title ?? ""} showApplyButton onApply={(row) => onUpdate({ title: row.getText() || undefined })} />
             <AdwEntryRow title="Description" text={field.description ?? ""} showApplyButton onApply={(row) => onUpdate({ description: row.getText() || undefined })} />
           </AdwPreferencesGroup>
@@ -128,13 +176,15 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
           {formula ? (
             <AdwPreferencesGroup title="Formula" description="One formula for the whole column.">
               <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
-                <GtkEntry
+                <FormulaEntry
                   text={formulaDraft}
-                  cssClasses={["monospace", ...(formula.compiled.ok ? [] : ["error"])]}
-                  onChanged={(e) => setFormulaDraft(e.getText())}
+                  onChange={setFormulaDraft}
                   onActivate={() => formula.save && onUpdate(formula.save)}
-                />
-                <FormulaLine compiled={formula.compiled} typed={formulaDraft} />
+                  error={!formula.compiled.ok}
+                  columns={columnsFor(fields, grid, field.name)}
+                >
+                  <FormulaLine compiled={formula.compiled} typed={formulaDraft} />
+                </FormulaEntry>
                 <GtkButton
                   label="Save Formula"
                   halign={Gtk.Align.END}
@@ -148,12 +198,12 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
 
           <AdwPreferencesGroup title="Display">
             {format ? <Combo title="Format" options={format.choices} value={format.kind} onChange={(v) => onUpdate(format.choose(v))} /> : null}
-            {format?.kind === "decimal" ? (
+            {format?.kind === "decimal" || format?.kind === "scientific" ? (
               <Combo
                 title="Decimal Places"
                 options={DECIMAL_PLACES.map((d) => ({ value: String(d), label: String(d) }))}
                 value={String(format.digits)}
-                onChange={(v) => onUpdate(format.decimal(Number(v)))}
+                onChange={(v) => onUpdate(format.kind === "decimal" ? format.decimal(Number(v)) : format.scientific(Number(v)))}
               />
             ) : null}
             {format?.kind === "currency" ? (
@@ -163,6 +213,15 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
                 options={currencyCodes().map((c) => ({ value: c, label: `${c} · ${currencyName(c, display.locale)}` }))}
                 value={format.code}
                 onChange={(v) => onUpdate(format.currency(v))}
+              />
+            ) : null}
+            {format?.takesParens ? (
+              <AdwSwitchRow
+                title="Negatives in Brackets"
+                active={format.parens}
+                onNotifyActive={(on) => {
+                  if (!!on !== format.parens) onUpdate(format.setParens(!!on));
+                }}
               />
             ) : null}
             <Combo
@@ -200,8 +259,39 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
 
           {takesChoices(field) ? (
             <AdwPreferencesGroup title="Choices">
-              {enumOptions(field).map((o) => (
-                <AdwActionRow key={o.value} title={o.label ?? o.value} subtitle={o.label && o.label !== o.value ? o.value : undefined} />
+              {/* Each choice: its colour, and opened, its label and colour to change; moved earlier or later, or removed. */}
+              {choices.map((o, i) => (
+                <AdwExpanderRow
+                  key={o.value}
+                  title={o.label ?? o.value}
+                  subtitle={o.label && o.label !== o.value ? o.value : ""}
+                  useMarkup={false}
+                  prefix={<GtkBox name="choice-swatch" valign={Gtk.Align.CENTER} cssClasses={[styles.choiceSwatch, pillClass(o.color, dark)]} />}
+                  suffix={
+                    <GtkBox spacing={2} valign={Gtk.Align.CENTER}>
+                      <GtkButton iconName="go-up-symbolic" cssClasses={["flat"]} sensitive={i > 0} tooltipText={`Move ${o.label ?? o.value} Earlier`} onClicked={() => setChoices(movedChoices(choices, i, i - 1))} />
+                      <GtkButton
+                        iconName="go-down-symbolic"
+                        cssClasses={["flat"]}
+                        sensitive={i < choices.length - 1}
+                        tooltipText={`Move ${o.label ?? o.value} Later`}
+                        onClicked={() => setChoices(movedChoices(choices, i, i + 1))}
+                      />
+                      {onRemoveChoice ? <GtkButton iconName="edit-delete-symbolic" cssClasses={["flat"]} tooltipText={`Remove ${o.label ?? o.value}`} onClicked={() => onRemoveChoice(o.value)} /> : null}
+                    </GtkBox>
+                  }
+                  rows={
+                    <>
+                      <AdwEntryRow
+                        title="Label"
+                        text={o.label ?? ""}
+                        showApplyButton
+                        onApply={(row) => setChoices(choices.map((c, j) => (j === i ? choiceLabel(c, row.getText()) : c)))}
+                      />
+                      <Combo title="Colour" options={CHOICE_COLOURS} value={o.color ?? "none"} onChange={(c) => setChoices(choices.map((x, j) => (j === i ? choiceColour(x, c) : x)))} />
+                    </>
+                  }
+                />
               ))}
               <AdwEntryRow
                 title="Add Choice"
@@ -225,6 +315,12 @@ export function FieldEditor({ field, fieldIndex, totalFields, fields, onUpdate, 
               <GtkButton label="Move Later" sensitive={fieldIndex < totalFields - 1} onClicked={() => onMove(1)} />
             </GtkBox>
           </AdwPreferencesGroup>
+
+          {onDelete ? (
+            <AdwPreferencesGroup>
+              <GtkButton label="Delete Field" cssClasses={["destructive-action"]} halign={Gtk.Align.START} onClicked={onDelete} />
+            </AdwPreferencesGroup>
+          ) : null}
         </AdwPreferencesPage>
       </AdwToolbarView>
     </AdwDialog>
@@ -271,16 +367,16 @@ export function AddField({ existing, fields, onAdd, onClose, grid }: AddFieldPro
           </AdwPreferencesGroup>
           {type === "formula" ? (
             <AdwPreferencesGroup title="Formula">
-              <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={4}>
-                <GtkEntry
-                  text={formulaDraft}
-                  placeholderText={formulaPlaceholder(formulaSyntax)}
-                  cssClasses={["monospace", ...(made.compiled && !made.compiled.ok ? ["error"] : [])]}
-                  onChanged={(e) => setFormulaDraft(e.getText())}
-                  onActivate={add}
-                />
+              <FormulaEntry
+                text={formulaDraft}
+                onChange={setFormulaDraft}
+                onActivate={add}
+                error={!!made.compiled && !made.compiled.ok}
+                placeholder={formulaPlaceholder(formulaSyntax)}
+                columns={columnsFor(fields, grid)}
+              >
                 <FormulaLine compiled={made.compiled} typed={formulaDraft} />
-              </GtkBox>
+              </FormulaEntry>
             </AdwPreferencesGroup>
           ) : null}
         </AdwPreferencesPage>

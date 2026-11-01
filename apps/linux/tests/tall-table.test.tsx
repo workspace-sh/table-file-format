@@ -24,7 +24,7 @@ beforeEach(() => {
   const tasks = join(bundle, "tables", "tasks");
   let rows = "";
   for (let i = 0; i < ROWS; i++) rows += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, priority: 9 })}\n`;
-  writeFileSync(join(tasks, "rows.ndjson"), rows);
+  writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
   const views = JSON.parse(readFileSync(join(tasks, "views.json"), "utf8")) as { id: string; rowHeight?: number; sort?: unknown }[];
   views[0]!.rowHeight = 240;
   delete views[0]!.sort;
@@ -67,7 +67,7 @@ const shown = () => screen.queryAllByText(/^Big \d+$/).map((w) => Number((w as G
 describe("a table taller than GTK lays out exactly", () => {
   it("is scrolled through a shorter body: the ends are the table's ends, and the middle its middle", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
     const first = await cellOf("Big 0");
     const scroller = scrollerOf(first);
     const adjustment = scroller.getVadjustment();
@@ -92,8 +92,8 @@ describe("a table taller than GTK lays out exactly", () => {
 
   it.each([["in memory", undefined], ["in the index", 1000]] as const)("Ctrl+Down goes to the last row, and Ctrl+Up back to the first (held %s)", async (_how, indexedFrom) => {
     const library = await loadLibrary([bundle], [], indexedFrom === undefined ? {} : { indexedFrom });
-    await render(<App library={library} initialTable="projects/tasks" initialView="v1" {...(indexedFrom === undefined ? {} : { indexedFrom })} />);
-    await screen.findAllByText(`${ROWS} of ${ROWS} rows`);
+    await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" {...(indexedFrom === undefined ? {} : { indexedFrom })} />);
+    await screen.findAllByText(`${ROWS.toLocaleString()} of ${ROWS.toLocaleString()} rows`);
     await waitFor(() => expect(screen.queryAllByText(/rows read$/)).toHaveLength(0));
     const first = await cellOf("Big 0");
     const scroller = scrollerOf(first);

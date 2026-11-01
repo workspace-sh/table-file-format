@@ -28,7 +28,10 @@ function swap(value: unknown, toColor: (role: string) => unknown): unknown {
   const pair = value as Record<string, unknown>;
   if (Object.keys(pair).length !== 2 || typeof pair.default !== "string" || typeof pair[DARK] !== "string") return value;
   const role = SYSTEM_COLOR_ROLES[`${pair.default.toLowerCase()}/${(pair[DARK] as string).toLowerCase()}`];
-  return role ? toColor(role) : value;
+  if (!role) return value;
+  // A platform that takes only some roles leaves the rest as written.
+  const color = toColor(role);
+  return color === undefined ? value : color;
 }
 
 function swapStyle(style: Record<string, unknown>, toColor: (role: string) => unknown): Record<string, unknown> {
@@ -38,7 +41,7 @@ function swapStyle(style: Record<string, unknown>, toColor: (role: string) => un
 
 /**
  * Swap, in place, the colours of a (native) css.create result: each known
- * pair becomes `toColor(role)`. Choice pills are data colours, not the
+ * pair becomes `toColor(role)` (unless that's undefined). Choice pills are data colours, not the
  * interface's, so styles named `pill…` are left alone.
  */
 export function swapSystemColors(styles: object, toColor: (role: string) => unknown): void {

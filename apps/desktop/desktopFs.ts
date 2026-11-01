@@ -7,6 +7,7 @@
 
 import { FileSystem } from "react-native-file-access";
 import type { TableFs } from "@workspace.sh/table-core/io";
+import { fromBase64, toBase64 } from "./bytes";
 
 export const desktopFs: TableFs = {
   async readText(path) {
@@ -19,6 +20,26 @@ export const desktopFs: TableFs = {
     }
   },
   writeText: (path, content) => FileSystem.writeFile(path, content, "utf8"),
+  // A single-file .table, and the files a folder holds besides its text (D49).
+  async readBytes(path) {
+    try {
+      return fromBase64(await FileSystem.readFile(path, "base64"));
+    } catch (error) {
+      if (!(await FileSystem.exists(path))) return null;
+      throw error;
+    }
+  },
+  writeBytes: (path, bytes) => FileSystem.writeFile(path, toBase64(bytes), "base64"),
+  // For judging how many rows a table has before reading them (core's shape-first read).
+  async size(path) {
+    if (!(await FileSystem.exists(path))) return null;
+    return (await FileSystem.stat(path)).size;
+  },
+  async readHead(path, bytes) {
+    if (!(await FileSystem.exists(path))) return null;
+    const size = (await FileSystem.stat(path)).size;
+    return fromBase64(await FileSystem.readFileChunk(path, 0, Math.min(bytes, size), "base64"));
+  },
   rename: (from, to) => FileSystem.mv(from, to),
   async mkdir(path) {
     // Creates any missing parents, and is fine when it's already there.
@@ -32,7 +53,8 @@ export const desktopFs: TableFs = {
         .map((e) => ({ name: e.filename, directory: e.type === "directory" }))
         .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     } catch (error) {
-      if (!(await FileSystem.exists(path))) return null;
+      // Nothing there, or a file (a single-file .table): no folder to list.
+      if (!(await FileSystem.exists(path)) || !(await FileSystem.isDir(path))) return null;
       throw error;
     }
   },

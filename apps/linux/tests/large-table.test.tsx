@@ -21,8 +21,8 @@ beforeEach(() => {
   bundle = join(dir, "projects.table");
   cpSync(join(fixturesDir()!, "projects.table"), bundle, { recursive: true });
   let more = "";
-  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "p1", status: "todo", priority: 9, assignee: "sam" })}\n`;
-  appendFileSync(join(bundle, "tables", "tasks", "rows.ndjson"), more);
+  for (let i = 0; i < ROWS; i++) more += `${JSON.stringify({ id: `b${i}`, title: `Big ${i}`, project: "xsdxifzn73ohismzm8q5uri8fe", status: "todo", priority: 9, assignee: "sam" })}\n`;
+  appendFileSync(join(bundle, "tables", "tasks", "rows", "0001.ndjson"), more);
 });
 
 afterEach(async () => {
@@ -32,7 +32,7 @@ afterEach(async () => {
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 async function cellOf(text: string): Promise<Gtk.Widget> {
@@ -101,6 +101,93 @@ describe("a large table on Linux", () => {
     // Its text, not its editor.
     await screen.findAllByText("Zed");
     expect(screen.queryAllByDisplayValue("Zed")).toHaveLength(0);
+  });
+
+  it("a jump far down takes the rows it leaves for the ones it comes to: none is made again", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    await waitFor(() => expect(adjustment.getUpper()).toBeGreaterThanOrEqual((ROWS + 8) * 45));
+    // A row's widget: the one among the body's rows (the box with many children) that holds the label.
+    const rowOf = (label: Gtk.Widget) => {
+      let w: Gtk.Widget = label;
+      const many = (box: Gtk.Widget) => {
+        let n = 0;
+        for (let c = box.getFirstChild(); c && n <= 5; c = c.getNextSibling()) n++;
+        return n > 5;
+      };
+      while (w.getParent() && !many(w.getParent()!)) w = w.getParent()!;
+      return w;
+    };
+    // Every row the body holds, marked by name as a widget's own: a widget made again has none.
+    const body = rowOf(first).getParent()!;
+    const rows = () => {
+      const all: Gtk.Widget[] = [];
+      for (let c = body.getFirstChild(); c; c = c.getNextSibling()) if (c.getName() !== "") all.push(c);
+      return all.filter((row) => row.getName() !== "GtkBox");
+    };
+    const before = rows();
+    expect(before.length).toBeGreaterThan(5);
+    for (const row of before) row.setName("built-before");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    const after = rows();
+    expect(after.length).toBeGreaterThan(5);
+    // As many as there were or are now, whichever is fewer: the top has no rows above the screen to build.
+    expect(after.filter((row) => row.getName() === "built-before")).toHaveLength(Math.min(before.length, after.length));
+  });
+
+  it("a cell being edited when its row is scrolled away leaves no editor or draft in the row that takes its widgets", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    first.grabFocus();
+    await userEvent.keyboard(first, "Q");
+    await screen.findByDisplayValue("Q");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    // A row now has the widgets Big 0's had: not its editor, nor what was typed.
+    await waitFor(() => expect(screen.queryAllByDisplayValue("Q")).toHaveLength(0));
+    expect(screen.queryAllByText("Q")).toHaveLength(0);
+  });
+
+  it("what was typed in a cell is saved when its row is scrolled out of the rows built, as leaving the cell would save it", async () => {
+    await openTasks();
+    const first = await cellOf("Big 0");
+    const adjustment = scrollerOf(first).getVadjustment();
+    first.grabFocus();
+    await userEvent.keyboard(first, "Q");
+    await screen.findByDisplayValue("Q");
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    // Back at the top: the row shows what was typed, saved.
+    adjustment.setValue(0);
+    await screen.findByText("Q");
+    expect(screen.queryAllByText("Big 0")).toHaveLength(0);
+    expect(screen.queryAllByDisplayValue("Q")).toHaveLength(0);
+  });
+
+  it("Back puts the table where it was scrolled to", async () => {
+    await openTasks();
+    const first = await cellOf("Land .table extension");
+    const adjustment = scrollerOf(first).getVadjustment();
+    await waitFor(() => expect(adjustment.getUpper()).toBeGreaterThanOrEqual((ROWS + 8) * 45));
+    adjustment.setValue(45_000);
+    await screen.findAllByText("Big 1000");
+    // Said once the scrolling rests.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    // To another table (the sidebar has the file's name and its table's: the table is the later one).
+    await userEvent.click((await screen.findAllByText("Projects")).at(-1)!);
+    await waitFor(() => expect(screen.queryAllByText("Big 1000")).toHaveLength(0));
+    const back = (await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })) as Gtk.Button;
+    await waitFor(() => expect(back.getSensitive()).toBe(true));
+    await userEvent.click(back);
+    // The view is shown afresh, and scrolled to where it was.
+    const again = scrollerOf((await screen.findAllByText("Big 1000"))[0]!).getVadjustment();
+    await waitFor(() => expect(Math.abs(again.getValue() - 45_000)).toBeLessThanOrEqual(2));
+    expect(screen.queryAllByText("Land .table extension")).toHaveLength(0);
   });
 
   it("Ctrl+Down goes to the last row, though it wasn't built", async () => {
