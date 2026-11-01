@@ -36,7 +36,7 @@ function memoryStore(): KeyValueStore {
 
 async function openTasks(settings?: KeyValueStore) {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" settings={settings} />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" settings={settings} />);
 }
 
 const button = (name: string) => screen.findByRole(Gtk.AccessibleRole.BUTTON, { name }) as Promise<Gtk.Button>;
@@ -71,6 +71,28 @@ describe("back and forward on Linux", () => {
     await waitFor(async () => expect(await title()).toBe("Board by status"));
   });
 
+  it("Back puts the keyboard on the cell it was on", async () => {
+    await openTasks();
+    // A relation followed from its cell: the keyboard was on that cell when the view was left.
+    // (The link is a button around its row's name; its tooltip is the address it leads to.)
+    const link = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b instanceof Gtk.Button && (b.getTooltipText() ?? "").includes("#")) as Gtk.Button;
+    expect(link).toBeDefined();
+    const address = link.getTooltipText();
+    link.grabFocus();
+    link.activate();
+    await waitFor(async () => expect(await title()).not.toBe("All tasks by priority"));
+    await userEvent.click(await button("Back"));
+    await waitFor(async () => expect(await title()).toBe("All tasks by priority"));
+    await waitFor(async () => {
+      // The same cell: the one holding that link, in the view shown afresh.
+      const again = (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON)).find((b) => b instanceof Gtk.Button && b.getTooltipText() === address) as Gtk.Button;
+      let cell: Gtk.Widget | null = again;
+      while (cell && !(cell instanceof Gtk.Box && cell.getFocusable())) cell = cell.getParent();
+      expect(cell).not.toBeNull();
+      expect((await window()).getFocus()).toBe(cell);
+    });
+  });
+
   it("skips a view that's since been deleted", async () => {
     await openTasks();
     await userEvent.click(await screen.findByText("Board by status"));
@@ -96,7 +118,7 @@ describe("the app's commands on Linux", () => {
     await openTasks();
     (await window()).activateAction("win.copy-link", null);
     const text = await Gdk.Display.getDefault()!.getClipboard().readTextAsync();
-    expect(text).toBe("projects.table#table=tasks&view=v1");
+    expect(text).toBe("projects.table#table=tasks&view=juycicwios88m");
   });
 
   it("Ctrl+B's command hides the sidebar, and it stays hidden next time", async () => {
@@ -142,11 +164,11 @@ describe("leaving a view on Linux", () => {
 
   it("Copy Link to View carries the row whose page is open", async () => {
     const library = await loadLibrary([bundle]);
-    await render(<App library={library} initialTable="projects/projects" initialView="v7" />);
+    await render(<App library={library} initialTable="projects/projects" initialView="4bteo61c6agby" />);
     await userEvent.click(await screen.findByText("Table file format spike"));
-    await screen.findByText("bodies/p2.md");
+    await screen.findByText("bodies/table-file-format-spike--1h38m5st7rwanz3hyjb6dy8igr.md");
     (await window()).activateAction("win.copy-link", null);
-    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=p2&view=v7");
+    expect(await Gdk.Display.getDefault()!.getClipboard().readTextAsync()).toBe("projects.table#table=projects&row=1h38m5st7rwanz3hyjb6dy8igr&view=4bteo61c6agby");
   });
 });
 

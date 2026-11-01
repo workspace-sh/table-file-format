@@ -2,11 +2,36 @@
 // Native, and table-gtk's on Linux. An app wires one set of callbacks and
 // hands them to either.
 
-import type { Field, ParsedTable, Row, SheetRef, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
+import type { CellFormula, Field, ParsedTable, Row, SheetRef, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 
 export interface ViewProps {
   view: View;
   rows: Row[];
+  /**
+   * Draw only the first of what the view shows: so many rows of a table
+   * or a list, cards down each column of a board, cards of a gallery. For
+   * a view drawn in place with `rest=more` (SPEC section 10). `rows` is
+   * still every row, so what is counted stays the whole view's: a table's
+   * totals, a group's count, a board column's count, and a column that
+   * has more says how many. (table-gtk's views are told the same through
+   * their EmbeddedContext.)
+   */
+  cut?: number;
+  /**
+   * A table's columns share the whole width it's given, rather than
+   * stopping at their natural widths: a view drawn in place with
+   * `width=full` (SPEC section 10). Other layouts are as wide as they're
+   * given already.
+   */
+  fillWidth?: boolean;
+  /**
+   * The widest a table grows (its columns at their natural widths, with its
+   * lines) or a board is (its columns side by side), or null when it takes
+   * whatever width it's given: for what sits
+   * with it, such as an embed's caption line, to be as wide as it is. Told
+   * again only when that changes, not as its space does.
+   */
+  onWidest?: (width: number | null) => void;
   /**
    * For a table whose rows are in the index (`ParsedTable.indexed`): what
    * the view reads them from, a window at a time. `rows` is then empty.
@@ -24,7 +49,21 @@ export interface ViewProps {
    */
   relatedTables?: Record<string, ParsedTable>;
   onUpdateRow?: (rowId: string, fieldName: string, value: unknown) => void;
+  /** The table's cells' own formulas (D52): what a cell with one shows when it's edited. */
+  cells?: CellFormula[];
+  /** Give a cell its own formula, in the stored form, or take it away (null). Absent: `=` is typed as text. */
+  onSetCellFormula?: (rowId: string, fieldName: string, expr: string | null) => void;
+  /** Work the table's loops out by repeating (D60), or not (null). Absent: the formula panel doesn't offer it. */
+  onSetIteration?: (iteration: { max: number; change: number } | null) => void;
+  /** Ask which block of a Sheet view's cells to merge, from a cell (D58). Absent: cells can't be merged. */
+  onAskMerge?: (rowId: string, fieldName: string) => void;
+  /** Show the merged block over a cell as its cells again (D58). */
+  onUnmerge?: (rowId: string, fieldName: string) => void;
+  /** Ask for a cell's note, starting from `note`, the one it has (D57). Absent: notes can't be edited. */
+  onAskCellNote?: (rowId: string, fieldName: string, note?: string) => void;
   onUpdateField?: (fieldName: string, patch: Partial<Field>) => void;
+  /** Rename a field: its name becomes `to` everywhere it's used (renameField). Absent: the name isn't edited. */
+  onRenameField?: (fieldName: string, to: string) => void;
   onAddEnumValue?: (fieldName: string, value: string) => void;
   /** Remove a choice from a field; rows holding it lose it (the host asks first). */
   onRemoveEnumValue?: (fieldName: string, value: string) => void;

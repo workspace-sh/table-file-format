@@ -11,10 +11,11 @@ Pod::Spec.new do |s|
   s.author       = "workspace.sh"
   s.homepage     = "https://github.com/workspace-sh/table-file-format"
   s.source       = { :path => "." }
-  s.platforms    = { :osx => "14.0" }
+  s.platforms    = { :osx => "26.0" }
   s.source_files = "*.{h,m,mm,swift}"
   s.public_header_files = "TableShellEntry.h"
   s.swift_version = "5.9"
   s.frameworks   = "UniformTypeIdentifiers", "SwiftUI"
   s.dependency "React-Core"
+  s.dependency "TableMacControls"
 end

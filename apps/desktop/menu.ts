@@ -5,11 +5,6 @@ import { NativeEventEmitter, NativeModules } from "react-native";
 
 type Modifier = "command" | "shift" | "option" | "control";
 
-/** One line of a pop-up menu: something to choose, or a separator. */
-export type PopUpItem =
-  | { id: string; title: string; checked?: boolean; disabled?: boolean; /** An SF Symbol's name. */ symbol?: string }
-  | { separator: true };
-
 interface TableMenuModule {
   setUndo(canUndo: boolean, canRedo: boolean, undoTitle: string, redoTitle: string): void;
   setItem(
@@ -24,13 +19,6 @@ interface TableMenuModule {
   ): void;
   copyText(text: string): void;
   postKey(characters: string, keyCode: number, modifiers: Modifier[]): void;
-  popUp(items: PopUpItem[], at: { x: number; y: number } | null): Promise<string | null>;
-  pickDate(kind: string, date: number | null, rect: { x: number; y: number; width: number; height: number }): Promise<number | null>;
-  datePickerShown(): Promise<boolean>;
-  datePickerSet(date: number): void;
-  datePickerClose(): void;
-  popUpTitles(): Promise<string[]>;
-  popUpChoose(title: string, seconds: number): void;
   postRightClick(x: number, y: number): void;
   postScroll(x: number, y: number, lines: number): void;
   postClick(x: number, y: number): void;
@@ -170,63 +158,6 @@ export function onSearch(then: (text: string) => void): () => void {
   return () => sub?.remove();
 }
 
-/**
- * The system's menu of `items`; resolves with the id chosen, or null when
- * it's dismissed. With `at` (a point in the content, as React measures)
- * the ticked item opens over it, as a pop-up button's does; without, the
- * menu opens at the pointer, as a context menu does.
- */
-export function popUpMenu(items: PopUpItem[], at: { x: number; y: number } | null = null): Promise<string | null> {
-  return TableMenu?.popUp(items, at) ?? Promise.resolve(null);
-}
-
-/**
- * The system's date picker in a popover pointing at `rect` (a cell, as
- * React measures it in the content): a calendar for a date, a field with
- * a stepper for a time, both for a date and time. Resolves with the date
- * chosen in milliseconds since 1970, or null when nothing changed.
- */
-export function pickDate(
-  kind: "date" | "time" | "datetime",
-  date: number | null,
-  rect: { x: number; y: number; width: number; height: number },
-): Promise<number | null> {
-  return TableMenu?.pickDate(kind, date, rect) ?? Promise.resolve(null);
-}
-
-/** Development only: whether the date picker is showing; setting its date as a click in it would; closing it. */
-export function datePickerShown(): Promise<boolean> {
-  return TableMenu?.datePickerShown() ?? Promise.resolve(false);
-}
-export function datePickerSet(date: number): void {
-  TableMenu?.datePickerSet(date);
-}
-export function datePickerClose(): void {
-  TableMenu?.datePickerClose();
-}
-
-/**
- * A right-click (or Control-click) in the content. `target` is the `id`
- * of the nearest element up from the one clicked whose id starts "menu-",
- * or "" when there's none.
- */
-export function onContextMenu(then: (target: string) => void): () => void {
-  const sub = events?.addListener("contextMenu", (e: { target: string }) => then(e.target));
-  return () => sub?.remove();
-}
-
-/**
- * Development only: the last pop-up menu's titles; choosing from the next
- * one by title, `seconds` after it opens ("" dismisses it), set before it
- * opens since nothing reaches the app while a menu is open; a right-click
- * at a point.
- */
-export function popUpTitles(): Promise<string[]> {
-  return TableMenu?.popUpTitles() ?? Promise.resolve([]);
-}
-export function popUpChoose(title: string, seconds = 1): void {
-  TableMenu?.popUpChoose(title, seconds);
-}
 /** Development only: turn the scroll wheel by `lines` over a point in the window, measured from its top left. */
 export function postScroll(x: number, y: number, lines: number): void {
   TableMenu?.postScroll(x, y, lines);

@@ -30,3 +30,4 @@ apps/desktop/macos/**/*.xcuserstate
 # Editor / OS
 .DS_Store
 *.log
+/edn/target

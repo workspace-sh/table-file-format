@@ -10,12 +10,18 @@
       "source": "./src/index.ts",
       "default": "./src/index.ts"
     },
+    "./embed": {
+      "source": "./src/embed.ts",
+      "default": "./src/embed.ts"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "src"
   ],
   "dependencies": {
+    "@workspace.sh/edn": "file:../../edn/js",
+    "@workspace.sh/table-app": "file:../app",
     "@workspace.sh/table-core": "file:../core",
     "@workspace.sh/table-ui": "file:../ui"
   },

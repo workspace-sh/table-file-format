@@ -43,7 +43,15 @@ export interface DragHandleProps {
   onDoubleTap?: () => void;
   /** Accepted for parity with native; a pointer press already belongs to the handle. */
   grabOnTouch?: boolean;
+  /** Show the edge's line though the pointer isn't over it: the same edge is being dragged elsewhere. */
+  lit?: boolean;
+  /** Accepted for parity with native, where a column line's strip straddles it; the web's strip lies inside. */
+  straddle?: boolean;
 }
+
+// An edge's line: faint while the pointer is over it, so it doesn't
+// flash across the table as the pointer passes, and full while dragged.
+const HOVER_LINE = "rgba(10, 132, 255, 0.35)";
 
 const edgeStyles = css.create({
   // A column's edge: 8 wide to find with a pointer, and a line on its
@@ -61,20 +69,31 @@ const edgeStyles = css.create({
     borderInlineEndStyle: "solid",
     borderInlineEndColor: {
       default: "transparent",
-      ":hover": "#0a84ff",
+      ":hover": HOVER_LINE,
     },
   },
   endDragging: {
     borderInlineEndColor: "#0a84ff",
   },
+  // A row's edge, as a column's: inside the row's bottom edge, its line
+  // on that edge.
   bottom: {
     position: "absolute",
     left: 0,
     right: 0,
-    bottom: -3,
-    height: 7,
+    bottom: 0,
+    height: 6,
     cursor: "row-resize",
     zIndex: 2,
+    borderBottomWidth: 2,
+    borderBottomStyle: "solid",
+    borderBottomColor: {
+      default: "transparent",
+      ":hover": HOVER_LINE,
+    },
+  },
+  bottomDragging: {
+    borderBottomColor: "#0a84ff",
   },
 });
 
@@ -103,6 +122,7 @@ export function DragHandle({
   onDragEnd,
   edge,
   onDoubleTap,
+  lit,
 }: DragHandleProps) {
   const activeRef = useRef(false);
   /** The pressed element, and where the pointer last was: what edge scrolling follows. */
@@ -214,7 +234,11 @@ export function DragHandle({
 
   return (
     <html.div
-      style={edge ? [edgeStyles[edge], edge === "end" && dragging && edgeStyles.endDragging] : undefined}
+      style={
+        edge
+          ? [edgeStyles[edge], (dragging || lit) && (edge === "end" ? edgeStyles.endDragging : edgeStyles.bottomDragging)]
+          : undefined
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       onPointerDown={handlePointerDown as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

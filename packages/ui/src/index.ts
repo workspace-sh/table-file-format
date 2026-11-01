@@ -17,9 +17,11 @@ export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
+export type { PlatformControls, SheetProps } from "./controlSlots";
 export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";
 export { PageGutter } from "./pageGutter";
-export { notifyLayoutChanged } from "./internal/relayout";
+export { KeyboardOnShow } from "./keyboardOnShow";
+export { notifyLayoutChanged, layoutChannel, LayoutChannel } from "./internal/relayout";
 export { PageReveal, type PageRevealRect } from "./pageReveal";
 export { PageScrollContext, pageScrollOver, type PageScroll } from "./pageScroll";
 export { PanelSurface, type PanelSurfaceComponent } from "./panelSurface";
@@ -37,3 +39,4 @@ export {
   type CellEditStatus,
   type FormulaDetails,
 } from "./cellEditor";
+export { ContextMenuButton, ContextMenuView, type ContextMenuButtonProps, type ContextMenuConfig, type ContextMenuItem, type ContextMenuViewHandle, type ContextMenuViewProps } from "./contextMenu";

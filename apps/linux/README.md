@@ -25,13 +25,30 @@ npm run dev        # the demo, with fast refresh
 npm start -- ~/Documents/crm.table   # a build, on your own tables
 ```
 
-`--open=crm/deals#all` starts on a table, and optionally a view.
+`--open=crm/deals#Pipeline` starts on a table, and optionally a view, named as the app shows it (or by its id). A
+`.table` named while the app is running opens in its window.
+
+## Open .table files from the file manager
+
+```sh
+npm run build
+./scripts/install-user.sh               # for this user; nothing needs root
+./scripts/install-user.sh --uninstall
+```
+
+A single-file `.table` then opens in Table on a double-click, with its
+icon. A `.table` folder is a folder to a file manager (a directory has
+no type of its own on Linux), so it opens from its menu: Open With →
+Table. That's offered only where a file manager is already the default
+for folders, so Table never becomes what opens every folder. The script
+points at this checkout's build and Node: run it again after moving
+either.
 
 ## Check it
 
 ```sh
 npm run check      # typecheck, lint, tests, build (covers packages/gtk too)
-SCHEME=dark npm run shot -- out.png --open=household-budget/budget#sheet
+SCHEME=dark npm run shot -- out.png --open=household-budget/budget#Sheet
 ```
 
 `shot` runs the build on a headless sway and saves a screenshot (needs

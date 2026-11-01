@@ -8,7 +8,7 @@
 //
 // The numbers are only meaningful from this build (a Release build), not `vite dev`.
 
-import { applyView, buildIndex, dropIndex, indexKey, putRows, queryIndex, searchRows, type IndexQuery, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
+import { applyView, buildIndex, dropIndex, FIRST_ROWS_FILE, indexKey, nameAfter, putRows, queryIndex, searchRows, type IndexQuery, type ParsedTable, type Row, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openWebDatabase } from "../src/sqlite/client";
 
 const params = new URLSearchParams(location.search);
@@ -36,6 +36,14 @@ async function* ndjson(url: string): AsyncGenerator<Row[]> {
   if (rest.trim()) yield [JSON.parse(rest) as Row];
 }
 
+/** The table's rows files in order (D51): big-table.mts numbers them from 0001, so each is fetched until one isn't there. */
+async function* rowsFiles(base: string): AsyncGenerator<Row[]> {
+  for (let name = FIRST_ROWS_FILE; ; name = nameAfter(name)) {
+    if (!(await fetch(`${base}/rows/${name}`, { method: "HEAD" })).ok) return;
+    yield* ndjson(`${base}/rows/${name}`);
+  }
+}
+
 async function* flat(batches: AsyncIterable<Row[]>): AsyncGenerator<Row> {
   for await (const batch of batches) yield* batch;
 }
@@ -57,7 +65,7 @@ async function main() {
   result.reopened = !stale;
   if (stale) {
     const t0 = performance.now();
-    await buildIndex(db, { name: "deals", schema, key, rows: flat(ndjson(`${base}/rows.ndjson`)) });
+    await buildIndex(db, { name: "deals", schema, key, rows: flat(rowsFiles(base)) });
     result.buildMs = ms(t0);
     say(`built ${n} rows in ${result.buildMs} ms`);
   } else {
@@ -89,7 +97,7 @@ async function main() {
   if (n <= 100_000) {
     say("checking against applyView and searchRows…");
     const rows: Row[] = [];
-    for await (const b of ndjson(`${base}/rows.ndjson`)) rows.push(...b);
+    for await (const b of rowsFiles(base)) rows.push(...b);
     const edited = rows.map((r) => (r.id === "d5" ? { id: "d5", title: "Edited", stage: "won", amount: 1, probability: 1, owner: "leslie" } : r));
     const table = { schema, rows: edited, views: [], meta: {} } as unknown as ParsedTable;
     const cases: { view: Partial<View>; search?: string }[] = [

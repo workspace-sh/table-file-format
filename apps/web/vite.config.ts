@@ -15,6 +15,8 @@ export default defineConfig(() => ({
     // `npm run core:build` refreshes — so after a pull, the web demo
     // built against stale core or failed outright.
     conditions: ["source", ...defaultClientConditions],
+    // The EDN core's TypeScript API, beside its WebAssembly (not a workspace member: it has its own build).
+    alias: { "@workspace.sh/edn": new URL("../../edn/js/src/index.ts", import.meta.url).pathname },
     extensions: [".web.tsx", ".web.ts", ".web.jsx", ".web.js", ".mjs", ".js", ".mts", ".ts", ".jsx", ".tsx", ".json"],
   },
   plugins: [
@@ -25,6 +27,9 @@ export default defineConfig(() => ({
     }),
     babel(),
   ],
+  // SQLite's WebAssembly is found beside its script: pre-bundled into Vite's deps folder,
+  // the script asks for a sqlite3.wasm that isn't there and gets the page instead.
+  optimizeDeps: { exclude: ["@sqlite.org/sqlite-wasm"] },
   // Which build this is, shown in the sidebar (docs/VERSIONING.md).
   define: { __TABLE_BUILD__: JSON.stringify(buildInfo()) },
   build: {

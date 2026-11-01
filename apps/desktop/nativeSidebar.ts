@@ -31,6 +31,7 @@ export type SidebarEvent =
   | { type: "selectTable"; key: string }
   | { type: "selectView"; key: string; viewId: string }
   | { type: "toggleFile"; bundle: string }
+  | { type: "close"; bundle: string }
   | { type: "newView" }
   | { type: "newTable" }
   | { type: "filesMode"; files: boolean }
@@ -43,7 +44,7 @@ export type SidebarEvent =
   | { type: "inspectorCell"; action: "edit" | "settings" }
   // Escape pressed in the window while no text is being typed (TableShell.watchEscape).
   | { type: "escape" }
-  /** Something done in the inspector's settings form (MacSettings.tsx reads these). */
+  /** Something done in the inspector's settings form (@workspace.sh/table-mac-controls reads these). */
   | SettingsFormEvent
   /** Something typed or pressed in the inspector's formula editor (MacFormulaEditor.ts reads these). */
   | FormulaEditorEvent
@@ -68,12 +69,14 @@ export function setSidebar({ tree, active, filesMode, files, shownFile }: Sideba
       filesLabel: "Files",
       newViewLabel: "New View",
       newTableLabel: "New Table",
+      closeLabel: "Close File",
       bundles: tree.map((b) => ({
         bundle: b.bundle,
         title: b.title,
         file: b.file,
         folded: b.folded,
         offersNewTable: b.offersNewTable,
+        closable: b.closable,
         tables: b.tables.map((t) => ({
           key: t.key,
           title: t.title,
@@ -156,7 +159,7 @@ export interface SettingsFormEvent {
   to?: number;
 }
 
-/** The settings form for the inspector to show, as its JSON (TableSettingsForm.swift); null for none. */
+/** The settings form for the inspector to show, as its JSON (@workspace.sh/table-mac-controls, TableSettingsForm.swift); null for none. */
 export function setSettingsForm(json: string | null): void {
   TableSidebar?.setSettingsForm(json ?? "");
 }

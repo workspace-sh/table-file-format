@@ -28,7 +28,7 @@ afterEach(async () => {
 
 async function openSheet() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="household-budget/budget" initialView="sheet" />);
+  await render(<App library={library} initialTable="household-budget/budget" initialView="435dx9iqim5iz" />);
 }
 
 describe("a formula cell on Linux", () => {
@@ -54,5 +54,135 @@ describe("a formula cell on Linux", () => {
       const t = await parseTable(join(bundle, "tables", "budget"));
       expect(t.schema.fields.find((f) => f.name === "quarter")?.computed?.expr).toBe("(* jan 2)");
     });
+  });
+
+  it("a loop is offered Repeat Until It Settles, which works it out and is written to the table's meta, and Stop Repeating takes it back (D60)", async () => {
+    const { readFileSync, writeFileSync } = await import("node:fs");
+    const schemaFile = join(bundle, "tables", "budget", "schema.json");
+    const schema = JSON.parse(readFileSync(schemaFile, "utf8")) as { fields: { name: string; computed?: { expr: string } }[] };
+    // The quarter reads itself (times nothing): a loop, which repeating settles at the months' sum.
+    schema.fields.find((f) => f.name === "quarter")!.computed!.expr = "(+ jan feb mar (* quarter 0))";
+    writeFileSync(schemaFile, JSON.stringify(schema));
+    await openSheet();
+    // Excel style, the default: the same plain words after their kind's mark; the hover begins with the code (#685).
+    const loop = (await screen.findAllByText("Loops back on itself"))[0]!;
+    // The loop's mark before it (#685).
+    expect(loop.getPrevSibling()).toBeInstanceOf(Gtk.Image);
+    expect(loop.getParent()!.getTooltipText()).toBe(
+      "#REF!: This formula reads itself, through the formulas it reads, so it has no answer. Open the formula to repeat the calculation until it settles.",
+    );
+    await userEvent.click(loop);
+    // The panel says the code beside the words.
+    expect((await screen.findAllByText("Loops back on itself · #REF!")).length).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByText("Repeat Until It Settles"));
+    const iteration = async () => (await parseTable(join(bundle, "tables", "budget"))).meta?.iteration;
+    await waitFor(async () => expect(await iteration()).toEqual({ max: 100, change: 0.001 }));
+    expect((await screen.findAllByText("£4,350.00")).length).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByText("Stop Repeating"));
+    await waitFor(async () => expect(await iteration()).toBeUndefined());
+  });
+
+  it("This Row Only saves the formula as that row's own, and the column's stays for the rest (D52)", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const row = (await screen.findAllByRole(Gtk.AccessibleRole.SWITCH)).find((w) => w instanceof Gtk.Switch)!;
+    await userEvent.click(row);
+    expect(await screen.findByText("Save for This Row")).toBeDefined();
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "=C1*2");
+    await userEvent.click(await screen.findByText("Save for This Row"));
+    await waitFor(async () => {
+      const t = await parseTable(join(bundle, "tables", "budget"));
+      expect(t.cells).toEqual([expect.objectContaining({ field: "quarter", expr: "(* jan 2)" })]);
+      expect(t.schema.fields.find((f) => f.name === "quarter")?.computed?.expr).toBe("(+ jan feb mar)");
+    });
+    // Rent's quarter is £2,900.00 now; reopened, it shows its own.
+    await userEvent.click(await screen.findByText("£2,900.00"));
+    expect(await screen.findByText("Use the Column's Formula")).toBeDefined();
+    await userEvent.click(await screen.findByText("Use the Column's Formula"));
+    await waitFor(async () => expect((await parseTable(join(bundle, "tables", "budget"))).cells).toBeUndefined());
+  });
+
+  it("colours the formula as it is typed: what it reads, its functions, numbers and text", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const colours = () => (entry.getAttributes()?.toString() ?? "").split("\n").filter(Boolean);
+    // =C1 + D1 + E1: three references in one colour, and the operators fainter.
+    await waitFor(() => expect(colours().filter((line) => / foreground #/.test(line))).toHaveLength(3));
+    const reference = colours().find((line) => line.startsWith("1 3 "))!.split(" ").at(-1);
+    expect(colours().filter((line) => line.includes("foreground-alpha"))).toHaveLength(3);
+    await userEvent.clear(entry);
+    await userEvent.type(entry, '=round(C1, 2) & "é" & D1');
+    await waitFor(() => expect(colours().length).toBeGreaterThan(6));
+    const colourAt = (start: number) => colours().find((line) => line.startsWith(`${start} `) && / foreground #/.test(line))?.split(" ").at(-1);
+    const [fn, ref, num, str] = [colourAt(1), colourAt(7), colourAt(11), colourAt(16)];
+    expect(ref).toBe(reference);
+    // Four kinds, four colours.
+    expect(new Set([fn, ref, num, str]).size).toBe(4);
+    // After the é, which is two bytes to Pango, D1 still starts where it is drawn.
+    expect(colourAt(23)).toBe(reference);
+  });
+
+  it("a column is clicked into the formula where it waits for one, by its coordinate in a sheet", async () => {
+    await openSheet();
+    await userEvent.click(await screen.findByText("£4,350.00"));
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const column = async (label: string) => (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: label })).find((w) => w.getTooltipText()?.startsWith("Add "))!;
+    // The formula is whole: nothing is waited for, and a column can't be added on its end.
+    entry.setPosition(-1);
+    await waitFor(async () => expect((await column("Jan")).getSensitive()).toBe(false));
+    // Its own column isn't offered.
+    expect(screen.queryAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Q1" }).filter((w) => w.getTooltipText()?.startsWith("Add "))).toHaveLength(0);
+    await userEvent.type(entry, " + ");
+    await screen.findByText("Click a column to add it");
+    await waitFor(async () => expect((await column("Jan")).getSensitive()).toBe(true));
+    // Jan is column C, and this is row 1.
+    expect((await column("Jan")).getTooltipText()).toBe("Add C1");
+    await userEvent.click(await column("Jan"));
+    await waitFor(() => expect(entry.getText()).toBe("=C1 + D1 + E1 + C1"));
+    // The cursor is after what was added, and typing goes on from there.
+    await waitFor(() => expect(entry.getPosition()).toBe(entry.getText().length));
+    expect(await screen.findByText("With This Formula")).toBeDefined();
+    // In the middle of the formula too: after the first plus.
+    entry.setPosition(5);
+    await waitFor(async () => expect((await column("Feb")).getSensitive()).toBe(true));
+    await userEvent.click(await column("Feb"));
+    await waitFor(() => expect(entry.getText()).toBe("=C1 +D1 D1 + E1 + C1"));
+  });
+
+  it("in a field's settings on a table that isn't a sheet, a column is added by its name", async () => {
+    const library = await loadLibrary([bundle]);
+    await render(<App library={library} initialTable="household-budget/budget" initialView="h8k36on7woi94" />);
+    await userEvent.click(await screen.findByText("Q1"));
+    await screen.findByText("One formula for the whole column.");
+    const entry = (await screen.findAllByDisplayValue(/^=/)).find((w) => w instanceof Gtk.Entry) as Gtk.Entry;
+    const column = async (label: string) => (await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: label })).find((w) => w.getTooltipText()?.startsWith("Add "))!;
+    expect((await column("Feb")).getTooltipText()).toBe("Add feb");
+    const before = entry.getText();
+    await userEvent.type(entry, " * ");
+    await waitFor(async () => expect((await column("Feb")).getSensitive()).toBe(true));
+    await userEvent.click(await column("Feb"));
+    await waitFor(() => expect(entry.getText()).toBe(`${before} * feb`));
+    // Coloured here as in the cell's panel.
+    expect(entry.getAttributes()?.toString()).toMatch(/ foreground #/);
+  });
+
+  it("a true/false cell whose formula failed says why, not an unticked box (#685)", async () => {
+    const { readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const table = join(bundle, "tables", "budget");
+    const schema = JSON.parse(readFileSync(join(table, "schema.json"), "utf8")) as { fields: { name: string; type: string }[] };
+    schema.fields.push({ name: "paid", type: "boolean" });
+    writeFileSync(join(table, "schema.json"), JSON.stringify(schema));
+    const views = JSON.parse(readFileSync(join(table, "views.json"), "utf8")) as { id: string; fields?: string[] }[];
+    views.find((v) => v.id === "435dx9iqim5iz")!.fields!.push("paid");
+    writeFileSync(join(table, "views.json"), JSON.stringify(views));
+    // Rent's own formula gives a number, which a true/false column can't hold (D52).
+    mkdirSync(join(table, "cells"), { recursive: true });
+    writeFileSync(join(table, "cells", "0001.ndjson"), JSON.stringify({ id: "yzqhrmxgwi1k3ur81b7epdbim5", field: "paid", expr: "(+ 1 1)" }) + "\n");
+    await openSheet();
+    const paid = await screen.findByText("Not true or false");
+    expect(paid.getParent()!.getTooltipText()).toBe("#VALUE!: The formula gave 2, and this column holds true or false. Open the formula to change it.");
   });
 });

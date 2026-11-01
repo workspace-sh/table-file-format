@@ -31,7 +31,7 @@ const schemaOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 /**
@@ -47,6 +47,13 @@ async function entryRow(title: string): Promise<Adw.EntryRow> {
     expect(found, `entry row "${title}"`).toBeDefined();
   });
   return found!;
+}
+
+/** Every widget under `w`. */
+function descendants(w: Gtk.Widget): Gtk.Widget[] {
+  const out: Gtk.Widget[] = [];
+  for (let c = w.getFirstChild(); c; c = c.getNextSibling()) out.push(c, ...descendants(c));
+  return out;
 }
 
 describe("fields on Linux", () => {
@@ -75,13 +82,102 @@ describe("fields on Linux", () => {
     });
   });
 
+  it("a choice is moved, labelled and coloured in the editor, and saved as the schema has it", async () => {
+    await openTasks();
+    const choicesOnDisk = async () => (await schemaOnDisk()).fields.find((f) => f.name === "status")?.constraints?.enum;
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Move doing Earlier" }));
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", "todo", "done"]));
+    // Opened, the choice's label and colour.
+    const choiceRow = async (title: string) => (await screen.findAllByRole(Gtk.AccessibleRole.LIST_ITEM)).find((w) => w instanceof Adw.ExpanderRow && w.getTitle() === title) as Adw.ExpanderRow;
+    let row = await choiceRow("todo");
+    row.setExpanded(true);
+    const within = (w: Gtk.Widget) => {
+      for (let p: Gtk.Widget | null = w; p; p = p.getParent()) if (p === row) return true;
+      return false;
+    };
+    const label = (await screen.findAllByRole(Gtk.AccessibleRole.LIST_ITEM)).find((w) => w instanceof Adw.EntryRow && w.getTitle() === "Label" && within(w)) as Adw.EntryRow;
+    await userEvent.type(label, "Not started");
+    label.emit("apply");
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", { value: "todo", label: "Not started" }, "done"]));
+    // Shown by its label now.
+    row = await choiceRow("Not started");
+    const colour = descendants(row).find((w) => w instanceof Adw.ComboRow && w.getTitle() === "Colour") as Adw.ComboRow;
+    // "None" first, then the schema's colours: Grey, Brown, Red.
+    colour.setSelected(3);
+    await waitFor(async () => expect(await choicesOnDisk()).toEqual(["doing", { value: "todo", label: "Not started", color: "red" }, "done"]));
+  });
+
+  it("a choice that rows hold is removed only after asking, and comes out of those rows", async () => {
+    await openTasks();
+    const held = (await parseTable(join(bundle, "tables", "tasks"))).rows.filter((r) => r.status === "done").length;
+    expect(held).toBeGreaterThan(0);
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove done" }));
+    // Asked first: the file still has it.
+    expect((await schemaOnDisk()).fields.find((f) => f.name === "status")?.constraints?.enum).toContain("done");
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Remove" }));
+    await waitFor(async () => {
+      const table = await parseTable(join(bundle, "tables", "tasks"));
+      expect(table.schema.fields.find((f) => f.name === "status")?.constraints?.enum).not.toContain("done");
+      expect(table.rows.some((r) => r.status === "done")).toBe(false);
+    });
+  });
+
+  it("Cancel puts the field back as it was when its editor opened", async () => {
+    await openTasks();
+    const before = await schemaOnDisk();
+    await userEvent.click(await screen.findByText("status"));
+    const title = await entryRow("Title");
+    await userEvent.type(title, "State");
+    title.emit("apply");
+    await waitFor(async () => expect((await schemaOnDisk()).fields.find((f) => f.name === "status")?.title).toBe("State"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Cancel" }));
+    await waitFor(async () => expect(await schemaOnDisk()).toEqual(before));
+  });
+
+  it("Delete Field in the editor asks first, then removes the field", async () => {
+    await openTasks();
+    await userEvent.click(await screen.findByText("status"));
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Delete Field" }));
+    expect((await schemaOnDisk()).fields.some((f) => f.name === "status")).toBe(true);
+    await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Delete" }));
+    await waitFor(async () => expect((await schemaOnDisk()).fields.some((f) => f.name === "status")).toBe(false));
+  });
+
+  it("a field renamed in its editor is renamed in its rows and in the formulas that read it; the editor stays on it", async () => {
+    const library = await loadLibrary([bundle]);
+    // Active by owner shows every field.
+    await render(<App library={library} initialTable="projects/projects" initialView="mufe9nmjruiq5" />);
+    const projectsOnDisk = () => parseTable(join(bundle, "tables", "projects"));
+    await userEvent.click((await screen.findAllByText("budget"))[0]!);
+    const name = await entryRow("Name");
+    // A name in use is refused, and says why.
+    name.setText("status");
+    name.emit("apply");
+    await waitFor(async () => expect((await screen.findAllByText(/There's already a field “status”/)).length).toBeGreaterThan(0));
+    name.setText("spend");
+    name.emit("apply");
+    await waitFor(async () => {
+      const t = await projectsOnDisk();
+      expect(t.schema.fields.find((f) => f.name === "per_month")?.computed?.expr).toBe("(round (/ spend 12) 0)");
+      expect(t.rows.some((r) => "spend" in r)).toBe(true);
+      expect(t.rows.some((r) => "budget" in r)).toBe(false);
+    });
+    // Still its editor, now on the new name.
+    expect((await entryRow("Name")).getText()).toBe("spend");
+  });
+
   it("a field added with a name gets a key from it and is saved", async () => {
     await openTasks();
     await userEvent.click(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" }));
     await userEvent.type(await entryRow("Name"), "Due soon");
     await userEvent.click((await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Add Field" })).at(-1)!);
     await waitFor(async () => {
-      expect((await schemaOnDisk()).fields.at(-1)).toEqual({ name: "due_soon", title: "Due soon", type: "string" });
+      // With a random id of its own (D62).
+      const { id, ...added } = (await schemaOnDisk()).fields.at(-1)!;
+      expect(added).toEqual({ name: "due_soon", title: "Due soon", type: "string" });
+      expect(id).toMatch(/^[ybndrfg8ejkmcpqxot1uwisza345h769]{13}$/);
     });
   });
 });

@@ -36,6 +36,8 @@ struct SidebarBundleRow: Decodable, Identifiable {
   let folded: Bool
   let tables: [SidebarTableRow]
   let offersNewTable: Bool
+  /// Not the only file open.
+  let closable: Bool
   var id: String { bundle }
 }
 
@@ -61,12 +63,14 @@ struct SidebarModelData: Decodable {
   let filesLabel: String
   let newViewLabel: String
   let newTableLabel: String
+  let closeLabel: String
 }
 
 final class TableSidebarModel: ObservableObject {
   @Published var data = SidebarModelData(
     filesMode: false, bundles: [], files: [],
-    tablesLabel: "Tables", filesLabel: "Files", newViewLabel: "New View", newTableLabel: "New Table")
+    tablesLabel: "Tables", filesLabel: "Files", newViewLabel: "New View", newTableLabel: "New Table",
+    closeLabel: "Close File")
   /// A click, as an event for JS: its name and what it was on.
   var send: (String, [String: Any]) -> Void = { _, _ in }
 
@@ -163,6 +167,7 @@ struct TableSidebarView: View {
             Label(table.title, systemImage: "tablecells")
               .badge(table.rowCount)
               .tag("table:\(table.key)")
+              .contextMenu { closeItem(bundle) }
             ForEach(table.views) { view in
               Label(view.name, systemImage: layoutSymbol(view.layout))
                 .padding(.leading, 16)
@@ -192,10 +197,20 @@ struct TableSidebarView: View {
             .selectionDisabled()
           }
         } header: {
-          Text(bundle.title).help(bundle.file)
+          Text(bundle.title)
+            .help(bundle.file)
+            .contextMenu { closeItem(bundle) }
         }
       }
     }
+  }
+
+  /// Close File, for a file's heading and its tables: the app asks first.
+  private func closeItem(_ bundle: SidebarBundleRow) -> some View {
+    Button(model.data.closeLabel) {
+      model.send("close", ["bundle": bundle.bundle])
+    }
+    .disabled(!bundle.closable)
   }
 
   private var files: some View {

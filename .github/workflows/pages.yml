@@ -26,6 +26,8 @@ jobs:
         with:
           # The build's number counts the day's commits (docs/VERSIONING.md): it needs the history.
           fetch-depth: 0
+          # The fixtures: the workspace-fixtures submodule, which fixtures/ links into.
+          submodules: true
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

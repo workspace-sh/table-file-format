@@ -1,4 +1,4 @@
-import type { Row, ValidationError } from "./types.js";
+import type { Row, UnreadLine, ValidationError } from "./types.js";
 
 /**
  * Pure text-level parsing shared by the directory parser and the
@@ -15,36 +15,49 @@ import type { Row, ValidationError } from "./types.js";
 export function parseRowsText(
   raw: string,
   diagnostics: ValidationError[],
+  /** Given, each line that isn't a row is kept here, with the row it came after, for a writer to put back. */
+  unread?: UnreadLine[],
+  /**
+   * One of several rows files (D51): its name, for the message, the last row
+   * of the files before it, and the ids those files hold.
+   */
+  from: { file?: string; after?: string | null; seen?: Map<string, Row> } = {},
 ): Row[] {
   const rows: Row[] = [];
+  const seen = from.seen ?? new Map<string, Row>();
   const lines = raw.split("\n");
+  const where = from.file ? `${from.file}: ` : "";
+  const skip = (i: number, line: string, why: string) => {
+    diagnostics.push({ rowIndex: i, message: `${where}line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
+    unread?.push({ after: rows.at(-1)?.id ?? from.after ?? null, text: line });
+  };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
-    if (line.length === 0) continue;
+    if (line.trim().length === 0) continue;
     let obj: Row;
     try {
       obj = JSON.parse(line) as Row;
     } catch (err) {
-      diagnostics.push({
-        rowIndex: i,
-        message: `skipped malformed line (${message(err)}): ${line.slice(0, 60)}`,
-      });
+      skip(i, line, `isn't JSON (${message(err)})`);
       continue;
     }
     if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
-      diagnostics.push({
-        rowIndex: i,
-        message: `skipped non-object line: ${line.slice(0, 60)}`,
-      });
+      skip(i, line, "isn't a row");
       continue;
     }
     if (typeof obj.id !== "string" || obj.id.length === 0) {
-      diagnostics.push({
-        rowIndex: i,
-        message: `skipped row missing system id: ${line.slice(0, 60)}`,
-      });
+      skip(i, line, "is a row without an id");
       continue;
     }
+    // A row whose id an earlier line has (both sides of a merge, D54): the first is the row.
+    const first = seen.get(obj.id);
+    if (first) {
+      // The same row again loses nothing when it goes; a different one is kept as it is.
+      if (JSON.stringify(first) === JSON.stringify(obj)) diagnostics.push({ rowIndex: i, message: `${where}line ${i + 1} repeats the row ${JSON.stringify(obj.id)} before it exactly, and is left out` });
+      else skip(i, line, `repeats the id ${JSON.stringify(obj.id)} of a row before it`);
+      continue;
+    }
+    seen.set(obj.id, obj);
     rows.push(obj);
   }
   return rows;

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
-import { attachmentAt, attachmentShown, fileKind, fileOfNode, fileText, filesNodes, filesTree, flattenFilesTree, type FilesNode, type FilesTreeDir } from "./filesTree.ts";
+import { attachmentAt, attachmentShown, fileKind, fileOfNode, fileText, filesNodes, filesTree, flattenFilesTree, historyAt, type FilesNode, type FilesTreeDir } from "./filesTree.ts";
 
 const table = (title: string, rows: number, bodies: Record<string, string> = {}): ParsedTable => ({
   path: "x",
@@ -37,11 +37,12 @@ test("each bundle's files as the writer writes them, plus attachments", () => {
   const deals = dir(crm!.root, "tables/deals");
   assert.deepEqual(deals.files.map((f) => [f.name, f.kind, f.opens, f.note]), [
     ["schema.json", "schema", "text", "2 fields"],
-    ["rows.ndjson", "rows", "text", "1 row"],
     ["views.json", "views", "text", "1 view"],
     ["meta.json", "meta", "text", undefined],
   ]);
-  assert.deepEqual(dir(deals, "bodies").files.map((f) => [f.path, f.kind]), [["tables/deals/bodies/r0.md", "body"]]);
+  // Its rows in rows/ (D51).
+  assert.deepEqual(dir(deals, "rows").files.map((f) => [f.path, f.kind, f.opens, f.note]), [["tables/deals/rows/0001.ndjson", "rows", "text", "1 row"]]);
+  assert.deepEqual(dir(deals, "bodies").files.map((f) => [f.path, f.kind]), [["tables/deals/bodies/row-0--r0.md", "body"]]);
   const attachments = dir(crm!.root, "tables/companies/attachments");
   assert.deepEqual(attachments.files.map((f) => [f.path, f.kind, f.opens]), [
     ["tables/companies/attachments/co-atlas.svg", "attachment", "attachment"],
@@ -80,9 +81,10 @@ test("folded bundles and closed folders list nothing under them when flattened",
     "1 tables/",
     "2 deals/",
     "3 schema.json",
-    "3 rows.ndjson",
     "3 views.json",
     "3 meta.json",
+    "3 rows/",
+    "4 0001.ndjson",
     "3 bodies/",
     "2 companies/",
     "projects.table/",
@@ -92,13 +94,17 @@ test("folded bundles and closed folders list nothing under them when flattened",
 test("kinds, attachments and text by path", () => {
   assert.equal(fileKind("meta.json"), "manifest");
   assert.equal(fileKind("tables/deals/meta.json"), "meta");
-  assert.equal(fileKind("tables/deals/bodies/r0.md"), "body");
+  assert.equal(fileKind("tables/deals/bodies/row-0--r0.md"), "body");
+  assert.equal(fileKind("tables/deals/rows/0001.ndjson"), "rows");
+  assert.equal(fileKind("tables/deals/rows/0002m.ndjson"), "rows");
+  // formatVersion 1's one file.
+  assert.equal(fileKind("tables/deals/rows.ndjson"), "rows");
   assert.equal(fileKind("tables/deals/attachments/rows.ndjson"), "attachment");
   assert.deepEqual(attachmentAt("crm", "tables/companies/attachments/a/b.png"), { tableKey: "crm/companies", name: "a/b.png" });
-  assert.equal(attachmentAt("crm", "tables/companies/rows.ndjson"), null);
-  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/r0.md"), "# Notes\n");
+  assert.equal(attachmentAt("crm", "tables/companies/rows/0001.ndjson"), null);
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/row-0--r0.md"), "# Notes\n");
   assert.match(fileText(tables, bundles, "crm", "meta.json") ?? "", /"deals",\s*"companies"/);
-  assert.equal(fileText(tables, bundles, "crm", "tables/nope/rows.ndjson"), undefined);
+  assert.equal(fileText(tables, bundles, "crm", "tables/nope/rows/0001.ndjson"), undefined);
 });
 
 test("an attachment shows as its image, or a note when it isn't one or isn't there", () => {
@@ -119,10 +125,55 @@ test("the tree as plain nodes for a file browser, ids reading back to bundle and
   assert.equal(nodes[0]!.name, tree[0]!.name);
   const walk = (list: FilesNode[]): FilesNode[] => list.flatMap((n) => [n, ...(n.children ? walk(n.children) : [])]);
   const all = walk(nodes);
-  const rows = all.find((n) => n.name === "rows.ndjson" && n.id.includes("companies"))!;
-  assert.deepEqual(fileOfNode(rows.id), { bundle: "crm", path: "tables/companies/rows.ndjson" });
+  const rows = all.find((n) => n.name === "0001.ndjson" && n.id.includes("companies"))!;
+  assert.deepEqual(fileOfNode(rows.id), { bundle: "crm", path: "tables/companies/rows/0001.ndjson" });
   assert.equal(rows.opens, "text");
   assert.match(rows.note ?? "", /row/);
   const logo = all.find((n) => n.id.includes("/attachments/") && !n.children);
   if (logo) assert.ok(logo.opens === "image" || logo.opens === "none");
 });
+
+test("a table's edit history is listed where the app keeps one, after its other files, and shown as the app has it", () => {
+  // The app keeps a history for deals (a file in its folder, or its store), and none for companies.
+  const hasHistory = (key: string) => key === "crm/deals";
+  const [crm] = filesTree(tables, bundles, { hasHistory });
+  assert.deepEqual(
+    dir(crm!.root, "tables/deals").files.map((f) => [f.name, f.kind, f.opens, f.note]),
+    [
+      ["schema.json", "schema", "text", "2 fields"],
+      ["views.json", "views", "text", "1 view"],
+      ["meta.json", "meta", "text", undefined],
+      ["history.ndjson", "history", "text", undefined],
+    ],
+  );
+  assert.equal(dir(crm!.root, "tables/companies").files.some((f) => f.kind === "history"), false);
+  // Without being told, nothing is listed that the tables don't hold.
+  assert.equal(dir(filesTree(tables, bundles)[0]!.root, "tables/deals").files.some((f) => f.kind === "history"), false);
+
+  assert.equal(fileKind("tables/deals/history.ndjson"), "history");
+  assert.equal(fileKind("tables/deals/attachments/history.ndjson"), "attachment");
+  assert.deepEqual(historyAt("crm", "tables/deals/history.ndjson"), { tableKey: "crm/deals" });
+  assert.equal(historyAt("crm", "tables/deals/rows.ndjson"), null);
+  // Its text is the app's to give, by table.
+  const kept = '{"id":"e1","at":"2026-10-13T10:00:00Z","op":"set","row":"r0","field":"a","to":1}\n';
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson", (key) => (key === "crm/deals" ? kept : undefined)), kept);
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/history.ndjson"), undefined);
+  // Other files don't ask for it.
+  assert.equal(fileText(tables, bundles, "crm", "tables/deals/bodies/row-0--r0.md", () => "nope"), "# Notes\n");
+});
+
+test("a history a table holds itself (it came from an archive) is listed once, and shown until the app has its own", () => {
+  const arrived = '{"id":"a1","at":"2026-10-01T10:00:00Z","op":"set","row":"r0","field":"a","to":0}\n';
+  const held = { ...tables, "crm/deals": { ...tables["crm/deals"]!, history: arrived } };
+  for (const options of [{}, { hasHistory: () => true }]) {
+    const [crm] = filesTree(held, bundles, options);
+    assert.deepEqual(
+      dir(crm!.root, "tables/deals").files.filter((f) => f.kind === "history").map((f) => f.path),
+      ["tables/deals/history.ndjson"],
+    );
+  }
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson"), arrived);
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson", () => undefined), arrived);
+  assert.equal(fileText(held, bundles, "crm", "tables/deals/history.ndjson", () => "newer\n"), "newer\n");
+});
+

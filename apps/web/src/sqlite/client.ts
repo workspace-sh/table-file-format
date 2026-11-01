@@ -2,7 +2,7 @@
 // work on a large table's rows that goes with it, so a build or a query
 // never runs on the thread that draws.
 
-import type { RowsRequest } from "@workspace.sh/table-app";
+import type { HeldRows, RowsRequest } from "@workspace.sh/table-app";
 import type { Row, SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
 import type { OpenedLarge, Request, Response } from "./worker";
 
@@ -13,7 +13,14 @@ export interface WebDatabase extends SqlDriver {
   storage(): Promise<"kept" | "elsewhere" | "none">;
   /** Make table `name`'s index ready (built from an archive just read, kept from before, or made again from its rows kept here), and say how many rows it has. */
   ensure(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
-  /** Make it again from the rows kept here: after a change to its fields. */
+  /**
+   * Every row of a table just read from an archive and not yet in the index,
+   * with the lines that couldn't be read kept: for holding the table in
+   * memory when no index can be made of it. Null when the archive is no
+   * longer held; throws when it's damaged.
+   */
+  heldRows(name: string): Promise<HeldRows | null>;
+  /** Make it again from the rows kept here: after a change to its fields it can't `alter`. */
   build(name: string, schema: TableSchema, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
    * After edits: write the rows out of the index to the file kept beside it
@@ -31,6 +38,10 @@ export interface WebDatabase extends SqlDriver {
   timings(): Promise<{ what: string; ms: number; waited: number }[]>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /** After a change to a table's fields from `from` to `to`: its index changed where it is (core's alterIndex). False when it can't be, and it's built again. */
+  alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
+  /** Work out what a change of fields left to work out (core's fillIndex), a step at a time behind whatever else is asked. */
+  fill(name: string, schema: TableSchema): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -104,8 +115,11 @@ function database(bundle: string): WebDatabase {
     batch: (sql, params) => ask({ op: "batch", sql, params }),
     ensure: (name, schema, onProgress) => ask<number>({ op: "ensure", name, schema }, onProgress),
     build: (name, schema, onProgress) => ask<number>({ op: "build", name, schema }, onProgress),
+    heldRows: (name) => ask<HeldRows | null>({ op: "held", name }),
     save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
+    alter: (name, from, to, options) => ask<boolean>({ op: "alter", name, from, to, ...(options?.restore ? { restore: options.restore } : {}) }),
+    fill: (name, schema) => ask({ op: "fill", name, schema }),
     rows: (request) => ask({ op: "rows", request }),
     peek: (name, start, end) => ask<Row[]>({ op: "peek", name, start, end }),
     timings: () => call({ op: "timings" }),
@@ -120,7 +134,7 @@ export async function openWebDatabase(name: string): Promise<WebDatabase> {
 }
 
 /**
- * Read a `.table.zip` in the worker. Its large tables stay there, still
+ * Read a single-file `.table` in the worker. Its large tables stay there, still
  * compressed, on their way into the index: they come back with no rows and
  * `indexed` set, with their first rows beside them. `index` is the bundle's
  * database when it has such a table, and null when it has none.

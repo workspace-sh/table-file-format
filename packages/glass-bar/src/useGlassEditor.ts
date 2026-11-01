@@ -32,6 +32,7 @@ function sameSelection(a: CellEditorSelection | null, b: CellEditorSelection | n
     a.rowId === b.rowId &&
     a.name === b.name &&
     a.text === b.text &&
+    a.prefix === b.prefix &&
     a.label === b.label &&
     a.rowLabel === b.rowLabel &&
     a.description === b.description &&
@@ -69,6 +70,8 @@ export interface GlassEditorOptions {
    * takes every edit (a phone has no better place).
    */
   formulasOnly?: boolean;
+  /** No search at rest: the host has nothing to search yet (a document). */
+  noSearch?: boolean;
 }
 
 /** Roughly how tall the editor stands above the keyboard, by what it shows. */
@@ -86,9 +89,11 @@ const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly }: GlassEditorOptions) {
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, noSearch }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
+  // The edit's removable prefix (a cell's own formula's "="), until the reader takes it away.
+  const [prefixKept, setPrefixKept] = useState(true);
   const [status, setStatus] = useState<CellEditStatus>({});
   const [searching, setSearching] = useState(false);
   // A multi-select's choices that are on, and a date's text, as they change.
@@ -126,6 +131,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         open.current = next;
         typed.current = next.initial;
         setSession(next);
+        setPrefixKept(true);
         setSearching(false);
         setMany(next.selectedMany ?? []);
         setShownDate(next.date?.shown ?? "");
@@ -218,7 +224,9 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       initialValue: session.initial,
       mode: session.mode,
       keyboard: session.keyboard,
-      prefix: session.prefix,
+      prefix: session.dropPrefix && !prefixKept ? undefined : session.prefix,
+      // Kept or dropped, the edit stays in the same field: only the "=" goes.
+      prefixRemovable: session.dropPrefix ? prefixKept : undefined,
       suggestions: session.suggestions,
       chips: formula ? OPERATORS : undefined,
       highlight: formula ? formulaSpans : undefined,
@@ -238,9 +246,12 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       kind: "selected",
       label: selection.formula ? `ƒ ${selection.label} · every row · ${selection.rowLabel}` : `${selection.label} · ${selection.rowLabel}`,
       value: selection.text,
+      prefix: selection.prefix,
       monospaced: selection.formula,
       about: selection.description,
       info: !!selection.facts,
+      facts: selection.facts,
+      factsTitle: selection.label,
     };
   } else state = { kind: "rest", query };
 
@@ -267,7 +278,7 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     },
     // Grown or shrunk: once it has, put the edited cell just above it again.
     onExpandChange: () => setTimeout(() => commands.current?.revealSelected?.(), 120),
-    onSearch: () => setSearching(true),
+    onSearch: noSearch ? undefined : () => setSearching(true),
     onQueryChange: onQuery,
     onSearchEnd: () => {
       setSearching(false);
@@ -295,6 +306,12 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
         { text: "OK", style: "cancel" as const },
       ]);
     },
+    onInfoSettings: commands.current?.openFieldSettings && selection
+      ? () => {
+          const toSettings = commands.current?.openFieldSettings;
+          if (toSettings && selection) toSettings(selection.name);
+        }
+      : undefined,
     onEdit: () => commands.current?.editSelected(),
     onCancel: () => {
       open.current?.cancel();
@@ -318,6 +335,14 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       save(text, s && s.mode === "line" ? () => s.next() : undefined);
     },
     // A missing piece goes in at the cursor; a corrected value is saved as it stands.
+    // The "=" taken away: what's typed is a plain value from now on.
+    onPrefixRemove: () => {
+      const s = open.current;
+      if (!s?.dropPrefix) return;
+      s.dropPrefix();
+      setPrefixKept(false);
+      setStatus(s.change(typed.current));
+    },
     onFix: () => {
       const s = open.current;
       if (status.error?.replace) save(status.error.replace, s && s.mode === "line" ? () => s.next() : undefined);

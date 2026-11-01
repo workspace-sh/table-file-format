@@ -8,7 +8,7 @@
  * Used by TableView for the "frozen primary column + horizontally
  * scrollable rest" pattern.
  */
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type ComponentRef } from "react";
 import { Platform, ScrollView, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollViewProps } from "react-native";
 import { nearest } from "./nearest";
 
@@ -31,7 +31,7 @@ export interface HScrollProps {
 const SETTLE_AFTER_MS = 160;
 
 export function HScroll({ children, scrollProps, snapTo }: HScrollProps) {
-  const inner = useRef<ScrollView | null>(null);
+  const inner = useRef<ComponentRef<typeof ScrollView> | null>(null);
   const settle = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {

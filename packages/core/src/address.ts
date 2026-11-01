@@ -29,7 +29,10 @@ export interface Address {
   tableName?: string;
   /** `row=<id>` — system id of the target row. */
   rowId?: string;
-  /** `view=<id>` — view id to pin the row to on open. */
+  /**
+   * `view=<id or name>`: the view to show. As written: `addressedView`
+   * finds it, by id or by name.
+   */
   viewId?: string;
   /** `field=<name>` — reserved for cell-level addressing. */
   fieldName?: string;
@@ -42,6 +45,19 @@ export interface Address {
 }
 
 /**
+ * A key or value as written: percent-decoded (SPEC section 10). One that
+ * isn't valid percent-encoding, as an address written before values were
+ * encoded may be, is read as it stands.
+ */
+function decoded(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+/**
  * Parse an address string. Returns `null` when the input is empty or
  * has no path component (the path is the only required part).
  *
@@ -49,6 +65,16 @@ export interface Address {
  * matches the spec requirement that readers MUST tolerate unknown
  * keys silently.
  */
+/**
+ * The view an address's `view=` names (SPEC section 10): the view with that
+ * `id`, else the first whose `name` matches it, ignoring case ("pipeline"
+ * finds "Pipeline"). Ids are opaque (D23); a name is what a reader types.
+ */
+export function addressedView<V extends { id: string; name: string }>(views: readonly V[], key: string): V | undefined {
+  const lower = key.toLowerCase();
+  return views.find((v) => v.id === key) ?? views.find((v) => v.name.toLowerCase() === lower);
+}
+
 export function parseAddress(input: string): Address | null {
   if (!input) return null;
   const hashIdx = input.indexOf("#");
@@ -66,8 +92,8 @@ export function parseAddress(input: string): Address | null {
     if (!pair) continue;
     const eqIdx = pair.indexOf("=");
     if (eqIdx === -1) continue;
-    const key = pair.slice(0, eqIdx);
-    const value = pair.slice(eqIdx + 1);
+    const key = decoded(pair.slice(0, eqIdx));
+    const value = decoded(pair.slice(eqIdx + 1));
     if (!key || !value) continue;
     switch (key) {
       case "table":
@@ -97,14 +123,13 @@ export function parseAddress(input: string): Address | null {
  */
 export function formatAddress(addr: Address): string {
   const parts: string[] = [];
-  if (addr.tableName) parts.push(`table=${addr.tableName}`);
-  if (addr.rowId) parts.push(`row=${addr.rowId}`);
-  if (addr.viewId) parts.push(`view=${addr.viewId}`);
-  if (addr.fieldName) parts.push(`field=${addr.fieldName}`);
+  const pair = (key: string, value: string) => parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+  if (addr.tableName) pair("table", addr.tableName);
+  if (addr.rowId) pair("row", addr.rowId);
+  if (addr.viewId) pair("view", addr.viewId);
+  if (addr.fieldName) pair("field", addr.fieldName);
   if (addr.extra) {
-    for (const [k, v] of Object.entries(addr.extra)) {
-      parts.push(`${k}=${v}`);
-    }
+    for (const [k, v] of Object.entries(addr.extra)) pair(k, v);
   }
   return parts.length === 0 ? addr.tablePath : `${addr.tablePath}#${parts.join("&")}`;
 }
@@ -145,3 +170,6 @@ export async function resolveRow(
   if (!table) return null;
   return table.rows.find((r) => r.id === addr.rowId) ?? null;
 }
+
+/** Whether a path names a `.table` (either form, SPEC section 13): its extension, with or without a folder's trailing `/`. */
+export const isTablePath = (path: string): boolean => /\.table\/?$/i.test(path);

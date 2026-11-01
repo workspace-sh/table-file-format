@@ -26,11 +26,11 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.id === "t1")?.title;
+const titleOnDisk = async () => (await parseTable(join(bundle, "tables", "tasks"))).rows.find((r) => r.id === "ytjc8tj8w8ftnbf9h86s5k9jfk")?.title;
 
 async function openTasks() {
   const library = await loadLibrary([bundle]);
-  await render(<App library={library} initialTable="projects/tasks" initialView="v1" />);
+  await render(<App library={library} initialTable="projects/tasks" initialView="juycicwios88m" />);
 }
 
 async function windowOf(): Promise<Gtk.ApplicationWindow> {

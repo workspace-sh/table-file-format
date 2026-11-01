@@ -22,9 +22,9 @@ export interface BoardColumns {
 export function boardColumns(view: View, rows: Row[], schema: TableSchema): BoardColumns {
   const field = view.board_field ?? "status";
   const choices = enumValues(schema.fields.find((f) => f.name === field));
-  const groups = applyGroup(rows, field, schema);
-  const keys = choices.length > 0 ? [...choices, ...Object.keys(groups).filter((k) => !choices.includes(k))] : Object.keys(groups);
-  return { field, keys, groups };
+  const grouped = applyGroup(rows, field, schema);
+  const keys = choices.length > 0 ? [...choices, ...[...grouped.keys()].filter((k) => !choices.includes(k))] : [...grouped.keys()];
+  return { field, keys, groups: Object.fromEntries(grouped) };
 }
 
 /** The fields a card shows: the view's, less the one its column (or hero image) already says. */

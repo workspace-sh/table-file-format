@@ -24,6 +24,7 @@ export default function TablesScreen() {
         router.back();
         dispatch({ type: "create", making: { kind: "table", bundle } });
       }}
+      onClose={(bundle) => dispatch({ type: "close", bundle })}
     />
   );
 }

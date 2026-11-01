@@ -1,11 +1,16 @@
-import type { Field, Row, TableSchema, ValidationError } from "./types.js";
+import type { CellFormula, Field, Row, TableSchema, ValidationError } from "./types.js";
+import { cellFormulas } from "./cells.js";
 import { enumValues } from "./types.js";
 import { isDate, isDateTime, isDuration, isGeoJSON, isGeopoint, isTime } from "./encoding.js";
 
-export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
+export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]): ValidationError[] {
   const errors: ValidationError[] = [];
+  // A cell with its own formula is checked as a computed field's is: not at all, and it's filled (SPEC section 9, D52).
+  const own = cellFormulas(schema, rows, cells);
   const seenIds = new Set<string>();
   const pkSeen = new Map<string, number>();
+  // `unique` fields: each value held, and the first row that held it. Empty values don't count (SPEC section 2).
+  const uniques = schema.fields.filter((f) => f.constraints?.unique && !f.computed).map((f) => ({ name: f.name, seen: new Map<string, number>() }));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -19,7 +24,17 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
     }
 
     for (const e of fieldErrorsOf(schema, row)) {
+      if (own.get(row.id)?.has(e.field)) continue;
       errors.push({ rowIndex: i, rowId: row.id, field: e.field, message: e.message });
+    }
+
+    for (const u of uniques) {
+      const value = row[u.name];
+      if (value === undefined || value === null || value === "") continue;
+      const key = JSON.stringify(value);
+      const prior = u.seen.get(key);
+      if (prior !== undefined) errors.push({ rowIndex: i, rowId: row.id, field: u.name, message: `${u.name} must be unique: row ${prior} has the same value` });
+      else u.seen.set(key, i);
     }
 
     if (schema.primaryKey && schema.primaryKey.length > 0) {
@@ -37,7 +52,30 @@ export function validate(schema: TableSchema, rows: Row[]): ValidationError[] {
     }
   }
 
+  // Two fields with one id (D62): a writer gives the second another, but as read it isn't valid.
+  const fieldIds = new Set<string>();
+  for (const f of schema.fields) {
+    if (typeof f.id !== "string") continue;
+    if (fieldIds.has(f.id)) errors.push({ rowIndex: -1, field: f.name, message: `field ${f.name} has the id ${f.id}, which another field has` });
+    fieldIds.add(f.id);
+  }
+
+  // A line of cells/ for a row or field the table hasn't: kept by the writer, but not valid (SPEC section 9).
+  const ids = new Set(rows.map((r) => r.id));
+  const names = new Set(schema.fields.map((f) => f.name));
+  for (const c of cells ?? []) {
+    if (!ids.has(c.id)) errors.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `cells/ has a formula for row ${c.id}, which isn't there` });
+    else if (!names.has(c.field) || c.field === "id") errors.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `cells/ has a formula for field ${c.field}, which isn't there` });
+  }
+
   return errors;
+}
+
+/** Whether `field` can hold `value` by its type: what a cell's formula's result is checked against (D52). Constraints aren't asked. */
+export function holds(field: Field, value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return true;
+  if (field.relation?.cardinality === "many") return Array.isArray(value) && value.every((v) => typeof v === "string");
+  return typeMatches(field.type, value);
 }
 
 /**
@@ -149,8 +187,12 @@ function typeMatches(type: Field["type"], value: unknown): boolean {
       return typeof value === "string" && isDuration(value);
     case "geojson":
       return isGeoJSON(value);
+    case "any":
+      // Any JSON value (D56): only a number JSON can't write is refused.
+      return typeof value !== "number" || Number.isFinite(value);
     case "number":
-      return typeof value === "number";
+      // Infinity and NaN have no JSON form: written, they'd become null.
+      return typeof value === "number" && Number.isFinite(value);
     case "integer":
     case "year":
       // Beyond ±(2^53 − 1) JSON parsers round silently (SPEC "Numbers").

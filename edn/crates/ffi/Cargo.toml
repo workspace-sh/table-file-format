@@ -1,0 +1,16 @@
+[package]
+name = "workspace-edn-ffi"
+version = "0.1.0"
+description = "C binding of workspace-edn, for the iOS and Mac apps (linked by their JSI module)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# cdylib for the Apple apps (a framework of its own: build-apple.sh), staticlib
+# for anything that links it in; rlib so this crate's tests can call it.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+workspace-edn = { path = "../core" }

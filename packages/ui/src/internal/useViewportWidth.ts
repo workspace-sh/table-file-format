@@ -6,8 +6,34 @@
  * Returns the current window width in CSS-equivalent points. Re-renders
  * the consuming component on orientation change / size class change.
  */
-import { useWindowDimensions } from "react-native";
+import { Platform, useWindowDimensions } from "react-native";
 
 export function useViewportWidth(): number {
   return useWindowDimensions().width;
+}
+
+/**
+ * Whether to lay out for a compact, touch screen: a window no wider than
+ * `max`. On a phone or tablet it's the screen's shorter side, which turning
+ * it doesn't change: a phone is a phone in landscape too. Laid out by the
+ * width it had at the moment, a phone switched layouts at every turn (a
+ * table between scrolling whole and a frozen title column, every row and
+ * cell built again; a board between its carousel and free scrolling): the
+ * jump a turn made (#610). On the Mac it's the window's width, which only
+ * resizing changes.
+ */
+export function useCompactViewport(max: number): boolean {
+  return useCompactSide() <= max;
+}
+
+/**
+ * The screen's width as a phone or tablet is laid out by: its shorter side,
+ * which turning it doesn't change (useCompactViewport). What's sized from it,
+ * a board's carousel columns, stays the same size in landscape, which shows
+ * more of them, instead of each growing to the width of the turned screen.
+ * On the Mac it's the window's width.
+ */
+export function useCompactSide(): number {
+  const { width, height } = useWindowDimensions();
+  return Platform.OS === "ios" || Platform.OS === "android" ? Math.min(width, height) : width;
 }

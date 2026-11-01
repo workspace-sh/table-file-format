@@ -13,6 +13,16 @@ import { symbolFor } from "./tree.ts";
 import { useFileBrowser } from "./useFileBrowser.ts";
 import type { FileBrowserProps, FileBrowserState, FileRow } from "./types.ts";
 
+/**
+ * A system colour for the browser's SwiftUI views. @expo/ui is typed against
+ * its app's React Native and this package against the repo's, so the same
+ * PlatformColor carries two types; this is the one place they meet.
+ */
+type UIColor = NonNullable<ComponentProps<typeof Image>["color"]>;
+function systemColor(name: string): UIColor {
+  return PlatformColor(name) as unknown as UIColor;
+}
+
 type Symbol = NonNullable<ComponentProps<typeof Image>["systemName"]>;
 // The label colours: inside a button, hierarchical styles follow its tint.
 const secondary = foregroundStyle("secondary");
@@ -65,20 +75,20 @@ function Row({ row, state }: { row: FileRow; state: FileBrowserState }) {
         {/* The chevron shows the state; the whole row is the target. Images
             take their colour from `color`: inside a button, its tint wins over a style. */}
         {folder ? (
-          <Image systemName={expanded ? "chevron.down" : "chevron.right"} size={11} color={PlatformColor("secondaryLabel")} modifiers={[frame({ width: 12 })]} />
+          <Image systemName={expanded ? "chevron.down" : "chevron.right"} size={11} color={systemColor("secondaryLabel")} modifiers={[frame({ width: 12 })]} />
         ) : (
           <Text modifiers={[frame({ width: 12 })]}> </Text>
         )}
         <Image
           systemName={symbolFor(node, expanded) as Symbol}
           size={15}
-          color={folder ? PlatformColor("systemBlue") : PlatformColor("secondaryLabel")}
+          color={folder ? systemColor("systemBlue") : systemColor("secondaryLabel")}
           modifiers={[frame({ width: 22 })]}
         />
         <Text modifiers={[primary, font({ size: 16, design: folder ? "default" : "monospaced" }), lineLimit(1)]}>{node.name}</Text>
         <Spacer />
         {node.note ? <Text modifiers={[secondary, font({ size: 14 }), lineLimit(1)]}>{node.note}</Text> : null}
-        {opens ? <Image systemName="chevron.forward" size={12} color={PlatformColor("tertiaryLabel")} /> : null}
+        {opens ? <Image systemName="chevron.forward" size={12} color={systemColor("tertiaryLabel")} /> : null}
       </HStack>
     </Button>
   );

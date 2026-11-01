@@ -18,6 +18,8 @@ export interface CellEditorSelection {
   rowLabel: string;
   /** The value as text, or the formula as typed. */
   text: string;
+  /** Drawn before `text`, apart from it: the `=` of a cell's own formula (D52). */
+  prefix?: string;
   /** A formula column: `text` is its formula. */
   formula: boolean;
   /** The field's description (SPEC section 2: its help), if it has one. */
@@ -65,8 +67,14 @@ export interface CellEditSession {
   /** `line`: a value, Return saves; `formula`: grows, Return saves; `text`: grows, Return is a new line. */
   mode: "line" | "formula" | "text";
   keyboard?: "default" | "decimal-pad" | "numeric" | "numbers-and-punctuation" | "email-address" | "url" | "phone-pad";
-  /** Shown before the typed value, as the web's cell shows it: a currency's symbol. */
+  /** Shown before the typed value, as the web's cell shows it: a currency's symbol, or a formula's `=`. */
   prefix?: string;
+  /**
+   * The reader dropped the prefix (tapped it, or Backspace before the first character): a formula's
+   * `=`, whose going makes the text a plain value (D52). Present means the prefix can be dropped; a
+   * currency's symbol can't. Every save after it saves the text alone.
+   */
+  dropPrefix?(): void;
   /** Word suggestions, autocorrection and capitals: prose only, never a number, code or formula. */
   suggestions?: boolean;
   /** A choice field: picked, not typed. Each in its colours, as its pill is drawn. */
@@ -99,6 +107,12 @@ export interface CellEditSession {
   clear?(): void;
   /** A formula's working with `draft`, for the editor to show on request. */
   details?(draft: string): FormulaDetails;
+  /**
+   * The edit left unfinished (a tap on another cell): a formula is saved as it stands when it
+   * reads, error and all, so its cells show what's wrong. False when it doesn't read: nothing is
+   * stored, and the edit is discarded.
+   */
+  leave?(text: string): boolean;
   /** Discard the edit. */
   cancel(): void;
   /** After a save by Return: move down a row and edit there. */

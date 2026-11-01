@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { rowActions } from "@workspace.sh/table-ui/shared";
 import { App } from "../src/App.js";
+import { openedRowMenu } from "./rowMenu.js";
 import { fixturesDir } from "../src/fixtures.js";
 
 // What a row's menu offers, by the view it's in; and a short year typed
@@ -53,7 +54,7 @@ async function firstRowMenu(): Promise<string[]> {
     found = buttons.find((b) => b instanceof Gtk.MenuButton && b.getTooltipText() === "Row Actions") as Gtk.MenuButton | undefined;
     expect(found).toBeDefined();
   });
-  return labels((found!.getPopover() as Gtk.PopoverMenu).getMenuModel()!);
+  return labels((await openedRowMenu(found!)).getMenuModel()!);
 }
 
 describe("the row menu on Linux", () => {
@@ -62,12 +63,15 @@ describe("the row menu on Linux", () => {
     const menu = await firstRowMenu();
     expect(menu).toContain("Insert Row Above");
     // The same words as on the web, the Mac and phones: table-ui/shared's rowActions.
-    const shared = rowActions("any", { onOpenBody: () => {}, hasBody: false, onInsertRow: () => {}, onDeleteRow: () => {} }).map((a) => a.label);
+    const shared = rowActions("any", { onOpenBody: () => {}, hasBody: false, onInsertRow: () => {}, onHideRow: () => {}, onFitRow: () => {}, onDeleteRow: () => {} }).map((a) => a.label);
     expect(menu).toEqual(shared);
+    expect(menu).toContain("Fit Row to Content");
+    // Only a row that was resized can be put back.
+    expect(menu).not.toContain("Reset Row Height");
   });
 
   it("a table view that isn't a sheet doesn't", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "f179qhc4jxi7y");
     const menu = await firstRowMenu();
     expect(menu).toContain("Delete Row");
     expect(menu).not.toContain("Insert Row Above");
@@ -76,7 +80,7 @@ describe("the row menu on Linux", () => {
 
 describe("a short year typed into a date", () => {
   it("says so once, and its Use 2026 icon saves the year it meant", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "f179qhc4jxi7y");
     const cell = (await screen.findAllByText(/2026/))[0]!;
     await userEvent.click(cell);
     const entry = (await screen.findByDisplayValue("2026-01-01")) as Gtk.Entry;
@@ -89,14 +93,14 @@ describe("a short year typed into a date", () => {
     await fireEvent(entry, "icon-press", Gtk.EntryIconPosition.SECONDARY);
     await waitFor(async () => {
       const t = await parseTable(join(bundle, "tables", "ledger"));
-      expect(t.rows.find((r) => r.id === "opening")?.date).toBe("2026-01-02");
+      expect(t.rows.find((r) => r.id === "z4bfkjkfy5csqpyjgrj8ctqz4o")?.date).toBe("2026-01-02");
     });
   });
 });
 
 describe("a cell being edited", () => {
   it("keeps to its column: the next cell doesn't move", async () => {
-    await open("ledger", "as-entered");
+    await open("ledger", "f179qhc4jxi7y");
     const next = await screen.findByText("Opening balance");
     const x = () => {
       const [ok, point] = next.computeBounds(next.getRoot() as unknown as Gtk.Widget);

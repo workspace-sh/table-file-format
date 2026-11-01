@@ -24,7 +24,12 @@ export interface Place {
    * How far down: the row at the top and how far into it, which survives
    * rows drawn a window at a time, where a pixel offset alone would not.
    */
-  top?: { rowId: string; offset: number };
+  top?: {
+    rowId: string;
+    offset: number;
+    /** How far across, from the table's start, where a table scrolls sideways itself. */
+    across?: number;
+  };
 }
 
 export interface HistoryEntry {

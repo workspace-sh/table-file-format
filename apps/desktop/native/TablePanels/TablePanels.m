@@ -1,7 +1,10 @@
 // The system's Open and Save panels.
 //
 // chooseFolder(title): a folder (a .table is one).
-// chooseFile(title, extensions): a file with one of those extensions.
+// chooseFile(title, types): a file of one of those types, each a filename
+// extension ("csv") or a type identifier ("sh.workspace.table"). A .table
+// is chosen by its types: its folder form is a package, so the panel offers
+// it as one item, like a file (SPEC section 13, D49).
 // choosePath(title, suggestedName): where to save a new file.
 // Each resolves with the chosen path, or null when the panel is cancelled.
 // Choosing through a panel is what grants a sandboxed app access to it
@@ -62,7 +65,7 @@ RCT_EXPORT_METHOD(chooseFile:(NSString *)title
   panel.prompt = @"Open";
   NSMutableArray<UTType *> *types = [NSMutableArray new];
   for (NSString *extension in extensions) {
-    UTType *type = [UTType typeWithFilenameExtension:extension];
+    UTType *type = [extension containsString:@"."] ? [UTType typeWithIdentifier:extension] : [UTType typeWithFilenameExtension:extension];
     if (type != nil) [types addObject:type];
   }
   if (types.count > 0) panel.allowedContentTypes = types;

@@ -7,9 +7,8 @@ test("every command once, in menu order, with no two sharing a key", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
   assert.deepEqual(all.map((c) => c.id), [
     "new-file",
-    "open-folder",
-    "open-zip",
-    "export-zip",
+    "open",
+    "export-file",
     "undo",
     "redo",
     "copy-link",
@@ -70,7 +69,8 @@ test("undo and redo are in Edit on Z, there only when the table has a step to ta
 test("GTK accelerators: Control with the key, GNOME's own where it differs", () => {
   const accel = (id: string) => gtkAccelOf(appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === id)!);
   assert.equal(accel("new-file"), "<Control>n");
-  assert.equal(accel("open-zip"), "<Control><Shift>o");
+  assert.equal(accel("open"), "<Control>o");
+  assert.equal(accel("export-file"), "<Control><Shift>e");
   assert.equal(accel("copy-link"), "<Control><Alt>c");
   assert.equal(accel("toggle-sidebar"), "<Control>b");
   assert.equal(accel("go-back"), "<Alt>Left");
@@ -81,8 +81,8 @@ test("shortcuts read as each platform writes them", () => {
   const all = appCommands({ sidebarCollapsed: false, filesMode: false });
   const cmd = (id: string) => all.find((c) => c.id === id)!;
   assert.deepEqual(["mac", "web", "gtk"].map((p) => shortcutText(cmd("toggle-sidebar"), p as "mac")), ["⌘B", "⌘B / Ctrl+B", "Ctrl+B"]);
-  assert.equal(shortcutText(cmd("open-zip"), "mac"), "⇧⌘O");
-  assert.equal(shortcutText(cmd("open-zip"), "gtk"), "Ctrl+Shift+O");
+  assert.equal(shortcutText(cmd("export-file"), "mac"), "⇧⌘E");
+  assert.equal(shortcutText(cmd("export-file"), "gtk"), "Ctrl+Shift+E");
   assert.equal(shortcutText(cmd("copy-link"), "mac"), "⌥⌘C");
   assert.equal(shortcutText(cmd("go-back"), "mac"), "⌘[");
   assert.equal(shortcutText(cmd("go-back"), "gtk"), "Alt+Left");
@@ -94,7 +94,32 @@ test("hints: the sidebar's follows its state; with its shortcut, as the web says
     appCommands({ sidebarCollapsed: collapsed, filesMode: false }).find((c) => c.id === "toggle-sidebar")!;
   assert.equal(hintWithShortcut(sidebar(false), "web"), "Hide the sidebar (⌘B / Ctrl+B)");
   assert.equal(hintWithShortcut(sidebar(true), "mac"), "Show the sidebar (⌘B)");
-  const exportZip = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "export-zip")!;
-  assert.match(exportZip.hint!, /^Save this table as a \.table\.zip/);
+  const exportFile = appCommands({ sidebarCollapsed: false, filesMode: false }).find((c) => c.id === "export-file")!;
+  assert.match(exportFile.hint!, /^Save a copy of this file as a single \.table/);
   assert.match(TOOLBAR_HINTS.viewSettings, /^Name, layout, filters/);
+});
+
+test("Export as a Single File is for a folder: a single file already is one", () => {
+  const exportFile = (singleFile?: boolean) => appCommands({ sidebarCollapsed: false, filesMode: false, ...(singleFile === undefined ? {} : { singleFile }) }).find((c) => c.id === "export-file")!;
+  assert.equal(exportFile().enabled, true);
+  assert.equal(exportFile(false).enabled, true);
+  assert.equal(exportFile(true).enabled, false);
+});
+
+test("the Views menu lists a table's views, the one shown ticked, and New View only where the file can change", async () => {
+  const { viewsMenu } = await import("./commands.ts");
+  const shown: string[] = [];
+  const views = [{ id: "v1", name: "All" }, { id: "v2", name: "Board" }];
+  const items = viewsMenu({ views, view: "v2", showView: (id) => shown.push(id), addView: () => shown.push("new") });
+  assert.deepEqual(items.map((i) => [i.label, i.on ?? false]), [["All", false], ["Board", true], ["New View", false]]);
+  items[0]!.onPress();
+  items[2]!.onPress();
+  assert.deepEqual(shown, ["v1", "new"]);
+  assert.equal(viewsMenu({ views, view: "v1", showView: () => {} }).length, 2, "nothing to add to a file only to look at");
+});
+
+test("Undo and Redo are named for the edit, as the Edit menu names them", async () => {
+  const { undoRedoMenu } = await import("./commands.ts");
+  const items = undoRedoMenu({ canUndo: true, canRedo: false, undoName: "Delete Row", redoName: null, undo: () => {}, redo: () => {} });
+  assert.deepEqual(items.map((i) => [i.label, i.disabled]), [["Undo Delete Row", false], ["Redo", true]]);
 });

@@ -4,7 +4,7 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
-import { isSheet } from "@workspace.sh/table-core";
+import { isSheet, newFieldId, renameProblem, renamesInIndex } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -29,7 +29,32 @@ export function bumpSchemaVersion(schema: TableSchema): TableSchema {
 }
 
 export function withCell(table: ParsedTable, rowId: string, field: string, value: unknown): ParsedTable {
-  return { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
+  const next = { ...table, rows: table.rows.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)) };
+  // A value typed into a cell with its own formula takes its place (D52).
+  return table.cells?.some((c) => c.id === rowId && c.field === field && c.expr !== undefined) ? withCellFormula(next, rowId, field, null) : next;
+}
+
+/**
+ * A cell given its own formula (D52), in the stored form, or `null` to take
+ * it away. The row's value goes with a formula set: the formula stands in
+ * for it, and its result is never stored.
+ */
+export function withCellFormula(table: ParsedTable, rowId: string, field: string, expr: string | null): ParsedTable {
+  const was = table.cells?.find((c) => c.id === rowId && c.field === field);
+  const others = (table.cells ?? []).filter((c) => !(c.id === rowId && c.field === field));
+  // The cell's note stays, with or without a formula (D57).
+  const note = was?.note;
+  const cells = expr === null && note === undefined ? others : [...others, { id: rowId, field, ...(expr !== null ? { expr } : {}), ...(note !== undefined ? { note } : {}) }];
+  const rows =
+    expr === null
+      ? table.rows
+      : table.rows.map((row) => {
+          if (row.id !== rowId || !(field in row)) return row;
+          const { [field]: _gone, ...rest } = row;
+          return rest as typeof row;
+        });
+  const { cells: _was, ...rest } = table;
+  return { ...rest, rows, ...(cells.length > 0 ? { cells } : {}) };
 }
 
 /**
@@ -67,12 +92,18 @@ export function withRowAt(table: ParsedTable, viewId: string, anchor: string, wh
   return { ...table, rows: placed.rows, views };
 }
 
-/** Without the row, and its body. */
+/** Without the row, its body, and its cells' own formulas (D52). */
 export function withoutRow(table: ParsedTable, rowId: string): ParsedTable {
-  if (!table.bodies) return { ...table, rows: table.rows.filter((r) => r.id !== rowId) };
+  const next: ParsedTable = { ...table, rows: table.rows.filter((r) => r.id !== rowId) };
+  if (table.cells?.some((c) => c.id === rowId)) {
+    const cells = table.cells.filter((c) => c.id !== rowId);
+    if (cells.length > 0) next.cells = cells;
+    else delete next.cells;
+  }
+  if (!table.bodies) return next;
   const bodies = { ...table.bodies };
   delete bodies[rowId];
-  return { ...table, rows: table.rows.filter((r) => r.id !== rowId), bodies };
+  return { ...next, bodies };
 }
 
 /**
@@ -149,7 +180,8 @@ export function withoutField(table: ParsedTable, name: string): ParsedTable {
   const primaryKey = table.schema.primaryKey?.filter((k) => k !== name);
   const schema = { ...table.schema, fields, ...(table.schema.primaryKey ? { primaryKey } : {}) };
   const rows = table.rows.map((r) => (name in r ? withoutKey(r, name) : r));
-  return { ...table, schema: bumpSchemaVersion(schema), rows, views: table.views.map((v) => viewWithoutField(v, name)) };
+  const cells = table.cells?.filter((c) => c.field !== name);
+  return { ...table, schema: bumpSchemaVersion(schema), rows, views: table.views.map((v) => viewWithoutField(v, name)), ...(cells ? { cells } : {}) };
 }
 
 function viewWithoutField(view: View, name: string): View {
@@ -160,8 +192,31 @@ function viewWithoutField(view: View, name: string): View {
   if (view.group?.field === name) delete next.group;
   if (view.columnWidths && name in view.columnWidths) next.columnWidths = withoutKey(view.columnWidths, name);
   if (view.totals && name in view.totals) next.totals = withoutKey(view.totals, name);
+  // A colour rule that colours the field's cell, or asks about it, goes whole: one condition less would colour other rows (D53).
+  if (Array.isArray(view.colors)) {
+    const colors = view.colors.filter((r) => r.field !== name && !r.filter.some((f) => f.field === name));
+    if (colors.length > 0) next.colors = colors;
+    else delete next.colors;
+  }
+  // A merged block with a corner in the field goes: without that corner it isn't the block it was (D58).
+  if (view.merged) {
+    const merged = view.merged.filter((m) => m.from.field !== name && m.to.field !== name);
+    if (merged.length > 0) next.merged = merged;
+    else delete next.merged;
+  }
   for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === name) delete next[k];
   return next;
+}
+
+/**
+ * Why field `name` can't be renamed `to`, or null when it can. A table held
+ * in the index is renamed there (#709), once it's read, unless its formulas
+ * read other rows (renamesInIndex).
+ */
+export function fieldRenameProblem(table: ParsedTable, name: string, to: string): string | null {
+  if (table.loading) return "This table is still being read.";
+  if (table.indexed && !renamesInIndex(table.schema, name, to)) return "A field of this table can't be renamed while it's this large.";
+  return renameProblem(table, name, to);
 }
 
 /** Asking before a field is deleted. */
@@ -229,7 +284,9 @@ export function withField(table: ParsedTable, field: Field, fromView?: string, p
       ? { ...v, fields: insertBeside(v.fields, field.name, (n) => n, place) }
       : v,
   );
-  const fields = insertBeside(table.schema.fields, field, (f) => f.name, place);
+  // A new field's id is random (D62): two people adding "notes" on two devices make two fields.
+  const added: Field = field.id ? field : { id: newFieldId(), ...field };
+  const fields = insertBeside(table.schema.fields, added, (f) => f.name, place);
   return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }), views };
 }
 
@@ -260,6 +317,11 @@ export function rowTitleFor(table: ParsedTable, rowId: string): string {
   return rowId;
 }
 
+/** How many formulas read view `view` of table `key` by place (D41): none unless it's a Sheet view. */
+export function sheetReaders(tables: Record<string, ParsedTable>, key: string, view: View): number {
+  return isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+}
+
 /**
  * What to ask before changing a view's settings, or null when nothing is
  * lost and the change can simply be made. Turning a Sheet view into
@@ -273,7 +335,7 @@ export function viewPatchPrompt(
   patch: Partial<View>,
 ): Confirm | null {
   if (!isSheet(view) || isSheet({ ...view, ...patch })) return null;
-  const readers = sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length;
+  const readers = sheetReaders(tables, key, view);
   if (readers === 0) return null;
   return {
     heading: `${readers === 1 ? "A formula reads" : `${readers} formulas read`} this sheet by place and will show #REF!.`,
@@ -291,7 +353,7 @@ export function viewPatchPrompt(
 export function deleteViewPrompt(tables: Record<string, ParsedTable>, key: string, view: View): Confirm | null {
   const table = tables[key];
   if (!table || table.views.length <= 1) return null;
-  const readers = isSheet(view) ? sheetDependents(bundleTables(tables, bundleOf(key)), tableNameOf(key), view.id).length : 0;
+  const readers = sheetReaders(tables, key, view);
   const losing = readers > 0 ? ` ${readers === 1 ? "A formula reads" : `${readers} formulas read`} it by place and will show #REF!.` : "";
   return {
     heading: `Delete the view “${view.name}”?`,
@@ -330,3 +392,26 @@ export function deletingRow(table: ParsedTable, rowId: string, openBody: string 
     closeBody: openBody === rowId,
   };
 }
+
+/**
+ * A table's loops worked out by repeating the calculation (D60): at most
+ * `max` passes, until nothing changes by more than `change`; null, a loop
+ * is #REF! again.
+ */
+export function withIteration(table: ParsedTable, iteration: { max: number; change: number } | null): ParsedTable {
+  const { iteration: _was, ...meta } = table.meta ?? {};
+  return { ...table, meta: iteration ? { ...meta, iteration } : meta };
+}
+
+/** A cell's note set, or taken away (an empty note); its formula, if it has one, stays (D57). */
+export function withCellNote(table: ParsedTable, rowId: string, field: string, note: string): ParsedTable {
+  const was = table.cells?.find((c) => c.id === rowId && c.field === field);
+  const others = (table.cells ?? []).filter((c) => !(c.id === rowId && c.field === field));
+  const kept = note.trim() === "" ? undefined : note;
+  const line = was || kept !== undefined ? { ...(was ?? { id: rowId, field }), ...(kept !== undefined ? { note: kept } : {}) } : undefined;
+  if (line && kept === undefined) delete (line as { note?: string }).note;
+  const cells = line && (line.expr !== undefined || line.note !== undefined) ? [...others, line] : others;
+  const { cells: _was, ...rest } = table;
+  return { ...rest, ...(cells.length > 0 ? { cells } : {}) };
+}
+

@@ -53,6 +53,25 @@ test("rewriting without bodies removes them; a dropped table is trimmed", async 
   assert.equal((await fs.list("/b/tables/b")), null);
 });
 
+// D64: a page is named for its row, so a person browsing bodies/ sees which row each is.
+test("a page is written under its row's title, follows it when it changes, and keeps its name when its row isn't here", async () => {
+  const fs = memoryFs();
+  await writeTableTo(fs, "/t", table);
+  const names = async () => ((await fs.list("/t/bodies")) ?? []).map((e) => e.name).sort();
+  assert.deepEqual(await names(), ["one--r1.md"]);
+  await writeTableTo(fs, "/t", { ...table, rows: [{ id: "r1", title: "Renamed" }] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+  assert.equal((await readTable(fs, "/t")).bodies?.["r1"], "# Page\n");
+  // Rows held elsewhere (an indexed table's): the page stays as it's named.
+  await writeTableTo(fs, "/t", { ...table, rows: [] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+  // Renamed by hand, it's still r1's page, and the next save names it for its row again.
+  await fs.rename("/t/bodies/renamed--r1.md", "/t/bodies/my-notes--r1.md");
+  assert.equal((await readTable(fs, "/t")).bodies?.["r1"], "# Page\n");
+  await writeTableTo(fs, "/t", { ...table, rows: [{ id: "r1", title: "Renamed" }] });
+  assert.deepEqual(await names(), ["renamed--r1.md"]);
+});
+
 test("io reaches for nothing from Node, so React Native and browsers can load it", () => {
   const source = readFileSync(fileURLToPath(new URL("./io.ts", import.meta.url)), "utf8");
   assert.doesNotMatch(source, /from "node:/);
@@ -82,7 +101,77 @@ test("saving again writes only what changed, and adds no attachments folder", as
   await writeBundleTo(counting, "/b", bundle);
   assert.equal(writes, 0);
   await writeBundleTo(counting, "/b", { tables: { a: { ...table, rows: [{ id: "r1", title: "Two" }] }, b: table } });
-  // Only a's rows: not its schema, views, meta or body, not table b, not the manifest.
-  assert.equal(writes, 1);
-  assert.equal((await fs.readText("/b/tables/b/rows.ndjson"))!.includes("One"), true);
+  // Only a's rows, and its page under the row's new title (D64): not its schema, views or meta, not table b, not the manifest.
+  assert.equal(writes, 2);
+  assert.equal((await fs.readText("/b/tables/b/rows/0001.ndjson"))!.includes("One"), true);
+});
+
+test("a history that came with a table is written once; one on disk is never changed, and a table without one makes none", async () => {
+  const fs = memoryFs();
+  const table = { schema: { fields: [{ name: "title", type: "string" as const }] }, rows: [{ id: "r1", title: "A" }] };
+  const file = "x.table/tables/t/history.ndjson";
+  await writeBundleTo(fs, "x.table", { tables: { t: table } });
+  assert.equal(await fs.readText(file), null);
+  // Arrived with a history (an archive opened into a folder): it is put there.
+  const arrived = '{"id":"e1","at":"2026-10-01T15:00:00Z","op":"set","row":"r1","field":"title","to":"A"}\n';
+  await writeBundleTo(fs, "x.table", { tables: { t: { ...table, history: arrived } } });
+  assert.equal(await fs.readText(file), arrived);
+  // The app has added to it since. The table held still carries what it arrived with: the file wins.
+  const grown = arrived + '{"id":"e2","at":"2026-10-02T09:00:00Z","op":"set","row":"r1","field":"title","from":"A","to":"B"}\n';
+  await fs.writeText(file, grown);
+  await writeBundleTo(fs, "x.table", { tables: { t: { ...table, rows: [{ id: "r1", title: "B" }], history: arrived } } });
+  assert.equal(await fs.readText(file), grown);
+  // Nor is it removed when the table held has none.
+  await writeBundleTo(fs, "x.table", { tables: { t: table } });
+  assert.equal(await fs.readText(file), grown);
+  // The directory reader leaves it where it is.
+  assert.equal("history" in (await readBundle(fs, "x.table")).tables.t!, false);
+});
+
+test("rows are files in rows/, read in name order; a save writes each row back to its file, only the files that changed (D51)", async () => {
+  const fs = memoryFs();
+  const schema = { fields: [{ name: "title", type: "string" as const }] };
+  await fs.mkdir("/b/tables/t/rows");
+  await fs.writeText("/b/tables/t/schema.json", JSON.stringify(schema));
+  await fs.writeText("/b/tables/t/rows/0002.ndjson", '{"id":"c","title":"C"}\n');
+  await fs.writeText("/b/tables/t/rows/0001.ndjson", '{"id":"a","title":"A"}\n{"id":"b","title":"B"}\n');
+  await fs.writeText("/b/tables/t/rows/0001m.ndjson", '{"id":"ab","title":"AB"}\n');
+  const read = await readBundle(fs, "/b");
+  const t = read.tables.t!;
+  assert.deepEqual(t.rows.map((r) => r.id), ["a", "b", "ab", "c"]);
+  assert.deepEqual(t.rowFiles, [{ name: "0001.ndjson", ids: ["a", "b"] }, { name: "0001m.ndjson", ids: ["ab"] }, { name: "0002.ndjson", ids: ["c"] }]);
+  // An edit to "c" and a new row at the end: only 0002 is written.
+  let written: string[] = [];
+  const watched = { ...fs, writeText: async (p: string, c: string) => { written.push(p); return fs.writeText(p, c); } };
+  const edited = { ...t, rows: [...t.rows.slice(0, 3), { id: "c", title: "C2" }, { id: "d", title: "D" }] };
+  await writeBundleTo(watched, "/b", { meta: read.meta, tables: { t: edited } });
+  assert.deepEqual(written.filter((p) => p.includes("/rows/")), ["/b/tables/t/rows/0002.ndjson.tmp"]);
+  assert.equal(await fs.readText("/b/tables/t/rows/0002.ndjson"), '{"id":"c","title":"C2"}\n{"id":"d","title":"D"}\n');
+  // Every row of 0001m removed: the file goes.
+  written = [];
+  const back = (await readBundle(fs, "/b")).tables.t!;
+  await writeBundleTo(fs, "/b", { meta: read.meta, tables: { t: { ...back, rows: back.rows.filter((r) => r.id !== "ab") } } });
+  assert.deepEqual((await fs.list("/b/tables/t/rows"))!.map((e) => e.name).sort(), ["0001.ndjson", "0002.ndjson"]);
+});
+
+test("formatVersion 1's rows.ndjson is read as the table's rows, and the next save moves them into rows/ (D51)", async () => {
+  const fs = memoryFs();
+  await fs.mkdir("/b/tables/t");
+  await fs.writeText("/b/tables/t/schema.json", JSON.stringify({ fields: [{ name: "title", type: "string" }] }));
+  await fs.writeText("/b/tables/t/rows.ndjson", '{"id":"a","title":"A"}\n');
+  await fs.writeText("/b/meta.json", JSON.stringify({ format: "table", formatVersion: 1, title: "B", tables: ["t"] }));
+  const read = await readBundle(fs, "/b");
+  assert.deepEqual(read.tables.t!.rows.map((r) => r.id), ["a"]);
+  await writeBundleTo(fs, "/b", read);
+  assert.equal(await fs.readText("/b/tables/t/rows.ndjson"), null);
+  assert.equal(await fs.readText("/b/tables/t/rows/0001.ndjson"), '{"id":"a","title":"A"}\n');
+  // Written in this version's layout, the manifest says this version, whatever it was read with.
+  assert.deepEqual(JSON.parse((await fs.readText("/b/meta.json"))!), { format: "table", formatVersion: 3, title: "B", tables: ["t"] });
+});
+
+test("a table with no rows keeps its rows/ folder, with one empty file (git keeps no empty folder)", async () => {
+  const fs = memoryFs();
+  await writeBundleTo(fs, "/b", { tables: { t: { schema: { fields: [] }, rows: [] } } });
+  assert.equal(await fs.readText("/b/tables/t/rows/0001.ndjson"), "");
+  assert.deepEqual(Object.keys((await readBundle(fs, "/b")).tables), ["t"]);
 });

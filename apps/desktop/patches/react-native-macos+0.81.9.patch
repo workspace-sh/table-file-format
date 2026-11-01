@@ -1,0 +1,488 @@
+diff --git a/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm b/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
+index f5b7fd9..039963f 100644
+--- a/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
++++ b/node_modules/react-native-macos/Libraries/Image/RCTImageUtils.mm
+@@ -260,8 +260,25 @@ BOOL RCTUpscalingRequired(
+   }
+ }
+ 
++#if TARGET_OS_OSX // [table-file-format patch]
++// ImageIO (below) can't read SVG, so an SVG image drew nothing. NSImage
++// decodes SVG itself (an NSSVGImageRep, resolution-independent), so SVG data
++// goes to it instead. Drop this patch once react-native-macos does the same.
++static BOOL RCTDataLooksLikeSVG(NSData *data)
++{
++  NSUInteger length = MIN(data.length, (NSUInteger)1024);
++  NSString *head = [[NSString alloc] initWithBytes:data.bytes length:length encoding:NSUTF8StringEncoding];
++  return head != nil && [head rangeOfString:@"<svg" options:NSCaseInsensitiveSearch].location != NSNotFound;
++}
++#endif
++
+ RCTPlatformImage *__nullable RCTDecodeImageWithData(NSData *data, CGSize destSize, CGFloat destScale, RCTResizeMode resizeMode) // [macOS]
+ {
++#if TARGET_OS_OSX // [table-file-format patch]
++  if (RCTDataLooksLikeSVG(data)) {
++    return [[NSImage alloc] initWithData:data];
++  }
++#endif
+   CGImageSourceRef sourceRef = CGImageSourceCreateWithData((__bridge CFDataRef)data, NULL);
+   if (!sourceRef) {
+     return nil;
+diff --git a/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm b/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+index 18bbe64..c9e4356 100644
+--- a/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
++++ b/node_modules/react-native-macos/Libraries/Text/TextInput/RCTBackedTextInputDelegateAdapter.mm
+@@ -239,7 +239,11 @@ - (BOOL)control:(NSControl *)control textView:(NSTextView *)fieldEditor doComman
+   // enter/return
+   if (commandSelector == @selector(insertNewline:) || commandSelector == @selector(insertNewlineIgnoringFieldEditor:)) {
+     [self textFieldDidEndEditingOnExit];
+-    if ([textInputDelegate textInputShouldSubmitOnReturn]) {
++    // Workspace patch: the field gives up the keyboard on Return only when its
++    // submitBehavior is blurAndSubmit, as on iOS (textInputShouldReturn).
++    // With "submit" it stays focused: Return is the key handler's, and a
++    // blur after it undid what it decided (a refused value was dropped).
++    if ([textInputDelegate textInputShouldSubmitOnReturn] && [textInputDelegate textInputShouldReturn]) {
+       [[_backedTextInputView window] makeFirstResponder:nil];
+     }
+     commandHandled = YES;
+diff --git a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m b/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
+index a37a1c1..2933ca9 100644
+--- a/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
++++ b/node_modules/react-native-macos/React/Base/macOS/RCTUIKit.m
+@@ -430,7 +430,24 @@ - (void)setNeedsDisplay
+   self.needsDisplay = YES;
+ }
+ 
+-@synthesize clipsToBounds = _clipsToBounds;
++// [table-file-format patch] AppKit has had its own clipsToBounds since macOS 14, and this class's
++// synthesized one hid it: AppKit was never told a view clips, so it took every view to be able to draw
++// anywhere in the window. A view's visible area was then the scroll view's, not its own, and changed
++// with every step of a scroll, and AppKit drew every view's contents again each step: a table's text,
++// a few hundred times a row. Telling AppKit keeps a clipped view's visible area its own bounds, which
++// a scroll doesn't change. Drop once upstream does this.
++- (BOOL)clipsToBounds
++{
++  return _clipsToBounds;
++}
++
++- (void)setClipsToBounds:(BOOL)clipsToBounds
++{
++  _clipsToBounds = clipsToBounds;
++  if (@available(macOS 14.0, *)) {
++    [super setClipsToBounds:clipsToBounds];
++  }
++}
+ 
+ @synthesize backgroundColor = _backgroundColor;
+ 
+diff --git a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm b/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
+index 779480a..cdcc4cd 100644
+--- a/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
++++ b/node_modules/react-native-macos/React/CoreModules/RCTAlertManager.mm
+@@ -302,10 +302,15 @@ - (void)invalidate
+   }
+   [_alertControllers addObject:alert];
+   
+-  if (modal) {
++  // [table-file-format patch] A sheet needs a window, and keyWindow is nil
++  // whenever the app isn't frontmost (say, an alert that follows a delayed
++  // save while another app is in front), so the alert never appeared. Fall
++  // back to the main window, then any window, then an app-modal alert.
++  NSWindow *sheetWindow = [NSApp keyWindow] ?: [NSApp mainWindow] ?: [[NSApp windows] firstObject];
++  if (modal || sheetWindow == nil) {
+     callbacksHandlers([alert runModal]);
+   } else {
+-    [alert beginSheetModalForWindow:[NSApp keyWindow] completionHandler:callbacksHandlers];
++    [alert beginSheetModalForWindow:sheetWindow completionHandler:callbacksHandlers];
+   }
+ #endif // macOS]
+ }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+index 1ab801d..cc9b084 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTEnhancedScrollView.mm
+@@ -15,6 +15,9 @@ @interface RCTEnhancedScrollView () <RCTUIScrollViewDelegate> // [macOS]
+ @implementation RCTEnhancedScrollView {
+   __weak id<RCTUIScrollViewDelegate> _publicDelegate; // [macOS]
+   BOOL _isSetContentOffsetDisabled;
++#if TARGET_OS_OSX // [macOS
++  BOOL _passingGestureOn;
++#endif // macOS]
+ }
+ 
+ + (BOOL)automaticallyNotifiesObserversForKey:(NSString *)key
+@@ -375,4 +378,47 @@ - (BOOL)isHorizontal:(RCTUIScrollView *)scrollView // [macOS]
+       scrollView.contentSize.width > self.frame.size.width;
+ }
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] A scroll gesture this view can't scroll (a vertical swipe over a horizontal
++// ScrollView, say) goes to the scroll view around it, all of it, momentum included: decided once, as the
++// gesture begins, by which way it mostly runs. Upstream lets AppKit's default take it, and a table's
++// sideways pane held vertical swipes over it instead of the page scrolling. Drop once upstream does this.
++// [table-file-format patch] Overriding -scrollWheel: makes AppKit assume this class can't take
++// responsive scrolling (scrolling off the main thread), and every ScrollView is this class, the page
++// included, so all of them scrolled on the main thread. The override only chooses, as a
++// gesture begins, whether to pass it on; one it keeps goes to super as before, so it opts back in.
++//
++// `-scrollOnMainThread YES` on the command line (or as a default) opts back out, to compare the two:
++// off the main thread a scroll never waits for the app but can show places not yet drawn; on it,
++// what's shown is always drawn but the scroll waits whenever the app is busy.
+++ (BOOL)isCompatibleWithResponsiveScrolling
++{
++  static BOOL responsive;
++  static dispatch_once_t once;
++  dispatch_once(&once, ^{
++    responsive = ![NSUserDefaults.standardUserDefaults boolForKey:@"scrollOnMainThread"];
++  });
++  return responsive;
++}
++
++- (void)scrollWheel:(NSEvent *)event
++{
++  BOOL starts = event.phase == NSEventPhaseBegan || (event.phase == NSEventPhaseNone && event.momentumPhase == NSEventPhaseNone);
++  if (starts) {
++    CGFloat dx = fabs(event.scrollingDeltaX);
++    CGFloat dy = fabs(event.scrollingDeltaY);
++    NSSize content = self.documentView.frame.size;
++    NSSize visible = self.contentView.bounds.size;
++    BOOL canX = content.width > visible.width + 0.5;
++    BOOL canY = content.height > visible.height + 0.5;
++    _passingGestureOn = (dy > dx && !canY) || (dx > dy && !canX);
++  }
++  if (_passingGestureOn) {
++    [self.nextResponder scrollWheel:event];
++    return;
++  }
++  [super scrollWheel:event];
++}
++#endif // macOS]
++
+ @end
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
+index a14a864..988a451 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/ScrollView/RCTScrollViewComponentView.mm
+@@ -146,7 +146,15 @@ - (instancetype)initWithFrame:(CGRect)frame
+     _scrollView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+ #if !TARGET_OS_OSX // [macOS]
+     _scrollView.delaysContentTouches = NO;
+-#endif // [macOS]
++#else // [macOS
++    // [table-file-format patch] Start from what the default props say: no bounce on either axis.
++    // Props are only applied when they differ from the defaults, and both bounce props default to
++    // false, so a false never reaches the view and AppKit's automatic elasticity stays: a horizontal
++    // ScrollView bounced vertically, pulling a table's scrolling columns away from its frozen one.
++    // ScrollView's JS still turns bounce on for the axis that scrolls. Drop once upstream does this.
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceVertical = NO;
++    ((RCTEnhancedScrollView *)_scrollView).alwaysBounceHorizontal = NO;
++#endif // macOS]
+     ((RCTEnhancedScrollView *)_scrollView).overridingDelegate = self;
+     _isUserTriggeredScrolling = NO;
+     _shouldUpdateContentInsetAdjustmentBehavior = YES;
+@@ -348,9 +356,16 @@ - (void)updateLayoutMetrics:(const LayoutMetrics &)layoutMetrics
+         ? CGAffineTransformIdentity
+         : CGAffineTransformMakeScale(-1, 1);
+ 
+-    _containerView.transform = transform;
+ #if !TARGET_OS_OSX // [macOS]
++    _containerView.transform = transform;
+     _scrollView.transform = transform;
++#else
++    // [table-file-format patch] iOS flips the scroll view and its content
++    // both, and the two cancel. macOS leaves the scroll view unflipped, so
++    // flipping only the content mirrored everything in a right-to-left
++    // layout: text drawn backwards, and panes on the wrong side. Yoga has
++    // already laid the content out right to left, so it isn't flipped here.
++    (void)transform;
+ #endif // [macOS]
+   }
+ }
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
+index 804eec8..1b13af7 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/Text/RCTParagraphComponentView.mm
+@@ -25,6 +25,8 @@
+ #import <react/renderer/textlayoutmanager/RCTTextLayoutManager.h>
+ #import <react/renderer/textlayoutmanager/TextLayoutManager.h>
+ #import <react/utils/ManagedObjectWrapper.h>
++#import <react/utils/SimpleThreadSafeCache.h>
++#import <react/utils/hash_combine.h>
+ 
+ #import "RCTConversions.h"
+ #import "RCTFabricComponentsPlugins.h"
+@@ -54,6 +56,39 @@ static void RCTCancelTouchesForView(RCTPlatformView *view)
+ }
+ #endif // macOS]
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] What a text's drawing depends on: what it says and how, its size, the
++// window's scale and the appearance. Not whose text it is: two views that say the same share a drawing.
++struct RCTTextDrawingKey {
++  AttributedString string;
++  ParagraphAttributes paragraph;
++  CGSize size;
++  CGFloat scale;
++  void *appearance;
++
++  bool operator==(const RCTTextDrawingKey &other) const
++  {
++    return size.width == other.size.width && size.height == other.size.height && scale == other.scale && appearance == other.appearance &&
++        paragraph == other.paragraph && string.isContentEqual(other.string);
++  }
++};
++
++namespace std {
++template <>
++struct hash<RCTTextDrawingKey> {
++  size_t operator()(const RCTTextDrawingKey &key) const
++  {
++    auto seed = size_t{0};
++    facebook::react::hash_combine(seed, key.paragraph, key.size.width, key.size.height, key.scale, (size_t)key.appearance);
++    for (const auto &fragment : key.string.getFragments()) {
++      facebook::react::hash_combine(seed, fragment.string, fragment.textAttributes);
++    }
++    return seed;
++  }
++};
++} // namespace std
++#endif // macOS]
++
+ #pragma mark - RCTParagraphTextView (default, non-selectable) // [macOS]
+ 
+ // ParagraphTextView is an auxiliary view we set as contentView so the drawing
+@@ -113,6 +148,11 @@ - (instancetype)initWithFrame:(CGRect)frame
+ #endif // [macOS]
+     _textView = [RCTParagraphTextView new];
+     _textView.backgroundColor = RCTUIColor.clearColor; // [macOS]
++#if TARGET_OS_OSX // [macOS
++    // [table-file-format patch] Text is drawn inside its view, so AppKit can take the view to clip:
++    // its visible area is then its own bounds, and a scroll that moves it doesn't draw it again.
++    _textView.clipsToBounds = YES;
++#endif // macOS]
+     self.contentView = _textView;
+   }
+ 
+@@ -666,6 +706,91 @@ @implementation RCTParagraphTextView {
+   CAShapeLayer *_highlightLayer;
+ }
+ 
++#if TARGET_OS_OSX // [macOS
++// [table-file-format patch] The text is drawn into its layer's contents by the view itself
++// (-wantsUpdateLayer), when it is asked to be: its string, its size, the window's scale or the
++// appearance changed. AppKit visits the layer of every view that draws in -drawRect: whenever its
++// visible area may have changed, which a scroll does at every step: nothing is drawn, but each of a
++// table's few hundred texts was visited at each step. A view that sets its own contents isn't.
++//
++// The drawings are kept, a thousand of them, by what was drawn: a table says the same things over
++// and over (a stage, an owner, a date), and each is drawn once and shown wherever it appears.
++- (BOOL)wantsUpdateLayer
++{
++  return YES;
++}
++
++- (void)updateLayer
++{
++  CALayer *layer = self.layer;
++  CGSize size = self.bounds.size;
++  CGFloat scale = self.window.backingScaleFactor ?: NSScreen.mainScreen.backingScaleFactor ?: 2;
++  if (!_state || size.width < 0.5 || size.height < 0.5) {
++    layer.contents = nil;
++    return;
++  }
++  layer.contentsScale = scale;
++  layer.contentsGravity = kCAGravityTopLeft;
++
++  const auto &string = _state->getData().attributedString;
++  BOOL plain = YES;
++  for (const auto &fragment : string.getFragments()) {
++    // An attachment is placed by its own view, and a pressed stretch has a layer over it: drawn afresh.
++    if (fragment.isAttachment() || fragment.textAttributes.isHighlighted.value_or(false)) {
++      plain = NO;
++      break;
++    }
++  }
++  if (!plain) {
++    layer.contents = [self rct_drawn:scale];
++    return;
++  }
++  [_highlightLayer removeFromSuperlayer];
++  _highlightLayer = nil;
++  static SimpleThreadSafeCache<RCTTextDrawingKey, id, 1024> drawings;
++  RCTTextDrawingKey key{string, _paragraphAttributes, size, scale, (__bridge void *)self.effectiveAppearance.name};
++  layer.contents = drawings.get(key, [&]() { return [self rct_drawn:scale]; });
++}
++
++/// The text as an image, at `scale` pixels a point.
++- (id)rct_drawn:(CGFloat)scale
++{
++  CGSize size = self.bounds.size;
++  size_t width = (size_t)ceil(size.width * scale);
++  size_t height = (size_t)ceil(size.height * scale);
++  CGColorSpaceRef space = CGColorSpaceRetain(self.window.colorSpace.CGColorSpace) ?: CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
++  CGContextRef bitmap = CGBitmapContextCreate(NULL, width, height, 8, 0, space, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host);
++  CGColorSpaceRelease(space);
++  if (bitmap == NULL) {
++    return nil;
++  }
++  // The view's own coordinates: points, measured down from the top.
++  CGContextTranslateCTM(bitmap, 0, height);
++  CGContextScaleCTM(bitmap, scale, -scale);
++  [NSGraphicsContext saveGraphicsState];
++  NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithCGContext:bitmap flipped:YES];
++  [self.effectiveAppearance performAsCurrentDrawingAppearance:^{
++    [self drawRect:self.bounds];
++  }];
++  [NSGraphicsContext restoreGraphicsState];
++  CGImageRef image = CGBitmapContextCreateImage(bitmap);
++  CGContextRelease(bitmap);
++  return (__bridge_transfer id)image;
++}
++
++- (void)viewDidChangeBackingProperties
++{
++  [super viewDidChangeBackingProperties];
++  [self setNeedsDisplay:YES];
++}
++
++- (void)viewDidChangeEffectiveAppearance
++{
++  [super viewDidChangeEffectiveAppearance];
++  [self setNeedsDisplay:YES];
++}
++#endif // macOS]
++
+ - (RCTUIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
+ {
+   return nil;
+diff --git a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
+index 6e20d03..ab374dc 100644
+--- a/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
++++ b/node_modules/react-native-macos/React/Fabric/Mounting/ComponentViews/View/RCTViewComponentView.mm
+@@ -1035,7 +1035,11 @@ - (RCTUIView *)currentContainerView // [macOS]
+ {
+   if (_useCustomContainerView) {
+     if (!_containerView) {
+-      _containerView = [[RCTPlatformView alloc] initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)]; // [macOS]
++      // [table-file-format patch] Upstream creates this container as a plain RCTPlatformView (NSView), which has no
++      // -insertSubview:atIndex:, so mountChildComponentView: aborts with an unrecognized selector the first time a
++      // child mounts into a view with overflow:hidden plus a boxShadow or outline (styleWouldClipOverflowInk).
++      // RCTUIView has that method and is flipped like every other React view. Drop this patch once upstream does the same.
++      _containerView = [[RCTUIView alloc] initWithFrame:CGRectMake(0, 0, self.frame.size.width, self.frame.size.height)]; // [macOS]
+       for (RCTPlatformView *subview in self.subviews) { // [macOS]
+         [_containerView addSubview:subview];
+       }
+@@ -1733,7 +1737,11 @@ - (void)handleCommand:(const NSString *)commandName args:(const NSArray *)args
+ 
+ - (CGRect)focusRingMaskBounds
+ {
+-  return [self bounds];
++  // [table-file-format patch] With its ring off, a view has no ring's area, as NSView's own default
++  // (NSZeroRect). Returning its bounds regardless made AppKit render a mask bitmap the size of the
++  // view whenever it took the keyboard, ring or no ring: a table's keyboard view around a million
++  // rows is 45 million points tall, and that bitmap took gigabytes.
++  return _props->enableFocusRing ? [self bounds] : NSZeroRect;
+ }
+ 
+ - (void)drawFocusRingMask
+diff --git a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm b/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
+index 2d83643..ed1e75a 100644
+--- a/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
++++ b/node_modules/react-native-macos/React/Fabric/RCTSurfaceTouchHandler.mm
+@@ -68,7 +68,14 @@ static void UpdateActiveTouchWithUITouch(
+ #else // [macOS
+   CGPoint offsetPoint = [activeTouch.componentView convertPoint:uiTouch.locationInWindow fromView:nil];
+   CGPoint screenPoint = uiTouch.locationInWindow;
+-  CGPoint pagePoint = CGPointMake(screenPoint.x, CGRectGetHeight(rootComponentView.window.frame) - screenPoint.y);
++  // [table-file-format patch] A touch's page point is where it is in the
++  // React root view, which is what layout and measure() count from. Upstream
++  // counts from the window's top left instead, so the two differ by wherever
++  // the root sits in the window (beside a sidebar, under a title bar): a
++  // press then looks as if it left its target as soon as the pointer moves,
++  // and anything placed from a touch lands that far off. Drop this patch
++  // once react-native-macos does the same.
++  CGPoint pagePoint = [rootComponentView convertPoint:screenPoint fromView:nil];
+ #endif // macOS]
+ 
+   activeTouch.touch.offsetPoint = RCTPointFromCGPoint(offsetPoint);
+diff --git a/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp b/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
+index 61de2be..b99ee31 100644
+--- a/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
++++ b/node_modules/react-native-macos/ReactCommon/yoga/yoga/algorithm/PixelGrid.cpp
+@@ -12,7 +12,11 @@
+ 
+ namespace facebook::yoga {
+ 
+-float roundValueToPixelGrid(
++// [macOS The value on the pixel grid, at the precision it was worked out in.
++// A size is the difference of two of these, and has to be taken before either
++// is narrowed to a float: tens of millions of points down a long list a float
++// holds only every fourth point, and a 14 point view came out 12 or 16 high.
++static double roundValueToPixelGridExact(
+     const double value,
+     const double pointScaleFactor,
+     const bool forceCeil,
+@@ -58,9 +62,19 @@ float roundValueToPixelGrid(
+              : 0.0);
+   }
+   return (std::isnan(scaledValue) || std::isnan(pointScaleFactor))
+-      ? YGUndefined
+-      : (float)(scaledValue / pointScaleFactor);
++      ? (double)YGUndefined
++      : scaledValue / pointScaleFactor;
++}
++
++float roundValueToPixelGrid(
++    const double value,
++    const double pointScaleFactor,
++    const bool forceCeil,
++    const bool forceFloor) {
++  return (float)roundValueToPixelGridExact(
++      value, pointScaleFactor, forceCeil, forceFloor);
+ }
++// macOS]
+ 
+ void roundLayoutResultsToPixelGrid(
+     yoga::Node* const node,
+@@ -106,25 +120,27 @@ void roundLayoutResultsToPixelGrid(
+     const bool hasFractionalHeight =
+         !yoga::inexactEquals(round(scaledNodeHeight), scaledNodeHeight);
+ 
++    // [macOS Each size is taken from the two edges before narrowing to float
+     node->getLayout().setDimension(
+         Dimension::Width,
+-        roundValueToPixelGrid(
+-            absoluteNodeRight,
+-            pointScaleFactor,
+-            (textRounding && hasFractionalWidth),
+-            (textRounding && !hasFractionalWidth)) -
+-            roundValueToPixelGrid(
+-                absoluteNodeLeft, pointScaleFactor, false, textRounding));
++        (float)(roundValueToPixelGridExact(
++                    absoluteNodeRight,
++                    pointScaleFactor,
++                    (textRounding && hasFractionalWidth),
++                    (textRounding && !hasFractionalWidth)) -
++                roundValueToPixelGridExact(
++                    absoluteNodeLeft, pointScaleFactor, false, textRounding)));
+ 
+     node->getLayout().setDimension(
+         Dimension::Height,
+-        roundValueToPixelGrid(
+-            absoluteNodeBottom,
+-            pointScaleFactor,
+-            (textRounding && hasFractionalHeight),
+-            (textRounding && !hasFractionalHeight)) -
+-            roundValueToPixelGrid(
+-                absoluteNodeTop, pointScaleFactor, false, textRounding));
++        (float)(roundValueToPixelGridExact(
++                    absoluteNodeBottom,
++                    pointScaleFactor,
++                    (textRounding && hasFractionalHeight),
++                    (textRounding && !hasFractionalHeight)) -
++                roundValueToPixelGridExact(
++                    absoluteNodeTop, pointScaleFactor, false, textRounding)));
++    // macOS]
+   }
+ 
+   for (yoga::Node* child : node->getChildren()) {
