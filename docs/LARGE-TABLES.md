@@ -359,11 +359,11 @@ iPhone 17 Pro Simulator, iOS 26.0, a development (Debug) build. These say that i
 | On the phone | | 822 MB: the rows file 165 MB, `index.sqlite` 665 MB (444 MB before its search index), its log 33 MB |
 
 - **The build commits every 20,000 rows** (`commitEvery`). As one transaction, all of a build sits in SQLite's write-ahead log until its end: at a million rows the log reached 445 MB beside a 444 MB index, and a log keeps its size once written. In steps the log is folded into the index as the build goes and stayed under 38 MB; it is emptied when the build ends, and capped at 16 MB after (`journal_size_limit`). The build took 457 s in steps against 480 s as one transaction.
-- **The step's size is not what the screen waits on.** On a phone a build holds React's renders up for seconds whatever `batchSize` or `commitEvery` is, and committing every 20,000 rows costs no time there (11.3 s against 11.4 s at 100,000 rows); the measurements are in the next section. `batchSize` is core's default here for that reason.
-- **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, until a phone says otherwise. A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`. In sync mode the host builds in batches of 1,000 rows, since there the batch is the longest the screen waits.
+- **The step's size is not what the screen waits on.** On a phone in October (Expo SDK 55) a build held React's renders up for seconds whatever `batchSize` or `commitEvery` was; since SDK 58 it doesn't (1 Nov, below). Committing every 20,000 rows cost no time there either (11.3 s against 11.4 s at 100,000 rows); the measurements are in the next section. `batchSize` is core's default here for that reason.
+- **The driver's mode and yield are the host's settings** (`apps/mobile/indexHost.ts`): async with no yield, as the driver comes, which a phone confirmed on 1 Nov 2026 (100,000 rows in 3.4 s, the screen never held more than 80 ms). A build made to measure sets them with `EXPO_PUBLIC_TABLE_INDEX_MODE=sync` and `EXPO_PUBLIC_TABLE_INDEX_YIELD_MS=30`. In sync mode the host builds in batches of 1,000 rows, since there the batch is the longest the screen waits.
 - **A development build is slow at a million rows for its own reason.** A search or a sort took about 8 s to show, with the index answering in 5 to 25 ms: the time is React's development-only logging of a component's changed props, which copies the list's million items. It says nothing of a Release build.
 
-Not there yet on iOS for an indexed table: a build that leaves the screen free on a phone (the next section), and any timing of the app itself on one; layouts other than Table (it says so); removing a choice; an export of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
+Not there yet on iOS for an indexed table: a build of 1,000,000 rows on a phone, and any timing of the app itself on one; layouts other than Table (it says so); removing a choice; an export of more than 250,000 rows; removing a bundle's folder when its file is closed (Reset Demo Data removes them all).
 
 **Two large tables in one bundle.** A build is one transaction on the bundle's one connection, and a read of the bundle's other large table meanwhile may make a sort's or a group's index inside it. If the build then fails, those go with it while core still takes them to exist. Not handled, here or on the web; committing in steps (`commitEvery`) makes it rare.
 
@@ -441,9 +441,29 @@ A sync build that yields to something other than a timer shows all of it on a Ma
 - Only a timer takes the JS thread back to its run loop. On the phone a timer yield cost about 90 ms in async mode; what it costs in sync mode, with nothing else queued, is the number still wanted. The last row needs a tenth as many of them.
 - In sync mode a yield can only come between statements, so the longest wait is the longest statement: a batch of 5,000 rows was 0.35 s here, and one of 1,000 rows 0.22 s, at no cost to the build. A step of the search index is one statement too (0.44 s for 20,000 rows). The sync rows above use batches of 1,000.
 
-**Not measured yet, on a phone:** the sitting above. Sync with a timer yield, and sync with the scheduler and a timer every 300 ms, are the two that could settle the build with a driver setting. Also not measured: 1,000,000 rows on the phone, and the first sort, group and total indexes at that size.
+### iOS: the same sitting on a phone, after Expo SDK 58 (1 Nov 2026)
 
-**If that fails, the build moves off the JS thread.** The preferred route is a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. Worklets 0.12 supports React Native 0.83; Expo SDK 55 pins 0.7.4. A native build (Swift or Rust reading the rows files) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
+iPhone 16 Pro (the phone measured on 10 Oct), iOS 27.0.1, a Release build made with `EXPO_PUBLIC_TABLE_MEASURE=1`, Expo SDK 58 (React Native 0.88, expo-sqlite with SQLite 3.53.3), 100,000 rows, `sqlite?rows=100000&cases=0&sitting=1`:
+
+| Mode | Yield every 30 ms to | Rows in | Longest timer gap | Longest React render wait | Rows read mid-build |
+|---|---|---|---|---|---|
+| async | nothing (the app's setting) | 3.4 s | 0.08 s | 0.01 s | yes |
+| async | a timer (every 100 ms) | 3.7 s | 0.07 s | 0.01 s | yes |
+| async | the scheduler | 3.5 s | 0.08 s | 0.01 s | yes |
+| async | a call answered on the main queue | 3.6 s | 0.08 s | 0.01 s | yes |
+| async | a call answered on a background queue | 3.7 s | 0.08 s | 0.01 s | yes |
+| sync | a timer | 2.9 s | 0.20 s | 0.04 s | yes |
+| sync | the scheduler | 2.9 s | the whole build | 0.04 s | no |
+| sync | the scheduler, and a timer every 300 ms | 2.8 s | 0.34 s | 0.03 s | yes |
+| sync | a call answered on the main queue | 2.8 s | the whole build | 0.13 s | no |
+| sync | a call answered on a background queue | 2.8 s | 0.08 s | 0.06 s | yes |
+
+- **The stall is gone.** The build the app already does (async, no yield) brings 100,000 rows in in 3.4 s, against 10.4 to 11.4 s on 10 Oct, and no timer, frame or React render waits more than 80 ms. Rows are read mid-build in under 20 ms. Searching's index takes 0.6 s, with the JS thread never held more than 17 ms.
+- Yielding adds nothing in async mode now. Sync mode is about 0.6 s quicker but holds the screen longer (up to 0.2 s with a timer yield), and a yield to the scheduler or the main queue still starves timers for the whole build, as in the Simulator.
+- What changed between the two runs is Expo SDK 55 to 58 (React Native 0.83 to 0.88, SQLite 3.50.3 to 3.53.3) and perhaps the phone's iOS; this sitting doesn't say which of them. The app's setting stays async with no yield.
+- **Still not measured on a phone:** 1,000,000 rows, and the first sort, group and total indexes at that size.
+
+**Had it not gone, the build would have moved off the JS thread.** Kept for 1,000,000 rows, if they show it: a react-native-worklets worker runtime running core unchanged, with a `SqlDriver` over a SQLite binding installed into that runtime, calling it synchronously (harmless on a worker thread); the screen reads through `remoteViewRows`, as the web and Linux do. expo-sqlite installs only into React Native's runtime. op-sqlite's C++ entry point, `install(jsi::Runtime &rt, invoker, …)`, takes any runtime, and its `executeSync` and `executeRawSync` don't need React Native's call invoker, so a small native glue file could install it into a worker runtime: untried. A native build (Swift or Rust reading the rows files) would need a second, exact implementation of `encode` and `computeRows`, and is not preferred.
 
 **Running the probe on a phone.** The screen is `apps/mobile/app/sqlite.tsx` (logic in `apps/mobile/sqliteProbe.ts`), in a development build or one made with `EXPO_PUBLIC_TABLE_MEASURE=1`:
 
