@@ -166,6 +166,39 @@ test("a link is read over any platform's files, from the document's folder and k
   assert.ok((await fs.readText("/ws/tables/projects.table/tables/tasks/history.ndjson"))?.includes("Renamed"));
 });
 
+// A single-file .table (SPEC section 13): drawn where the host opens one as a document, said plainly where it doesn't.
+test("a link to a single-file .table is read through the host's way of opening one", async () => {
+  const { memoryFs } = await import("@workspace.sh/table-core/io");
+  const { readEmbedWith, embedFileAddress, linkedRowAddress } = await import("./embed.ts");
+  const fs = memoryFs();
+  await fs.mkdir("/ws/docs");
+  await fs.mkdir("/ws/tables");
+  await fs.writeBytes!("/ws/tables/single.table", new Uint8Array([80, 75, 3, 4]));
+  const target = { address: "../tables/single.table#table=tasks&view=juycicwios88m&embed=1", baseDir: "/ws/docs", within: "/ws" };
+
+  const none = await readEmbedWith(fs, target);
+  assert.equal(none.kind === "problem" && none.text, "“single.table” is a single-file .table, which can’t be shown in a document here yet.");
+
+  // The host's own: here the projects bundle, as if unpacked to a working folder.
+  const opened: string[] = [];
+  const openFile = async (path: string) => {
+    opened.push(path);
+    const library: Library = { tables: fromBundle("projects", bundles.projects!), bundles: { projects: bundles.projects!.meta }, paths: { projects: "/cache/work/projects" }, singleFiles: { projects: path }, problems: {} };
+    return library;
+  };
+  const shown = await readEmbedWith(fs, target, { openFile });
+  assert.deepEqual(opened, ["/ws/tables/single.table"]);
+  assert.equal(shown.kind, "shown");
+  if (shown.kind !== "shown") return;
+  assert.equal(shown.key, "projects/tasks");
+  // Its address is the file's own path, not its working folder's.
+  assert.equal(embedFileAddress(shown), "/ws/tables/single.table#table=tasks&view=juycicwios88m");
+  assert.equal(linkedRowAddress("projects#row=p1", shown.library, shown.library, "projects"), "/ws/tables/single.table#table=projects&row=p1");
+
+  const broken = await readEmbedWith(fs, target, { openFile: () => Promise.reject(new Error("not a zip")) });
+  assert.equal(broken.kind === "problem" && broken.text, "“single.table” couldn’t be read: not a zip");
+});
+
 test("an embed keeps the room its link says it will take while it's read", () => {
   assert.equal(embedRoom("projects.table#table=tasks&rows=3&embed=1", 480, 44), 44 * 4);
   assert.equal(embedRoom("projects.table#table=tasks&rows=40&embed=1", 480, 44), 480);

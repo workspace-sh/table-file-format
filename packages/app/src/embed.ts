@@ -217,6 +217,12 @@ export interface EmbedReading {
   real?: (path: string) => string | Promise<string>;
   /** The drop-in reads a large table (one with its rows elsewhere) through its index: it is drawn, not refused. */
   readsIndex?: boolean;
+  /**
+   * A single-file `.table`, opened as this host opens one as a document: in
+   * its working folder, packed back into the file after each write. Absent:
+   * a link to one says it can't be shown here yet.
+   */
+  openFile?: (path: string) => Promise<Library>;
 }
 
 /** A path as a link writes it: percent-encoded where Markdown needs it. */
@@ -260,7 +266,7 @@ const lastPart = (path: string) => path.slice(path.lastIndexOf("/") + 1);
  * and the same words, on every platform.
  */
 export function readEmbedWith(fs: TableFs, target: EmbedTarget, reading: EmbedReading = {}): Promise<EmbedRead> {
-  return readEmbedFrom(fs, target, reading, (path) => readLinked(fs, path, reading));
+  return readEmbedFrom(fs, target, reading, (path, file) => (file ? reading.openFile!(path) : readLinked(fs, path, reading)));
 }
 
 /** A file an embed names, with the files its relations name beside it (withOtherFiles). */
@@ -283,10 +289,10 @@ async function readLinked(fs: TableFs, path: string, reading: EmbedReading): Pro
  */
 export function embedReaderWith(fs: TableFs, reading: EmbedReading = {}): (target: EmbedTarget) => Promise<EmbedRead> {
   const read = new Map<string, { writes: number; library: Promise<Library> }>();
-  const open = (path: string): Promise<Library> => {
+  const open = (path: string, file: boolean): Promise<Library> => {
     const held = read.get(path);
     if (held && held.writes === writesNoted()) return held.library;
-    const library = readLinked(fs, path, reading);
+    const library = file ? reading.openFile!(path) : readLinked(fs, path, reading);
     const entry = { writes: writesNoted(), library };
     read.set(path, entry);
     // A read that failed is tried again by the next embed, not handed on.
@@ -298,7 +304,12 @@ export function embedReaderWith(fs: TableFs, reading: EmbedReading = {}): (targe
   return (target) => readEmbedFrom(fs, target, reading, open);
 }
 
-async function readEmbedFrom(fs: TableFs, { address, baseDir, within }: EmbedTarget, reading: EmbedReading, open: (path: string) => Promise<Library>): Promise<EmbedRead> {
+async function readEmbedFrom(
+  fs: TableFs,
+  { address, baseDir, within }: EmbedTarget,
+  reading: EmbedReading,
+  open: (path: string, file: boolean) => Promise<Library>,
+): Promise<EmbedRead> {
   const parsed = parseAddress(address);
   if (!parsed) return embedProblem("This link doesn’t name a table.");
   const written = decoded(parsed.tablePath);
@@ -309,14 +320,26 @@ async function readEmbedFrom(fs: TableFs, { address, baseDir, within }: EmbedTar
       return embedProblem(`“${written}” is outside the folder that’s open, so it isn’t shown.`);
     }
   }
+  // A folder, or a single file (SPEC section 13).
+  let file = false;
   if ((await fs.list(path)) === null) {
     const parent = path.slice(0, path.lastIndexOf("/")) || "/";
     const entry = (await fs.list(parent))?.find((e) => e.name === lastPart(path));
-    return embedProblem(entry ? `“${lastPart(path)}” isn’t a .table.` : `There’s no table at “${written}”.`);
+    if (!entry) return embedProblem(`There’s no table at “${written}”.`);
+    if (!isTablePath(entry.name)) return embedProblem(`“${lastPart(path)}” isn’t a .table.`);
+    if (!reading.openFile) return embedProblem(`“${lastPart(path)}” is a single-file .table, which can’t be shown in a document here yet.`);
+    file = true;
   }
   // After any write of it another view has under way.
   await settled(path);
-  return embedIn(await open(path), parsed, lastPart(path), { readsIndex: reading.readsIndex === true });
+  let library: Library;
+  try {
+    library = await open(path, file);
+  } catch (error) {
+    if (!file) throw error;
+    return embedProblem(`“${lastPart(path)}” couldn’t be read: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  return embedIn(library, parsed, lastPart(path), { readsIndex: reading.readsIndex === true });
 }
 
 /** An embedded table's files over a platform's TableFs: edits written where the file was read from, and each to its table's history. */
@@ -327,6 +350,9 @@ export function embedFilesWith(fs: TableFs): EmbeddedTableFiles {
   };
 }
 
+/** Where a bundle is on disk, as a person knows it: a single file's own path, else its folder. */
+const fileOf = (library: Library, bundle: string): string | undefined => library.singleFiles?.[bundle] ?? library.paths[bundle];
+
 /**
  * A linked row clicked in a `.table` a drop-in draws (an embed, or a file
  * opened as a document), as an address an app can open: the `.table`'s path
@@ -334,11 +360,11 @@ export function embedFilesWith(fs: TableFs): EmbeddedTableFiles {
  * The cell's own address names the row's table as the file does (`projects#row=p2`),
  * which means nothing outside it. Null when the table isn't one this file
  * holds (a link to another `.table`, not followed from here yet), or the file
- * has no path (read from a single-file `.table`).
+ * has no path (read from bytes).
  */
 export function linkedRowAddress(address: string, library: Library, held: { tables: Record<string, ParsedTable>; bundles: Record<string, BundleMeta> }, fromBundle: string): string | null {
   const target = addressTarget(address, held.tables, held.bundles, fromBundle);
-  const path = target ? library.paths[bundleOf(target.key)] : undefined;
+  const path = target ? fileOf(library, bundleOf(target.key)) : undefined;
   if (!target || path === undefined) return null;
   const rowId = parseAddress(address)?.rowId;
   return formatAddress({ tablePath: path, tableName: tableNameOf(target.key), ...(target.viewId ? { viewId: target.viewId } : {}), ...(rowId ? { rowId } : {}) });
@@ -346,12 +372,12 @@ export function linkedRowAddress(address: string, library: Library, held: { tabl
 
 /**
  * Where an embed's table is, as an address an app can open the file at: the
- * `.table`'s path as it was read, and the table and view drawn
- * (`/notes/projects.table#table=tasks&view=v2`). Null for a file read from a
- * single-file `.table`, which has no path.
+ * `.table`'s path as it was read (a single file's own path, not its working
+ * folder's), and the table and view drawn (`/notes/projects.table#table=tasks&view=v2`).
+ * Null for a file read from bytes, which has no path.
  */
 export function embedFileAddress(shown: EmbedShown, viewId: string = shown.viewId): string | null {
-  const path = shown.library.paths[bundleOf(shown.key)];
+  const path = fileOf(shown.library, bundleOf(shown.key));
   if (path === undefined) return null;
   return formatAddress({ tablePath: path, tableName: tableNameOf(shown.key), ...(viewId ? { viewId } : {}) });
 }
