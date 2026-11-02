@@ -15,7 +15,7 @@ are.
 
 ## Run it
 
-Needs Node 24, GTK 4 and libadwaita (Fedora: `sudo dnf install gtk4 libadwaita`).
+Needs Node 24, GTK 4 and libadwaita (Fedora: `sudo dnf install gtk4 libadwaita`), and Rust (`cargo`) to build: `npm run build` compiles the formula engine for this machine.
 
 ```sh
 cd apps/linux

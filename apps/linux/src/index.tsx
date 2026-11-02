@@ -13,9 +13,15 @@ import { fixturesDir } from "./fixtures.js";
 import { setFormulaEngine } from "@workspace.sh/table-core";
 import { loadEdn } from "@workspace.sh/edn";
 
-// Formulas are worked out by the EDN core (Rust, natively), the only evaluator (#710). Without it,
-// the app still starts, warns here, and shows every formula's cell empty.
-setFormulaEngine(await loadEdn({ binding: "native" }).catch((e: unknown) => (console.warn(`formulas aren't worked out, the EDN core didn't load: ${String(e)}`), null)));
+// Formulas are worked out by the EDN core (Rust, natively), the only evaluator (#710). `build`
+// compiles it for this machine, so a build always has it; if it still doesn't load, the app stops
+// here and says why, rather than open tables without their formulas.
+setFormulaEngine(
+  await loadEdn({ binding: "native" }).catch((e: unknown) => {
+    console.error(`Table can't start: its formula engine didn't load. ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }),
+);
 
 // What's named on the command line (a file manager names what it opens), or
 // the repo's fixtures. Spliced out of argv: GTKX hands the rest to
