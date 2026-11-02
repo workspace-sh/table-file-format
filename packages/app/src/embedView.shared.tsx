@@ -9,15 +9,18 @@
 // table-gtk's TableEmbed is the same for GTK. Each platform's frame (what
 // scrolls it) and dialogs are in embedView.tsx and embedView.web.tsx.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { css, html } from "react-strict-dom";
-import type { View } from "@workspace.sh/table-core";
+import type { ParsedTable, View } from "@workspace.sh/table-core";
 import { BodyEditor, DisplaySettingsProvider, KeyboardOnShow } from "@workspace.sh/table-ui";
 
 import { bundleOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { EMBED_MAX_HEIGHT, EMBED_ROW_HEIGHT, embedCount, embedFileAddress, embedLeftOut, embedMoreText, embedRoom, linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { useEmbeddedTable } from "./react.ts";
+import { derive } from "./appState.ts";
+import type { Row } from "@workspace.sh/table-core";
+import { useIndexedTables, type IndexedTablesDatabase } from "./useIndexedTables.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { rowTitleFor } from "./edits.ts";
 import { askName } from "./askName";
@@ -61,7 +64,25 @@ export interface TableEmbedProps {
    * doesn't move when the table arrives. Absent: no room is kept.
    */
   address?: string;
+  /**
+   * The host's index, for a large table (SPEC section 8): its rows are read
+   * from it, never all into memory, as TableFileView reads them. The host's
+   * reader then passes `readsIndex`. Absent: a large table says it can't be shown.
+   */
+  index?: EmbedIndex;
 }
+
+/** How an embed reads a large table: through the host's index (TableFileView's index, or the web's worker). */
+export interface EmbedIndex {
+  /** A bundle's index on this device, or one on its way (the web's worker). */
+  openIndexDatabase: (bundle: string) => IndexedTablesDatabase | Promise<IndexedTablesDatabase>;
+  /** Its large tables' first rows by `bundle/table` key, shown while the rest is read. */
+  first?: Record<string, Row[]>;
+}
+
+const noIndex = (): IndexedTablesDatabase => {
+  throw new Error("this embed's host reads no index");
+};
 
 /** What scrolls an embedded view, as tall as what it holds up to `limit`. */
 export type EmbedFrame = (props: { limit: number; children: ReactNode }) => ReactNode;
@@ -77,7 +98,9 @@ function Shown({
   ask,
   Frame,
   onWidest,
+  index,
 }: {
+  index: EmbedIndex | undefined;
   shown: EmbedShown;
   files: EmbeddedTableFiles;
   maxHeight: number;
@@ -88,8 +111,40 @@ function Shown({
   Frame: EmbedFrame;
   onWidest: (width: number | null) => void;
 }) {
-  const { state, dispatch, derived, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale);
+  // A large table's rows are in its bundle's index: written back after the rest of the bundle is.
+  const saveIndexed = useRef<((tables: Record<string, ParsedTable>) => Promise<boolean>) | null>(null);
+  const writing = useMemo(
+    () =>
+      index
+        ? {
+            ...files,
+            write: async (...args: Parameters<EmbeddedTableFiles["write"]>) => {
+              await files.write(...args);
+              await saveIndexed.current?.(args[1]);
+              await files.written?.(args[0], args[3]);
+            },
+          }
+        : files,
+    [files, index],
+  );
+  const { state, dispatch, derived: drawn, display, tableName, related, callbacks } = useEmbeddedTable(shown, writing, locale);
+  const indexed = useIndexedTables({
+    state,
+    dispatch,
+    view: drawn.shown.view,
+    tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
+    openIndexDatabase: index?.openIndexDatabase ?? noIndex,
+  });
+  saveIndexed.current = indexed.save;
+  useEffect(() => {
+    if (index?.first) indexed.hold(index.first);
+    // Once: what reading the file gave.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Read through the index, counts and totals are of every row in it.
+  const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
   const { table, view } = derived;
+  const rowsSource = indexed.source ?? indexed.reading;
   // How much to show at once: the link's own count of rows, else the limit. Cut to the
   // count (`rest=more`), only the counted rows or cards are drawn, each column's first on a
   // board, until the line beneath is pressed; from then on it is the whole view.
@@ -97,7 +152,14 @@ function Shown({
   const [opened, setOpened] = useState(false);
   const cut = shown.size.rest === "more" && count !== undefined && !opened;
   const allShown = derived.shown.rows;
-  const leftOut = cut ? embedLeftOut(shown.size, derived.shown.view, allShown, table.schema) : 0;
+  // Read through the index, a table or a list leaves out what is past the count of all its rows; a board isn't cut there.
+  const leftOut = !cut
+    ? 0
+    : table.indexed
+      ? indexed.source && count !== undefined && view.layout !== "board"
+        ? Math.max(0, indexed.source.count - count)
+        : 0
+      : embedLeftOut(shown.size, derived.shown.view, allShown, table.schema);
   const rows = shown.size.rows;
   const limit =
     !cut && rows !== undefined && (view.layout === "table" || view.layout === "list") ? Math.min(maxHeight, ROW_HEIGHT + rows * (view.rowHeight ?? ROW_HEIGHT)) : maxHeight;
@@ -135,6 +197,8 @@ function Shown({
           allRows={table.rows}
           tableKey={tableName}
           sheet={derived.shown.sheet}
+          // A large table's rows: from its index, or as many as are read so far while it's made.
+          {...(rowsSource ? { source: rowsSource } : {})}
           {...(readOnly ? {} : callbacks)}
           // With rows left out there is nowhere to add one: it would go after rows that aren't shown.
           {...(leftOut > 0 ? { onAddRow: undefined } : {})}
@@ -171,7 +235,7 @@ function Shown({
 
 /** The drop-in, given a platform's frame and its default dialog. */
 export function TableEmbedWith(
-  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, onOpen, ask, address }: TableEmbedProps,
+  { read, files, caption, maxHeight = EMBED_MAX_HEIGHT, locale, readOnly = false, onOpenLink, onOpen, ask, address, index }: TableEmbedProps,
   Frame: EmbedFrame,
   defaultAsk: NonNullable<TableEmbedProps["ask"]>,
 ) {
@@ -220,6 +284,7 @@ export function TableEmbedWith(
           ask={ask ?? defaultAsk}
           Frame={Frame}
           onWidest={setWidest}
+          index={index}
         />
       ) : null}
       {read?.kind === "problem" ? (

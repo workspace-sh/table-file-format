@@ -11,9 +11,9 @@ import type { ReactNode } from "react";
 import { css, html } from "react-strict-dom";
 
 import { confirmText, type Confirm } from "./confirm.ts";
-import { EMBED_MAX_HEIGHT, TableEmbedWith, type TableEmbedProps } from "./embedView.shared.tsx";
+import { EMBED_MAX_HEIGHT, TableEmbedWith, type EmbedIndex, type TableEmbedProps } from "./embedView.shared.tsx";
 
-export { EMBED_MAX_HEIGHT, type TableEmbedProps };
+export { EMBED_MAX_HEIGHT, type EmbedIndex, type TableEmbedProps };
 
 function Frame({ limit, children }: { limit: number; children: ReactNode }) {
   return <html.div style={styles.frame(limit)}>{children}</html.div>;

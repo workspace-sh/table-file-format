@@ -177,6 +177,12 @@ export function useIndexedTables<D extends IndexedTablesDatabase = IndexedTables
 
   // Make each indexed table's index ready, once, as it's first held.
   useEffect(() => {
+    // Here again after it went (React's development mode mounts each screen twice): it isn't
+    // gone, and its indexes, let go of, are asked for again.
+    if (gone.current) {
+      gone.current = false;
+      asked.current.clear();
+    }
     // A table no longer held (its file closed) is forgotten, so a file opened again under the
     // same name is read afresh rather than taken for the one that was here.
     const dropped = [...asked.current].filter((key) => !state.tables[key]);

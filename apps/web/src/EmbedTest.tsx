@@ -4,9 +4,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { css, html } from "react-strict-dom";
+import { parseAddress } from "@workspace.sh/table-core";
 import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
-import { embedFilesWith, readEmbedWith, toBundle, type EmbedRead } from "@workspace.sh/table-app";
-import { TableEmbed } from "@workspace.sh/table-app/embed-view";
+import { bundleToArchive, embedFilesWith, embedIn, fromBundle, readEmbedWith, toBundle, type EmbedRead, type Library } from "@workspace.sh/table-app";
+import { openArchiveInWorker, openWebDatabase } from "./sqlite/client";
+import { TableEmbed, type EmbedIndex } from "@workspace.sh/table-app/embed-view";
 import { bundles, tables } from "./loadFixture";
 
 // What a document in /ws/docs could link to, and what each should show.
@@ -64,6 +66,7 @@ export function EmbedTest() {
           <TableEmbed read={reads[i] ?? null} files={files} {...(c.caption ? { caption: c.caption } : {})} />
         </html.section>
       ))}
+      <LargeCase />
       <html.button
         style={styles.button}
         onClick={() => void fs.readText("/ws/tables/projects.table/tables/tasks/rows/0001.ndjson").then((t) => setWritten(t ?? ""))}
@@ -72,6 +75,36 @@ export function EmbedTest() {
       </html.button>
       {written ? <html.pre style={styles.pre}>{written}</html.pre> : null}
     </html.div>
+  );
+}
+
+// A large table (SPEC section 8) in a single file: read into the page's index
+// in its worker, as the web opens one, and drawn from there, never all in memory.
+const LARGE_ROWS = 50_000;
+const LARGE_ADDRESS = "big.table#table=tasks&view=juycicwios88m&rows=5&rest=more&embed=1";
+
+function LargeCase() {
+  const [shown, setShown] = useState<{ read: EmbedRead; index: EmbedIndex } | null>(null);
+  useEffect(() => {
+    void (async () => {
+      const bundle = toBundle(tables, bundles, "projects");
+      const tasks = bundle.tables.tasks!;
+      const rows = Array.from({ length: LARGE_ROWS }, (_, i) => ({ id: `b${i}`, title: `Big ${i}`, priority: i }));
+      const bytes = await bundleToArchive("big", { ...bundle, tables: { tasks: { ...tasks, rows } } });
+      const { opened, first } = await openArchiveInWorker(bytes, []);
+      const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+      const keyed = Object.fromEntries(Object.entries(first).map(([t, r]) => [t.includes("/") ? t : `${opened.key}/${t}`, r]));
+      setShown({ read: embedIn(library, parseAddress(LARGE_ADDRESS)!, "big.table", { readsIndex: true }), index: { openIndexDatabase: openWebDatabase, first: keyed } });
+    })();
+  }, []);
+  const files = useMemo(() => ({ write: async () => {} }), []);
+  return (
+    <html.section style={styles.case}>
+      <html.p style={styles.note}>
+        a single file of {LARGE_ROWS.toLocaleString("en")} rows, read through the index · <html.code>{LARGE_ADDRESS}</html.code>
+      </html.p>
+      {shown ? <TableEmbed read={shown.read} files={files} index={shown.index} address={LARGE_ADDRESS} readOnly /> : <TableEmbed read={null} files={files} address={LARGE_ADDRESS} />}
+    </html.section>
   );
 }
 

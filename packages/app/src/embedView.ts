@@ -3,5 +3,5 @@
 // platform's: a bundler takes embedFrame.web.tsx on the web and
 // embedFrame.tsx on iOS, Android and macOS, as table-ui's own files do.
 
-export { EMBED_MAX_HEIGHT, TableEmbed, type TableEmbedProps } from "./embedFrame";
+export { EMBED_MAX_HEIGHT, TableEmbed, type EmbedIndex, type TableEmbedProps } from "./embedFrame";
 export { embedQueue, useEmbedTurn, useReadEmbedsEarly, type EmbedPage, type EmbedQueue } from "./embedTurns.ts";
