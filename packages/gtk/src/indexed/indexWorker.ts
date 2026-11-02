@@ -33,10 +33,8 @@ export type IndexResponse =
 
 // One at a time, in the order asked; the first once the EDN core is in, so
 // every formula this worker works out is the core's, as the window's are.
-let last: Promise<unknown> = loadEdn({ binding: "native" }).then(
-  (edn) => setFormulaEngine(edn),
-  (e: unknown) => console.warn(`index worker: formulas aren't worked out, the EDN core didn't load: ${String(e)}`),
-);
+// If the core doesn't load, every turn fails with why.
+let last: Promise<unknown> = loadEdn({ binding: "native" }).then((edn) => setFormulaEngine(edn));
 let lastAsked = 0;
 const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
   const turn = last.then(run);
