@@ -48,6 +48,8 @@ members, more than one value, nesting past 256, texts past 16 MB.
 
 ```sh
 cargo test -p workspace-edn                 # the core and the corpus
+(cd js && sh build-native.sh)               # the native binding for this machine;
+                                            # the Linux app's build runs it
 (cd js && sh build-wasm.sh)                 # needs the wasm32 target,
                                             # wasm-bindgen 0.2.121, wasm-opt
 node --import tsx --test js/src/*.test.ts   # the corpus through WebAssembly
@@ -57,8 +59,11 @@ cargo run --release -p workspace-edn --example big   # timing, 100,000 maps
 python3 bench/formulas.py /tmp && cargo run --release -p workspace-edn --example many -- /tmp/formulas-250k.json
 ```
 
-The built WebAssembly is committed in `js/wasm/`, so the web and Linux
-apps don't need Rust to build.
+The built WebAssembly is committed in `js/wasm/`, so the web app doesn't
+need Rust to build. The Linux app's build compiles the native binding for
+the machine it runs on, so it needs Rust (cargo), and every chip it's built
+on gets its engine. The x64 Linux binding in `js/native/` is committed so a
+checkout runs and tests without building it first.
 
 ## Measured (21 Oct 2026, the rig)
 
