@@ -14,9 +14,9 @@ import { Alert, Animated, Platform, ScrollView } from "react-native";
 import { LayoutChannel, PageGutter, PageScrollContext, layoutChannel, pageScrollOver } from "@workspace.sh/table-ui";
 
 import type { Confirm } from "./confirm.ts";
-import { EMBED_MAX_HEIGHT, TableEmbedWith, type TableEmbedProps } from "./embedView.shared.tsx";
+import { EMBED_MAX_HEIGHT, TableEmbedWith, type EmbedIndex, type TableEmbedProps } from "./embedView.shared.tsx";
 
-export { EMBED_MAX_HEIGHT, type TableEmbedProps };
+export { EMBED_MAX_HEIGHT, type EmbedIndex, type TableEmbedProps };
 
 /** How long what the frame holds keeps the same size before it's shown: its columns are measured after it first lays out. */
 const SETTLE_MS = 120;
