@@ -280,6 +280,8 @@ export async function readEmbed({ address, baseDir, within }: EmbedTarget): Prom
     rowsElsewhere: largeTables(INDEXED_FROM),
     // GTK's drop-in reads a large table through its index.
     readsIndex: true,
+    // A single file: edited as its working folder, and packed back into it after each write (embedFiles).
+    openFile: (path) => openSingleFile(path, [], { indexedFrom: INDEXED_FROM }),
     real: (path) => {
       try {
         return realpathSync(path);

@@ -4,8 +4,10 @@ import { act, cleanup, render, screen, userEvent, waitFor } from "@gtkx/testing"
 import { parseEditLog } from "@workspace.sh/table-core";
 import { parseTable } from "@workspace.sh/table-core/parser";
 import { EMBED_MAX_HEIGHT, indexHostUsers, readEmbed, TableEmbed, TableFile } from "@workspace.sh/table-gtk/embed";
-import { openIndexHost } from "@workspace.sh/table-app/node";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { bundleToArchive, toBundle } from "@workspace.sh/table-app";
+import { loadLibrary, openIndexHost } from "@workspace.sh/table-app/node";
+import { readTableArchive } from "@workspace.sh/table-core";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -91,7 +93,8 @@ describe("what an embed's address names", () => {
   it("says a file that isn't a .table isn't one", async () => {
     writeFileSync(join(root, "tables", "notes.table"), "not a folder");
     mkdirSync(join(root, "tables", "empty.table"));
-    expect(await problemOf("../tables/notes.table#embed=1")).toBe("“notes.table” isn’t a .table.");
+    // A file named .table is a single file: read as one, and said when it can't be.
+    expect(await problemOf("../tables/notes.table#embed=1")).toMatch(/^“notes\.table” couldn’t be read: /);
     expect(await problemOf("../tables/empty.table#embed=1")).toBe("“empty.table” isn’t a .table, or it holds no tables.");
   });
 });
@@ -622,6 +625,51 @@ describe("a large table embedded in a document", () => {
     await waitFor(async () => expect((await screen.findAllByText("Edited in one view")).filter((w) => w.getMapped())).toHaveLength(2), { timeout: 30_000 });
     expect(screen.queryAllByText("Big 0").filter((w) => w.getMapped())).toHaveLength(0);
   }, 120_000);
+});
+
+// A single-file .table (SPEC section 13, #781): opened as a document opens one, in its
+// working folder, and packed back into the file after each edit.
+describe("a single-file .table embedded in a document", () => {
+  const packed = async (name: string) => {
+    const library = await loadLibrary([join(root, "tables", "projects.table")]);
+    const file = join(root, "tables", name);
+    writeFileSync(file, await bundleToArchive("projects", toBundle(library.tables, library.bundles, "projects")));
+    return file;
+  };
+  const titleIn = async (file: string, id: string) => (await readTableArchive(new Uint8Array(readFileSync(file)))).tables.tasks!.rows.find((r) => r.id === id)?.title;
+
+  it("is drawn, and an edit is packed back into the file, a single file still", async () => {
+    const file = await packed("single.table");
+    await render(inDocument(<TableEmbed address="../tables/single.table#table=tasks&view=juycicwios88m&embed=1" baseDir={docs} within={root} />));
+    await userEvent.click(await screen.findByText("Land .table extension"));
+    const entry = (await screen.findByDisplayValue("Land .table extension")) as Gtk.Entry;
+    await userEvent.clear(entry);
+    await userEvent.type(entry, "Edited in a single file");
+    await userEvent.keyboard(entry, "{Enter}");
+    await waitFor(async () => expect(await titleIn(file, "ytjc8tj8w8ftnbf9h86s5k9jfk")).toBe("Edited in a single file"), { timeout: 15_000 });
+    expect(statSync(file).isFile()).toBe(true);
+  });
+
+  it("is offered as a document at the file's own path", async () => {
+    const file = await packed("single.table");
+    let asked = "";
+    await render(inDocument(<TableEmbed address="../tables/single.table#table=tasks&view=juycicwios88m&embed=1" caption="Tasks" baseDir={docs} within={root} onOpen={(a) => (asked = a)} />));
+    const open = (await screen.findAllByName("table-embed-open"))[0] as Gtk.Button;
+    expect(open.getTooltipText()).toBe("Open single.table");
+    await userEvent.click(open);
+    expect(asked).toBe(`${file}#table=tasks&view=juycicwios88m`);
+  });
+
+  it("a large one is drawn from its index", async () => {
+    const tasks = join(root, "tables", "projects.table", "tables", "tasks");
+    let rows = "";
+    for (let i = 0; i < 50_000; i++) rows += `{"id":"b${i}","title":"Big ${i}","priority":${i}}\n`;
+    writeFileSync(join(tasks, "rows", "0001.ndjson"), rows);
+    await packed("big.table");
+    await render(inDocument(<TableEmbed address="../tables/big.table#table=tasks&view=juycicwios88m&rows=5&rest=more&embed=1" baseDir={docs} within={root} openIndex={openIndexHost} />));
+    await waitFor(async () => expect(await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Show 49,995 more rows" })).toBeDefined(), { timeout: 30_000 });
+    expect(await screen.findByText("Big 0")).toBeDefined();
+  }, 60_000);
 });
 
 // It is the table, not a picture of it: what is done to it in the document
