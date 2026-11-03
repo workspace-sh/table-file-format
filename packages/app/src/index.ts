@@ -33,6 +33,7 @@ export * from "./leaving.ts";
 export * from "./appState.ts";
 export { departedCount, departedText, isDiscreteField, type Departed, type DepartedText } from "./departed.ts";
 export * from "./embed.ts";
+export * from "./embedCases.ts";
 export * from "./heldFiles.ts";
 export * from "./tableFile.ts";
 
