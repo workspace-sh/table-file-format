@@ -5,12 +5,13 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseRowsText } from "@workspace.sh/table-core";
+import { archiveStamp, parseRowsText } from "@workspace.sh/table-core";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle } from "@workspace.sh/table-core/io";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 import { createIndexHost, type IndexHostPlatform } from "./indexHost.ts";
 import { bundleToArchive } from "./tableFiles.ts";
+import { packTableFile, watchingPackFs } from "./singleFile.ts";
 
 // The host iOS and the Mac keep large tables with, over Node's files and SQLite.
 
@@ -292,6 +293,66 @@ test("a save writes again only the rows files holding an edited row; a field lef
     assert.equal(await db.save("tasks", schema, true, ["priority"]), true);
     assert.deepEqual([...wrote].sort(), ["0001.ndjson", "0002.ndjson", "0003.ndjson"]);
     assert.ok(parseRowsText(readFileSync(join(tasks, "0002.ndjson"), "utf8"), []).every((r) => !("priority" in r)));
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a file packed from its index's folder is opened again with that index, not read again (packedAs)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-index-packed-"));
+  try {
+    const source = join(dir, "source.table");
+    cpSync(join(fixtures, "projects.table"), source, { recursive: true });
+    const bundle = await readBundle(nodeFs, source);
+    const many = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, title: `Row ${i} ${"x".repeat(400)}`, priority: i % 7 }));
+    bundle.tables.tasks!.rows = many;
+    const schema = bundle.tables.tasks!.schema;
+    const home = join(dir, "home");
+    let written = 0;
+    const counted = (): IndexHostPlatform => {
+      const p = nodePlatform(home);
+      return { ...p, writer: async (path) => (written++, p.writer(path)) };
+    };
+    const file = join(dir, "projects.table");
+    const host = createIndexHost(counted());
+    const open = async (bytes: Uint8Array) => {
+      const { opened } = await host.openZip(bytes, [], 1000);
+      const db = host.openIndexDatabase(opened.key);
+      const kept = opened.bundle.tables.tasks!.indexed?.kept === true;
+      return { key: opened.key, db, kept, count: await db.ensure("tasks", schema) };
+    };
+    // Packed as an app does after a save: its stamp taken from the bytes written.
+    const pack = async (key: string, before: number) => {
+      let stamp: string | null = null;
+      await packTableFile(watchingPackFs(nodeFs, file, (b) => (stamp = archiveStamp(b))), host.bundleDir(key), file);
+      await host.packedAs(key, stamp, before);
+    };
+    const edit = async (db: Awaited<ReturnType<typeof open>>["db"], title: string) => {
+      await db.rows({ ask: "edits", name: "tasks", table: { schema }, edits: [{ kind: "cell", rowId: "r0", field: "title", value: title }] });
+      assert.equal(await db.save("tasks", schema, true), true);
+    };
+
+    let { key, db, kept, count } = await open(await bundleToArchive("projects", bundle));
+    assert.equal(kept, false);
+    assert.equal(count, many.length);
+    await edit(db, "Edited");
+    await pack(key, host.rowWritesOf(key));
+    await db.close();
+    const afterSave = written;
+
+    ({ key, db, kept, count } = await open(readFileSync(file)));
+    assert.equal(kept, true, "the packed file opened again: its index kept");
+    assert.equal(count, many.length);
+    assert.equal(written, afterSave, "nothing read again");
+
+    // A save while the pack ran: the pack doesn't hold it, so the index isn't said to be made from it.
+    const before = host.rowWritesOf(key);
+    await edit(db, "Edited again");
+    await pack(key, before);
+    await db.close();
+    ({ db, kept } = await open(readFileSync(file)));
+    assert.equal(kept, false, "a save the pack began before: read again");
     await db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

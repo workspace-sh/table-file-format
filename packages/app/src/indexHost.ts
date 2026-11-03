@@ -153,6 +153,17 @@ export interface IndexHost {
   removeFolder(bundle: string): Promise<void>;
   /** Forget every bundle kept as a folder here: their indexes are closed and their folders removed. */
   removeAllFolders(): Promise<void>;
+  /** How many times a bundle's rows have been written to its files here: taken before a pack, for `packedAs`. */
+  rowWritesOf(bundle: string): number;
+  /**
+   * The bundle's folder was packed into a single file, now `stamp`
+   * (`archiveStamp`), with its rows written `rowWritesBefore` times: each
+   * table whose index holds just what was packed is said to be made from
+   * that file, so opening the file again keeps the index rather than reading
+   * it all again. Nothing when rows were written since, or a table has edits
+   * not yet in its files.
+   */
+  packedAs(bundle: string, stamp: string | null, rowWritesBefore: number): Promise<void>;
 }
 
 /** Rows a step of the search index takes: small enough that what the screen asks between steps isn't kept waiting. */
@@ -352,6 +363,29 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
       void open(opened.key);
     }
     return { opened, first };
+  }
+
+  // Each bundle's rows written to its files here, counted: a pack that began before one isn't the index's.
+  const rowWrites = new Map<string, number>();
+  const rowWritesOf = (bundle: string): number => rowWrites.get(bundle) ?? 0;
+
+  async function packedAs(bundle: string, stamp: string | null, rowWritesBefore: number): Promise<void> {
+    if (stamp === null) return;
+    // After any save under way, which would write what the pack didn't take in.
+    await (saving.get(bundle) ?? Promise.resolve());
+    if (rowWritesOf(bundle) !== rowWritesBefore) return;
+    await inTurn(async () => {
+      if (rowWritesOf(bundle) !== rowWritesBefore) return;
+      const { driver } = await open(bundle);
+      await driver.exec(KEPT);
+      await driver.exec(DIRTY);
+      for (const r of await driver.all("select distinct tbl from _keptfiles", [])) {
+        const name = r.tbl as string;
+        if ((await indexKey(driver, name)) !== "saved") continue;
+        if ((await driver.all("select 1 from _dirtyrows where tbl = ? limit 1", [name])).length > 0) continue;
+        await setMadeFrom(driver, name, stamp);
+      }
+    });
   }
 
   /** Make a table's index: from an archive just read, kept from before, or again from its rows kept here. */
@@ -671,8 +705,9 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
             if (written !== null) {
               await setRowFileStarts(driver, name, written.files);
               await kept(driver, name, written.files);
-              // Its rows are this device's now, not the archive's.
+              // Its rows are this device's now, not the archive's (until they're packed into it: packedAs).
               await setMadeFrom(driver, name, null);
+              rowWrites.set(bundle, rowWritesOf(bundle) + 1);
               // The edits these files took in are in them.
               await driver.exec(DIRTY);
               await driver.run("delete from _dirtyrows where tbl = ? and seq <= ?", [name, written.marked]);
@@ -748,5 +783,5 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
     await fs.remove(platform.home());
   }
 
-  return { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders };
+  return { bundleDir, openZip, openIndexDatabase, removeFolder, removeAllFolders, rowWritesOf, packedAs };
 }
