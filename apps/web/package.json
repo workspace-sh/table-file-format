@@ -10,6 +10,7 @@
     "harness:build": "vite build -c vite.harness.config.ts",
     "harness:preview": "vite preview -c vite.harness.config.ts",
     "typecheck": "tsc --noEmit",
+    "embed-cases:check": "node scripts/check-embed-cases.mjs",
     "test": "node --experimental-strip-types --no-warnings --test src/*.test.ts"
   },
   "dependencies": {

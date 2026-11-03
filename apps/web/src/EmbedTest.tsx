@@ -1,119 +1,261 @@
-// Development only (`#embed-test`): table-app's TableEmbed as a document
-// would show it, over the example tables written into a folder in memory,
-// one embed for each case a document can hold. Not in a production build.
+// Development only (`#embed-test`): the embed cases every platform checks
+// (workspace-fixtures, Fixtures/markdown/*.cases.json), each drawn by
+// table-app's TableEmbed as a document in Fixtures/markdown would show it,
+// over the fixtures written into a folder in memory. Each case is marked
+// with whether it draws what its cases file says, and the heading counts
+// them. Not in a production build.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { css, html } from "react-strict-dom";
-import { parseAddress } from "@workspace.sh/table-core";
 import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
-import { bundleToArchive, embedFilesWith, embedIn, fromBundle, readEmbedWith, toBundle, type EmbedRead, type Library } from "@workspace.sh/table-app";
+import {
+  embedFilesWith,
+  fromBundle,
+  readEmbedWith,
+  toBundle,
+  type EmbedCase,
+  type EmbedCases,
+  type EmbedRead,
+  type Library,
+} from "@workspace.sh/table-app";
 import { openArchiveInWorker, openWebDatabase } from "./sqlite/client";
-import { TableEmbed, type EmbedIndex } from "@workspace.sh/table-app/embed-view";
+import {
+  TableEmbed,
+  type EmbedIndex,
+} from "@workspace.sh/table-app/embed-view";
 import { bundles, tables } from "./loadFixture";
 
-// What a document in /ws/docs could link to, and what each should show.
-const CASES: { address: string; caption?: string; note: string }[] = [
-  { address: "../tables/projects.table#table=tasks&view=All%20tasks%20by%20priority&embed=1", caption: "All tasks", note: "a table's view" },
-  { address: "../tables/projects.table#table=tasks&view=juycicwios88m&embed=1", caption: "All tasks", note: "the same view by its id: a link may name a view either way" },
-  { address: "../tables/projects.table#table=tasks&rows=3&embed=1", caption: "Three rows, then it scrolls", note: "rows=3" },
-  { address: "../tables/projects.table#table=tasks&rows=3&rest=more&embed=1", note: "rows=3, the rest behind a line" },
-  { address: "../tables/crm.table#table=deals&cards=1&rest=more&embed=1", note: "a board, one card a column, the rest behind a line" },
-  { address: "../tables/crm.table#table=deals&view=All%20deals&rows=2&rest=more&embed=1", note: "two deals of eight; the totals beneath are of all eight" },
-  { address: "../tables/projects.table#table=tasks&view=Board%20by%20status&cards=1&rest=more&embed=1", note: "a board one card deep; each column says how many it has, and how many more" },
-  { address: "../tables/projects.table#table=projects&view=By%20owner&rows=3&rest=more&embed=1", note: "a grouped table cut inside its first group; the group's count is of all its rows" },
-  { address: "../tables/projects.table#table=projects&view=Quick%20list&rows=4&rest=more&embed=1", note: "a list of four" },
-  { address: "../tables/projects.table#table=projects&view=Gallery&cards=2&rest=more&embed=1", note: "a gallery of two cards" },
-  { address: "../tables/crm.table#table=deals&embed=1", note: "the CRM's deals" },
-  { address: "../tables/projects.table#table=projects&embed=1", note: "a large page-heavy table" },
-  { address: "../tables/nowhere.table#embed=1", caption: "Missing", note: "no such file" },
-  { address: "../tables/projects.table#table=nope&embed=1", note: "no such table" },
-  { address: "../tables/projects.table#table=tasks&view=nope&embed=1", note: "no such view" },
-  { address: "../../elsewhere/projects.table#embed=1", note: "outside the folder" },
-];
+const caseFiles = import.meta.glob<EmbedCases>(
+  "../../../workspace-fixtures/Fixtures/markdown/*.cases.json",
+  { eager: true, import: "default" },
+);
+// The files the cases link to that aren't the example folders loadFixture reads.
+const singleFiles = import.meta.glob<string>(
+  "../../../workspace-fixtures/Fixtures/table/single-file/*.table",
+  { eager: true, query: "?url", import: "default" },
+);
+const largeFiles = import.meta.glob<string>(
+  "../../../workspace-fixtures/Fixtures/table/large/big-50000.table",
+  { eager: true, query: "?url", import: "default" },
+);
+const otherFiles = import.meta.glob<string>(
+  "../../../workspace-fixtures/Fixtures/table/broken/not-a-table.table",
+  { eager: true, query: "?raw", import: "default" },
+);
+
+const DOCS = "/ws/markdown";
+const TABLES = "/ws/table";
+/** "…/Fixtures/table/single-file/crm.table" → "single-file/crm.table" */
+const inTable = (path: string) =>
+  path.slice(path.indexOf("/Fixtures/table/") + "/Fixtures/table/".length);
+const written = new WeakMap<object, Promise<void>>();
+const once = (fs: object, write: () => Promise<void>): Promise<void> => {
+  if (!written.has(fs)) written.set(fs, write());
+  return written.get(fs)!;
+};
+
+const documents = Object.values(caseFiles).sort((a, b) =>
+  a.document.localeCompare(b.document),
+);
+const all = documents.flatMap((d) =>
+  d.cases.map((c) => ({ document: d.document, ...c })),
+);
+
+/** What a case's drawing shows that its cases file says it should, or why not. */
+function verdict(c: EmbedCase, text: string): string | null {
+  const e = c.expect;
+  if ("link" in e) return null;
+  if ("problem" in e)
+    return text.includes(e.problem) ? "" : `no “${e.problem}”`;
+  const missing = e.first.filter((title) => !text.includes(title));
+  if (missing.length > 0)
+    return `no ${missing.map((t) => `“${t}”`).join(", ")}`;
+  if (e.more && !text.includes(e.more)) return `no “${e.more}”`;
+  if (!e.more && /Show [\d,]+ more (row|card)/.test(text))
+    return "a “more” line it shouldn’t have";
+  for (const g of e.groups ?? [])
+    if (!text.includes(g.label)) return `no group “${g.label}”`;
+  return "";
+}
 
 export function EmbedTest() {
   const fs = useMemo(() => memoryFs(), []);
-  // Written once, however many times React runs the effect (twice in development).
+  // What each single file gave its index: its first rows, for drawing while the rest is read.
+  const firsts = useRef(new Map<string, EmbedIndex>());
+  // Written once, however many times React runs this (twice in development).
   const ready = useMemo(
     () =>
-      (async () => {
-        for (const key of Object.keys(bundles)) await writeBundleTo(fs, `/ws/tables/${key}.table`, toBundle(tables, bundles, key));
-      })(),
+      once(fs, async () => {
+        for (const key of Object.keys(bundles))
+          await writeBundleTo(
+            fs,
+            `${TABLES}/${key}.table`,
+            toBundle(tables, bundles, key),
+          );
+        await fs.mkdir(`${TABLES}/single-file`);
+        await fs.mkdir(`${TABLES}/large`);
+        await fs.mkdir(`${TABLES}/broken`);
+        for (const [path, url] of Object.entries({
+          ...singleFiles,
+          ...largeFiles,
+        })) {
+          await fs.writeBytes!(
+            `${TABLES}/${inTable(path)}`,
+            new Uint8Array(await (await fetch(url)).arrayBuffer()),
+          );
+        }
+        for (const [path, text] of Object.entries(otherFiles))
+          await fs.writeText(`${TABLES}/${inTable(path)}`, text);
+      }),
     [fs],
   );
-  const [reads, setReads] = useState<(EmbedRead | null)[]>(() => CASES.map(() => null));
+  const reading = useMemo(
+    () => ({
+      readsIndex: true,
+      // A single file, as the web opens one: read into its index in the page's worker.
+      openFile: async (path: string): Promise<Library> => {
+        const bytes = await fs.readBytes!(path);
+        if (!bytes) throw new Error("it isn’t there");
+        // A copy: the worker takes the bytes it's given, and the folder keeps its own.
+        const { opened, first, index } = await openArchiveInWorker(
+          bytes.slice(),
+          [],
+        );
+        if (index) {
+          const keyed = Object.fromEntries(
+            Object.entries(first).map(([t, r]) => [
+              t.includes("/") ? t : `${opened.key}/${t}`,
+              r,
+            ]),
+          );
+          firsts.current.set(opened.key, {
+            openIndexDatabase: openWebDatabase,
+            first: keyed,
+          });
+        }
+        return {
+          tables: fromBundle(opened.key, opened.bundle),
+          bundles: { [opened.key]: opened.bundle.meta },
+          paths: { [opened.key]: path },
+          problems: {},
+        };
+      },
+    }),
+    [fs],
+  );
+  const [reads, setReads] = useState<(EmbedRead | null)[]>(() =>
+    all.map(() => null),
+  );
   useEffect(() => {
     let current = true;
     void ready
-      .then(() => Promise.all(CASES.map((c) => readEmbedWith(fs, { address: c.address, baseDir: "/ws/docs", within: "/ws" }))))
-      .then((all) => current && setReads(all));
+      .then(() =>
+        Promise.all(
+          all.map((c) =>
+            "link" in c.expect
+              ? null
+              : readEmbedWith(
+                  fs,
+                  { address: c.address, baseDir: DOCS, within: "/ws" },
+                  reading,
+                ),
+          ),
+        ),
+      )
+      .then((done) => current && setReads(done));
     return () => {
       current = false;
     };
-  }, [fs, ready]);
+  }, [fs, ready, reading]);
   const files = useMemo(() => embedFilesWith(fs), [fs]);
-  // Written back as it's edited: what's in the folder for each file, to look at.
-  const [written, setWritten] = useState("");
+
+  // Each case's verdict, from what its embed draws, checked as the page is scrolled through.
+  const sections = useRef<(HTMLElement | null)[]>([]);
+  const [verdicts, setVerdicts] = useState<(string | null)[]>(() =>
+    all.map(() => "not drawn yet"),
+  );
+  useEffect(() => {
+    // A case passes once it has drawn all it should: a table keeps only the rows on screen.
+    const check = () =>
+      setVerdicts((was) =>
+        all.map((c, i) =>
+          was[i] === ""
+            ? ""
+            : verdict(c, sections.current[i]?.textContent ?? ""),
+        ),
+      );
+    const timer = setInterval(check, 500);
+    return () => clearInterval(timer);
+  }, []);
+  const checked = verdicts.filter((v) => v !== null);
+  const passed = checked.filter((v) => v === "").length;
+
   return (
     <html.div style={styles.page}>
       <html.h1 style={styles.heading}>Table embeds</html.h1>
-      <html.p style={styles.lede}>table-app's TableEmbed over the example tables, written into a folder in memory, as a document in /ws/docs would show them.</html.p>
-      {CASES.map((c, i) => (
-        <html.section key={c.address} style={styles.case}>
-          <html.p style={styles.note}>
-            {c.note} · <html.code>{c.address}</html.code>
-          </html.p>
-          <TableEmbed read={reads[i] ?? null} files={files} {...(c.caption ? { caption: c.caption } : {})} />
-        </html.section>
-      ))}
-      <LargeCase />
-      <html.button
-        style={styles.button}
-        onClick={() => void fs.readText("/ws/tables/projects.table/tables/tasks/rows/0001.ndjson").then((t) => setWritten(t ?? ""))}
-      >
-        Show projects.table/tables/tasks/rows/0001.ndjson as written
-      </html.button>
-      {written ? <html.pre style={styles.pre}>{written}</html.pre> : null}
+      <html.p style={styles.lede}>
+        The embed cases in workspace-fixtures (Fixtures/markdown/*.cases.json),
+        each drawn by table-app’s TableEmbed as a document in Fixtures/markdown
+        would show it.
+      </html.p>
+      <html.p style={styles.summary} data-testid="embed-cases-summary">
+        {passed} of {checked.length} cases as expected
+      </html.p>
+      {all.map((c, i) => {
+        const read = reads[i] ?? null;
+        const index =
+          read?.kind === "shown"
+            ? firsts.current.get(read.key.split("/")[0]!)
+            : undefined;
+        const v = verdicts[i];
+        return (
+          <html.section key={`${c.document} ${i}`} style={styles.case}>
+            <html.p style={styles.note}>
+              {v === null ? "○ a link" : v === "" ? "✓" : `✗ ${v}`} ·{" "}
+              {c.document} · <html.code>{c.address}</html.code>
+            </html.p>
+            {"link" in c.expect ? null : (
+              // What the embed draws, apart from the note above it, which repeats what's expected.
+              <html.div
+                ref={(el: HTMLElement | null) =>
+                  void (sections.current[i] = el)
+                }
+              >
+                <TableEmbed
+                  read={read}
+                  files={files}
+                  address={c.address}
+                  {...(index ? { index } : {})}
+                  {...((read?.kind === "shown" &&
+                    read.library.paths[read.key.split("/")[0]!]?.includes(
+                      "/single-file/",
+                    )) ||
+                  index
+                    ? { readOnly: true }
+                    : {})}
+                />
+              </html.div>
+            )}
+          </html.section>
+        );
+      })}
     </html.div>
   );
 }
 
-// A large table (SPEC section 8) in a single file: read into the page's index
-// in its worker, as the web opens one, and drawn from there, never all in memory.
-const LARGE_ROWS = 50_000;
-const LARGE_ADDRESS = "big.table#table=tasks&view=juycicwios88m&rows=5&rest=more&embed=1";
-
-function LargeCase() {
-  const [shown, setShown] = useState<{ read: EmbedRead; index: EmbedIndex } | null>(null);
-  useEffect(() => {
-    void (async () => {
-      const bundle = toBundle(tables, bundles, "projects");
-      const tasks = bundle.tables.tasks!;
-      const rows = Array.from({ length: LARGE_ROWS }, (_, i) => ({ id: `b${i}`, title: `Big ${i}`, priority: i }));
-      const bytes = await bundleToArchive("big", { ...bundle, tables: { tasks: { ...tasks, rows } } });
-      const { opened, first } = await openArchiveInWorker(bytes, []);
-      const library: Library = { tables: fromBundle(opened.key, opened.bundle), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
-      const keyed = Object.fromEntries(Object.entries(first).map(([t, r]) => [t.includes("/") ? t : `${opened.key}/${t}`, r]));
-      setShown({ read: embedIn(library, parseAddress(LARGE_ADDRESS)!, "big.table", { readsIndex: true }), index: { openIndexDatabase: openWebDatabase, first: keyed } });
-    })();
-  }, []);
-  const files = useMemo(() => ({ write: async () => {} }), []);
-  return (
-    <html.section style={styles.case}>
-      <html.p style={styles.note}>
-        a single file of {LARGE_ROWS.toLocaleString("en")} rows, read through the index · <html.code>{LARGE_ADDRESS}</html.code>
-      </html.p>
-      {shown ? <TableEmbed read={shown.read} files={files} index={shown.index} address={LARGE_ADDRESS} readOnly /> : <TableEmbed read={null} files={files} address={LARGE_ADDRESS} />}
-    </html.section>
-  );
-}
-
 const styles = css.create({
-  page: { maxWidth: 960, marginInline: "auto", paddingBlock: 32, paddingInline: 16, display: "flex", flexDirection: "column", gap: 24 },
+  page: {
+    maxWidth: 960,
+    marginInline: "auto",
+    paddingBlock: 32,
+    paddingInline: 16,
+    display: "flex",
+    flexDirection: "column",
+    gap: 24,
+  },
   heading: { fontSize: 24, margin: 0 },
   lede: { margin: 0, opacity: 0.7 },
+  summary: { margin: 0, fontWeight: 600 },
   case: { display: "flex", flexDirection: "column", gap: 8 },
   note: { margin: 0, fontSize: 13, opacity: 0.7 },
-  button: { alignSelf: "flex-start", paddingBlock: 6, paddingInline: 12 },
-  pre: { fontSize: 11, overflowX: "auto", whiteSpace: "pre" },
 });
