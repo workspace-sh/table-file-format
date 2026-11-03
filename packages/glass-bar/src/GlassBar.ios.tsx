@@ -50,6 +50,7 @@ import {
   animation,
   autocorrectionDisabled,
   background,
+  buttonStyle,
   datePickerStyle,
   contentShape,
   contentTransition,
@@ -768,6 +769,11 @@ function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () =>
       <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{r.value}</Text>
     </HStack>
   );
+  // Closes the popover, then acts: a sheet or alert presented while it's still leaving isn't shown.
+  const after = (go: () => void) => {
+    onDone?.();
+    setTimeout(go, 350);
+  };
   return (
     <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 320, alignment: "leading" })]}>
       <VStack alignment="leading" spacing={2}>
@@ -777,16 +783,19 @@ function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () =>
       {details.rows.map((r, i) => row(r, `r${i}`))}
       {details.recent?.length ? <Divider /> : null}
       {details.recent?.map((r, i) => row(r, `h${i}`))}
-      {details.more ? (
-        <Button
-          label={details.more.label}
-          onPress={() => {
-            const go = details.more!.onPress;
-            onDone?.();
-            // Once the popover has gone: a sheet presented while it's still leaving isn't shown.
-            setTimeout(go, 350);
-          }}
-        />
+      {details.more ? <Button label={details.more.label} onPress={() => after(details.more!.onPress)} /> : null}
+      {details.actions?.length ? (
+        <HStack spacing={8} modifiers={[padding({ top: 8 })]}>
+          {details.actions.map((a) => (
+            <Button
+              key={a.label}
+              label={a.label}
+              systemImage={a.symbol as Symbol | undefined}
+              onPress={() => after(a.onPress)}
+              modifiers={[buttonStyle("bordered"), frame({ maxWidth: Infinity })]}
+            />
+          ))}
+        </HStack>
       ) : null}
     </VStack>
   );
