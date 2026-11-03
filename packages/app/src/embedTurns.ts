@@ -25,7 +25,7 @@ export type EmbedPage = Pick<PageScroll, "now" | "subscribe" | "scrollBy" | "top
 const AHEAD_SCREENS = 6;
 
 /** How long the page holds still after a scroll before a table off screen is drawn. */
-const STILL_MS = 250;
+export const STILL_MS = 250;
 
 /** How long the page's width holds still, while a window is resized, before a drawn table takes the new one. */
 const RESIZE_QUIET_MS = 300;
@@ -124,8 +124,20 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
       }
       // Scrolling: only one on screen is drawn now (it would otherwise show
       // its empty room); the rest wait until the page holds still.
-      const still = performance.now() - movedAt >= STILL_MS;
-      if (!next || nearest > (still ? AHEAD_SCREENS * height : 0)) return;
+      const held = performance.now() - movedAt;
+      const still = held >= STILL_MS;
+      if (!next || nearest > (still ? AHEAD_SCREENS * height : 0)) {
+        // Not still long enough yet: looked at again once it is. (A timer can
+        // fire a moment before the clock here says it's due, and with no
+        // scroll after it, nothing else would ask.)
+        if (next && !still && !whenStill) {
+          whenStill = setTimeout(() => {
+            whenStill = null;
+            void take();
+          }, STILL_MS - held + 1);
+        }
+        return;
+      }
       waiting.delete(next);
       if (waiting.size === 0) stopListening();
       // The next is started once this one has settled: started a frame
@@ -136,8 +148,9 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
       drew = true;
     } finally {
       busy = false;
+      // Asked again meanwhile, even if this turn drew nothing: chosen again now.
+      if (drew || again) void take();
     }
-    if (drew || again) void take();
   };
 
   return {
