@@ -784,16 +784,17 @@ function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () =>
       {details.recent?.length ? <Divider /> : null}
       {details.recent?.map((r, i) => row(r, `h${i}`))}
       {details.more ? <Button label={details.more.label} onPress={() => after(details.more!.onPress)} /> : null}
+      {details.actions?.length ? <Divider /> : null}
       {details.actions?.length ? (
-        <HStack spacing={8} modifiers={[padding({ top: 8 })]}>
+        // As More's row was: each an icon over a short label, sharing the width.
+        <HStack spacing={0}>
           {details.actions.map((a) => (
-            <Button
-              key={a.label}
-              label={a.label}
-              systemImage={a.symbol as Symbol | undefined}
-              onPress={() => after(a.onPress)}
-              modifiers={[buttonStyle("bordered"), frame({ maxWidth: Infinity })]}
-            />
+            <Button key={a.label} onPress={() => after(a.onPress)} modifiers={[buttonStyle("plain"), frame({ maxWidth: Infinity })]}>
+              <VStack spacing={4} modifiers={[frame({ maxWidth: Infinity }), padding({ vertical: 4 }), contentShape(shapes.rectangle())]}>
+                {a.symbol ? <Image systemName={a.symbol as Symbol} size={19} modifiers={[frame({ height: 24 }), foregroundStyle("primary")]} /> : null}
+                <Text modifiers={[font({ size: 12 }), foregroundStyle("primary"), lineLimit(1)]}>{a.label}</Text>
+              </VStack>
+            </Button>
           ))}
         </HStack>
       ) : null}
