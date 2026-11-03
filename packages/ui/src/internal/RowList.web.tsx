@@ -187,11 +187,18 @@ export function RowList<T>({ items, keyOf, sizeOf, render, version, raised, hand
     };
     target.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
+    // The list moves on the page with no scroll when what's above it changes
+    // height (an embed above it drawn, a section folded): the page's content
+    // changes size with it, and what's on screen is looked at again.
+    const content = scroller ? scroller.firstElementChild : document.body;
+    const moved = content && typeof ResizeObserver !== "undefined" ? new ResizeObserver(onScroll) : null;
+    if (content) moved?.observe(content);
     follow();
     return () => {
       if (rest) clearTimeout(rest);
       target.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      moved?.disconnect();
     };
   }, [scroller, follow, settle]);
 
