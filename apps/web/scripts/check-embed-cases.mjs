@@ -1,7 +1,9 @@
 // Checks the embed cases on the web: opens the `#embed-test` page in headless
 // Firefox (dark, as the app is looked at), scrolls through it until every
 // case has drawn, and prints the cases that don't draw what workspace-fixtures'
-// cases files say. Exits 1 unless every case is as expected.
+// cases files say. Then it moves a large table's embed up the page with no
+// scroll, as an embed above it folding away would, and checks it still draws
+// its rows. Exits 1 unless all of it is as expected.
 //
 //   npm run dev -w @workspace.sh/table-web        # in one terminal
 //   npm run embed-cases:check -w @workspace.sh/table-web [-- http://localhost:5173/#embed-test]
@@ -46,7 +48,26 @@ const check = `(async () => {
     await wait(1500);
   }
   const failing = [...document.querySelectorAll("section p")].map((p) => p.innerText).filter((t) => t.startsWith("✗"));
-  return JSON.stringify({ summary: summary(), done: done(), failing });
+  // A large table's embed moved up the page with no scroll, as it is when something above it
+  // folds away: it still draws the rows it should (table-file-format#787). First it's put far
+  // below the screen and the page scrolled, so it draws as an embed out of sight does; then
+  // what was above it goes, with no scroll.
+  const large = [...document.querySelectorAll("[data-address*='/large/'][data-first]")].find((e) => /rows=\\d+&rest=more/.test(e.dataset.address));
+  if (large) {
+    const section = large.closest("section");
+    const above = document.createElement("div");
+    above.style.height = "8000px";
+    section.before(above);
+    window.scrollTo(0, 1);
+    await wait(500);
+    window.scrollTo(0, 0);
+    await wait(1500);
+    above.remove();
+    await wait(2000);
+    const missing = JSON.parse(large.dataset.first).filter((title) => !large.textContent.includes(title));
+    if (missing.length > 0) failing.push("✗ moved with no scroll, doesn't draw " + missing.join(", ") + " · " + large.dataset.address);
+  }
+  return JSON.stringify({ summary: summary(), done: done() && failing.length === 0, failing });
 })()`;
 
 try {
