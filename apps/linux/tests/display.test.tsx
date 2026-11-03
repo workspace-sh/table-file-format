@@ -54,7 +54,7 @@ describe("display settings on Linux", () => {
     const library = await loadLibrary([join(fixturesDir()!, "crm.table")]);
     await render(<App library={library} initialTable="crm/deals" initialView="hnmryzi51j6jz" />);
     ((await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Back" })).getRoot() as unknown as Gtk.ApplicationWindow).activateAction("win.about", null);
-    // A date, the day's count and the commit; a test run has no build, and says so.
-    expect(await screen.findByText(/^(\d{4}\.\d+\.\d+\.\d+(\+dev)? · [0-9a-f]{7}|unnumbered build)$/)).toBeDefined();
+    // A date, the day's count, the branch when it was built on one, and the commit; a test run has no build, and says so.
+    expect(await screen.findByText(/^(\d{4}\.\d+\.\d+\.\d+(\+dev)?( · \S+)? · [0-9a-f]{7}|unnumbered build)$/)).toBeDefined();
   });
 });
