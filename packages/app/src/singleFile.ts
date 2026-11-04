@@ -120,6 +120,22 @@ export function singleFilePacker(
 }
 
 /**
+ * `fs`, telling `seen` the bytes a pack of `target` writes (beside it, as
+ * `<target>.tmp`, before renaming it over): the packed file's, for its
+ * `archiveStamp` (IndexHost.packedAs), without reading the file back.
+ */
+export function watchingPackFs(fs: TableFs, target: string, seen: (bytes: Uint8Array) => void): TableFs {
+  const staged = `${target}.tmp`;
+  return {
+    ...fs,
+    async writeBytes(path, bytes) {
+      if (path === staged) seen(bytes);
+      await fs.writeBytes!(path, bytes);
+    },
+  };
+}
+
+/**
  * `fs`, except that a pack's last step (the file written to `<target>.tmp`
  * and renamed over `target`) is one `replace` of the target with its bytes
  * instead: a file the system gave the app (iOS's document picker) is the
