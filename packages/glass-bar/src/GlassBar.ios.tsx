@@ -50,6 +50,7 @@ import {
   animation,
   autocorrectionDisabled,
   background,
+  buttonStyle,
   datePickerStyle,
   contentShape,
   contentTransition,
@@ -768,6 +769,11 @@ function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () =>
       <Text modifiers={[font({ size: 15 }), lineLimit(1)]}>{r.value}</Text>
     </HStack>
   );
+  // Closes the popover, then acts: a sheet or alert presented while it's still leaving isn't shown.
+  const after = (go: () => void) => {
+    onDone?.();
+    setTimeout(go, 350);
+  };
   return (
     <VStack alignment="leading" spacing={8} modifiers={[padding({ all: 16 }), frame({ width: 320, alignment: "leading" })]}>
       <VStack alignment="leading" spacing={2}>
@@ -777,16 +783,20 @@ function Details({ details, onDone }: { details: GlassBarDetails; onDone?: () =>
       {details.rows.map((r, i) => row(r, `r${i}`))}
       {details.recent?.length ? <Divider /> : null}
       {details.recent?.map((r, i) => row(r, `h${i}`))}
-      {details.more ? (
-        <Button
-          label={details.more.label}
-          onPress={() => {
-            const go = details.more!.onPress;
-            onDone?.();
-            // Once the popover has gone: a sheet presented while it's still leaving isn't shown.
-            setTimeout(go, 350);
-          }}
-        />
+      {details.more ? <Button label={details.more.label} onPress={() => after(details.more!.onPress)} /> : null}
+      {details.actions?.length ? <Divider /> : null}
+      {details.actions?.length ? (
+        // As More's row was: each an icon over a short label, sharing the width.
+        <HStack spacing={0}>
+          {details.actions.map((a) => (
+            <Button key={a.label} onPress={() => after(a.onPress)} modifiers={[buttonStyle("plain"), frame({ maxWidth: Infinity })]}>
+              <VStack spacing={4} modifiers={[frame({ maxWidth: Infinity }), padding({ vertical: 4 }), contentShape(shapes.rectangle())]}>
+                {a.symbol ? <Image systemName={a.symbol as Symbol} size={19} modifiers={[frame({ height: 24 }), foregroundStyle("primary")]} /> : null}
+                <Text modifiers={[font({ size: 12 }), foregroundStyle("primary"), lineLimit(1)]}>{a.label}</Text>
+              </VStack>
+            </Button>
+          ))}
+        </HStack>
       ) : null}
     </VStack>
   );

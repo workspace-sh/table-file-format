@@ -121,6 +121,11 @@ export type GlassBarDetails = {
   /** A second list under a line: the last few changes, say. */
   recent?: { label: string; value: string }[];
   more?: { label: string; onPress: () => void };
+  /**
+   * Actions on the file, side by side under its facts (Rename…, Move…). Each
+   * runs once the popover has gone.
+   */
+  actions?: { label: string; symbol?: string; onPress: () => void }[];
 };
 
 /** One action in the More menu. */
