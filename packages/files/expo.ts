@@ -14,7 +14,7 @@ import { BundleEntry } from "@workspace.sh/table-core";
 import type { TableFs } from "@workspace.sh/table-core/io";
 import { expoDriver } from "@workspace.sh/table-core/sqlite-expo";
 import { createIndexHost } from "@workspace.sh/table-app";
-import { renameOver } from "./index";
+import { hasTableFiles, renameOver } from "./index";
 
 /** A `file://` URL as the path the file system knows it by. */
 export const pathOfUri = (uri: string): string => decodeURIComponent(uri.replace(/^file:\/\//, ""));
@@ -64,7 +64,16 @@ export const expoFs: TableFs = {
     }
   },
   async rename(from, to) {
-    renameOver(pathOfUri(from), pathOfUri(to));
+    if (hasTableFiles) {
+      renameOver(pathOfUri(from), pathOfUri(to));
+      return;
+    }
+    // Android, until it has the native rename: the old one removed, then
+    // the new one moved into its place (two steps, not one).
+    const folder = Paths.info(from).isDirectory;
+    const target = folder ? new Directory(to) : new File(to);
+    if (target.exists) target.delete();
+    (folder ? new Directory(from) : new File(from)).move(target as never);
   },
   async mkdir(path) {
     // Creates any missing parents, and is fine when it's already there.
