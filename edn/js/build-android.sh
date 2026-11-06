@@ -6,7 +6,8 @@
 # its .so fails to load on exactly those devices.
 #
 # Needs an NDK (ANDROID_NDK_HOME, or the newest under $ANDROID_HOME/ndk) and
-# the four Rust targets; the script names any that are missing.
+# the four Rust targets on Rust 1.90 or later (ordered-float 5.5 needs it);
+# the script names any targets that are missing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
