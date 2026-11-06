@@ -4431,7 +4431,11 @@ export function TableView({
             editRequest={request}
             onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={
+              editor && (!editor.formulasOnly || isFormula || (editor.ownFormulas && ownFormula(cells, row.id, name, row) !== undefined))
+                ? (text) => beginBar(row.id, name, text)
+                : undefined
+            }
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
             formula={
               onSetCellFormula
