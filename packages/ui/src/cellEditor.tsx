@@ -137,6 +137,8 @@ export interface CellEditor {
    * picker), as with no editor. A Mac, where a cell has room to be typed in.
    */
   formulasOnly?: boolean;
+  /** With `formulasOnly`, a cell's own formula (D52) comes here too, not only a formula column's. */
+  ownFormulas?: boolean;
   select(selection: CellEditorSelection | null): void;
   /** Take over an edit; false leaves the cell to edit in place. */
   begin(session: CellEditSession): boolean;
