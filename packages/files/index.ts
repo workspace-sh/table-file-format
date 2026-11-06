@@ -1,7 +1,10 @@
-// Files on iOS, for the .table apps and Workspace (ios/TableFilesModule.swift):
-// rename(2), a file moved over another in one step, which core's writer
-// needs of a TableFs; documents opened where they are, and a coordinated
-// write for a file the app was only given; and the shake that asks to undo.
+// Files on iOS and Android, for the .table apps and Workspace
+// (ios/TableFilesModule.swift, android/…/TableFilesModule.kt): rename(2), a
+// file moved over another in one step, which core's writer needs of a
+// TableFs; documents opened where they are, and a coordinated write for a
+// file the app was only given; and, on iOS, the shake that asks to undo.
+// Android holds a picked document as a copy in the app's files, written
+// through to the document on each write.
 import { requireOptionalNativeModule } from "expo-modules-core";
 
 /** A document held open where it is (by its security scope), and kept for next time as `bookmark`. */
@@ -27,15 +30,15 @@ type TableFilesModule = {
   addListener(event: "onShake", listener: () => void): { remove(): void };
 };
 
-// Apple's module (ios/TableFilesModule.swift). Android has none yet, so it's
-// loaded optionally: the app starts, and what needs it says so when used.
+// The platform's module. Loaded optionally: an app built without it (the
+// web, or a build that leaves it out) starts, and what needs it says so when used.
 const Native = requireOptionalNativeModule<TableFilesModule>("TableFiles");
 
-/** Whether this build has the native module (Apple's; not Android's yet). */
+/** Whether this build has the native module. */
 export const hasTableFiles = Native !== null;
 
 function native(): TableFilesModule {
-  if (Native === null) throw new Error("This needs Files support that isn’t on Android yet.");
+  if (Native === null) throw new Error("This needs Files support that this build doesn’t have.");
   return Native;
 }
 
