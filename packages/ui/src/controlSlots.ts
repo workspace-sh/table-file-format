@@ -425,7 +425,7 @@ export function columnActions(
     });
   }
   if (onResetWidth) {
-    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "width" }, onSelect: () => onResetWidth(name) });
+    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "arrow_range" }, onSelect: () => onResetWidth(name) });
   }
   if (onDeleteField) {
     actions.push({ id: "delete-field", label: "Delete Field", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteField(name) });
