@@ -21,6 +21,9 @@ endif()
 add_library(workspace_edn_ffi SHARED IMPORTED)
 set_target_properties(workspace_edn_ffi PROPERTIES IMPORTED_LOCATION ${core})
 
+# Android 15 devices may use 16 KB pages; the NDK before r28 aligns to 4 KB.
+target_link_options(workspace_edn PRIVATE "-Wl,-z,max-page-size=16384")
+
 target_link_libraries(workspace_edn
   workspace_edn_ffi
   ReactAndroid::reactnative
