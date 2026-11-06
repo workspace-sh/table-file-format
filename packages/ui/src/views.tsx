@@ -111,6 +111,8 @@ import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 
 /** No place yet: for field settings shown apart from the header, which don't point at it. */
 const NO_ANCHOR: AnchorRect = { top: 0, left: 0, width: 0, height: 0 };
+/** How a formula is typed: plain text, no capitals or corrections. */
+const FORMULA_INPUT: InputHints = { kind: "text", autocapitalize: "none", autocorrect: false, enter: "done" };
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
@@ -139,7 +141,7 @@ import {
 import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
-import { inputHints, type InputHintKind } from "./inputHints";
+import { inputHints, type InputHintKind, type InputHints } from "./inputHints";
 import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { columnActions, rowActions } from "./controlSlots";
@@ -2361,12 +2363,15 @@ function EditableCell({
     closed.current = true;
   }
   const hints = inputHints(field);
+  // A cell's own formula is typed as a formula, whatever the column holds: letters and
+  // brackets, not the number pad a number column asks for.
+  const typing = asFormula ? FORMULA_INPUT : hints;
   const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
-      applyKeyboard(el, hints);
+      applyKeyboard(el, typing);
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
         focusInput(el);
         // A native input's ref doesn't carry its value: what was typed is the draft.
@@ -2733,7 +2738,7 @@ function EditableCell({
       ref={inputRef as any}
       // The keyboard the field wants: a number pad, an @ for an email, no
       // capitals or corrections in a code (inputHints).
-      {...inputAttributes(hints, inputType)}
+      {...inputAttributes(typing, inputType)}
       value={draft}
       onChange={(e: { target: { value: string } }) => {
         setDraft(e.target.value);
@@ -4671,9 +4676,9 @@ export function TableView({
       session = {
         key, rowId, name, label, rowLabel, initial,
         mode: field.format === "markdown" ? "text" : "line",
-        // The keyboard the field wants, as a cell's own input has (inputHints).
-        keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
-        suggestions: hints.autocorrect,
+        // The keyboard the field wants, as a cell's own input has (inputHints); a cell's own formula is typed as a formula.
+        keyboard: asFormula ? "default" : (BAR_KEYBOARD[hints.kind] ?? "default"),
+        suggestions: asFormula ? false : hints.autocorrect,
         ...(asFormula
           ? {
               prefix: FORMULA_PREFIX,
