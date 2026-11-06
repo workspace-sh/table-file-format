@@ -16,7 +16,7 @@
  * scroller the same way, and its reasoning is kept here.
  */
 import { Fragment, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type ComponentRef } from "react";
-import { Platform, View } from "react-native";
+import { Platform, View, useColorScheme } from "react-native";
 import { PageScrollContext, type PageScroll } from "../pageScroll";
 import { settledPlace } from "../listSettle";
 import { NATIVE_MAX_LIST_HEIGHT } from "./listLimits";
@@ -26,6 +26,18 @@ export type { RowListHandle, RowListProps } from "./RowList.types";
 
 /** How far past the screen rows are kept drawn, in points. */
 const DRAW_DISTANCE = 600;
+/**
+ * Android: a fast scroll there outran the drawing, and the screen showed no
+ * rows at all until it stopped. So the list there draws its window once a
+ * frame, not once a scroll event; reaches further ahead the faster it's
+ * scrolled, as far as the drawing takes (LEAD_MS) at that speed, up to
+ * MAX_LEAD; and shows empty rows of its own look (`placeholder`) wherever
+ * its rows aren't drawn, so a scroll that still outruns it shows rows
+ * coming rather than nothing. iOS and macOS draw as before.
+ */
+const TUNED = Platform.OS === "android";
+const LEAD_MS = 400;
+const MAX_LEAD = 4000;
 /**
  * Where the list starts in the page is asked again when the page can't say
  * (it isn't laid out yet), or doesn't answer at all: after each of these
@@ -140,6 +152,7 @@ function WindowedRows<T>({
   layout: layoutOf,
   stampOf,
   drawKey,
+  placeholder,
   page,
 }: RowListProps<T> & { page: PageScroll }) {
   const renderer = useRef(render);
@@ -173,9 +186,25 @@ function WindowedRows<T>({
     return { at: offset - (top.current ?? 0), page: height };
   }, [page]);
 
+  // How fast the page was last moving, in points a millisecond (down is positive): Android's lead.
+  const motion = useRef({ at: 0, when: 0, speed: 0 });
   const follow = useCallback(() => {
     const { at, page: screen } = where();
     if (screen <= 0) return;
+    let ahead = DRAW_DISTANCE;
+    let behind = DRAW_DISTANCE;
+    if (TUNED) {
+      const m = motion.current;
+      const when = Date.now();
+      const dt = when - m.when;
+      m.speed = dt > 0 && dt < 200 ? (at - m.at) / dt : 0;
+      m.at = at;
+      m.when = when;
+      ahead = DRAW_DISTANCE + Math.min(MAX_LEAD, Math.abs(m.speed) * LEAD_MS);
+      // Ahead of the scroll, as far as it will get while this draws; behind it, the usual distance.
+      // (`ahead` is below the screen, `behind` above: swapped when scrolling up.)
+      if (m.speed < 0) [ahead, behind] = [behind, ahead];
+    }
     const { laidOut: height, extra: more } = now.current;
     const range = Math.max(1, height - screen);
     // The first look is where the page already was, not a jump to it: a list
@@ -188,9 +217,9 @@ function WindowedRows<T>({
       const shift =
         more <= 0 ? 0 : settled !== null ? settled : jumped || atAnEnd ? more * Math.min(1, Math.max(0, at / range)) : Math.min(was.shift, more);
       const start = at + shift;
-      return shift === was.shift && start - DRAW_DISTANCE / 2 >= was.from && start + screen + DRAW_DISTANCE / 2 <= was.to
+      return shift === was.shift && start - behind / 2 >= was.from && start + screen + ahead / 2 <= was.to
         ? was
-        : { from: start - DRAW_DISTANCE, to: start + screen + DRAW_DISTANCE, shift };
+        : { from: start - behind, to: start + screen + ahead, shift };
     });
   }, [where]);
 
@@ -261,14 +290,22 @@ function WindowedRows<T>({
 
   useEffect(() => {
     let rest: ReturnType<typeof setTimeout> | null = null;
+    // Android: the window moves at most once a frame, however many scroll events the frame had.
+    let frame: number | null = null;
     const stop = page.subscribe((what) => {
       if (what === "resize") return measure();
       if (rest) clearTimeout(rest);
       rest = setTimeout(settle, 160);
-      follow();
+      if (!TUNED) return follow();
+      if (frame === null)
+        frame = requestAnimationFrame(() => {
+          frame = null;
+          follow();
+        });
     });
     return () => {
       if (rest) clearTimeout(rest);
+      if (frame !== null) cancelAnimationFrame(frame);
       stop();
     };
   }, [page, follow, settle, measure]);
@@ -360,10 +397,58 @@ function WindowedRows<T>({
   }
   return (
     <View ref={body} onLayout={measure} style={{ height: laidOut }}>
+      {TUNED && placeholder && count > 0 && (
+        <>
+          {/* Above the rows drawn, lined up with the first of them; below, with the last. */}
+          <Placeholder spec={placeholder} top={0} height={base} from="bottom" />
+          <Placeholder spec={placeholder} top={base + span} height={laidOut - base - span} from="top" />
+        </>
+      )}
       {/* Named for the Mac app's scrolling run (TableScrollBench), which measures how much of the list's place on screen this box covers. */}
       <View nativeID="table-rows" style={{ position: "absolute", top: laidAt, left: 0, right: 0, height: span, transform: [{ translateY: base - laidAt }] }}>
         {rows}
       </View>
+    </View>
+  );
+}
+
+/** How far past the rows drawn the empty rows reach, in points: past what a fling covers while the rows are drawn. */
+const PLACEHOLDER_REACH = DRAW_DISTANCE + MAX_LEAD;
+
+/**
+ * Empty rows: a row's rule every row's height and the lines between the
+ * columns, reaching PLACEHOLDER_REACH from the rows drawn (`from` says which
+ * edge they meet). Plain views, made once for a look and moved as one box
+ * as the rows drawn move: what's shown where the list's own rows aren't
+ * drawn yet (Android), costing next to nothing to scroll past.
+ */
+function Placeholder({ spec, top, height, from }: { spec: NonNullable<RowListProps<unknown>["placeholder"]>; top: number; height: number; from: "top" | "bottom" }) {
+  const dark = useColorScheme() === "dark";
+  const rule = dark ? spec.rule.dark : spec.rule.light;
+  const count = Math.ceil(PLACEHOLDER_REACH / spec.rowHeight);
+  const reach = count * spec.rowHeight;
+  const lines = useMemo(
+    () => (
+      <>
+        {Array.from({ length: count }, (_, i) => (
+          <View key={i} style={{ position: "absolute", left: 0, right: 0, top: (i + 1) * spec.rowHeight - spec.ruleWidth, height: spec.ruleWidth, backgroundColor: rule }} />
+        ))}
+        {spec.columns?.map((x) => (
+          <View key={`c${x}`} style={{ position: "absolute", top: 0, bottom: 0, left: x - spec.ruleWidth, width: spec.ruleWidth, backgroundColor: rule }} />
+        ))}
+      </>
+    ),
+    // The columns by value: the table makes its placeholder afresh each time it draws.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [count, spec.rowHeight, spec.ruleWidth, spec.columns?.join(","), rule],
+  );
+  if (height <= 0) return null;
+  // Lined up with the rows drawn at the edge they meet, and no further than the list goes.
+  const shown = Math.min(height, reach);
+  const boxTop = from === "top" ? top : top + height - reach;
+  return (
+    <View pointerEvents="none" style={{ position: "absolute", top: from === "top" ? top : top + height - shown, left: 0, right: 0, height: shown, overflow: "hidden" }}>
+      <View style={{ position: "absolute", top: boxTop - (from === "top" ? top : top + height - shown), left: 0, right: 0, height: reach }}>{lines}</View>
     </View>
   );
 }
