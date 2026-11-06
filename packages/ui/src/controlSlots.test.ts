@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 
 import { columnActions, rowActions } from "./controlSlots.ts";
 
@@ -54,6 +55,21 @@ test("labels are title case", () => {
 test("each action names its symbol on both phones", () => {
   const actions = rowActions("r1", { onOpenBody: () => {}, hasBody: true, onInsertRow: () => {}, onDeleteRow: () => {} });
   for (const a of actions) assert.ok(a.symbol?.sf && a.symbol?.material, a.id);
+});
+
+test("every Material Symbol a menu names is drawn on Android (internal/material)", () => {
+  const all = { onOpenBody: () => {}, onInsertRow: () => {}, onFitRow: () => {}, onResetRowHeight: () => {}, onDeleteRow: () => {}, onCellNote: () => {}, onHideRow: () => {} };
+  const actions = [
+    ...rowActions("r1", { ...all, hasBody: true }),
+    ...rowActions("r1", { ...all, hasBody: false, onMergeCells: () => {} }),
+    ...rowActions("r1", { ...all, onUnmergeCells: () => {} }),
+    ...columnActions("status", { onInsertField: () => {}, onResetWidth: () => {}, onDeleteField: () => {} }),
+  ];
+  for (const a of actions) {
+    const material = a.symbol?.material;
+    assert.ok(material, a.id);
+    assert.ok(existsSync(new URL(`./internal/material/${material}.xml`, import.meta.url)), `${a.id}: ${material}.xml`);
+  }
 });
 
 test("a column's actions: insert either side, reset a resized width, delete last", () => {
