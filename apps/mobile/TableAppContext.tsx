@@ -50,6 +50,7 @@ import {
   type Derived,
   type KeyValueStore,
   storedTableRows,
+  largeBundlesToPack,
 } from "@workspace.sh/table-app";
 import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
@@ -206,7 +207,8 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
         await documentsRef.current?.write(edited.filter((b) => opened.has(b)), tables, bundles);
         await saveIndexed.current(tables);
         // An opened single file holding a large table: its rows, saved above, packed back into it too.
-        await documentsRef.current?.pack([...new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && opened.has(bundleOf(key)) ? [bundleOf(key)] : [])))]);
+        // Only those edited (largeBundlesToPack): packing writes the whole file.
+        await documentsRef.current?.pack(largeBundlesToPack(tables, opened, edited, bundleOf));
         // A bundle kept as a folder (it has a large table) has the rest of its files written there too,
         // so the folder is the whole .table; the writer leaves an indexed table's rows file to the index.
         const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && !opened.has(bundleOf(key)) ? [bundleOf(key)] : [])));

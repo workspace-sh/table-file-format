@@ -36,7 +36,7 @@ import {
   type Library,
 } from "@workspace.sh/table-app";
 import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
-import { documentStamp, expoFs, pathOfUri, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
+import { documentStamp, expoFs, filesLog, pathOfUri, releaseAllBut, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
 
 export const OPENED_KEY = "table-mobile:opened";
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */
@@ -167,6 +167,8 @@ export async function reopenDocuments(store: KeyValueStore | null, taken: Iterab
   } catch {
     // Unreadable: start with none.
   }
+  // Grants kept for anything but these (a pick that couldn't be read, a close cut short) are given back.
+  await releaseAllBut(remembered).catch(() => {});
   const found = await Promise.all(remembered.map((bookmark) => resolveBookmark(bookmark).catch((error: unknown) => ({ error: String(error), bookmark }))));
   const held = found.filter((doc): doc is HeldDocument => doc !== null && !("error" in doc));
   // There, but not to be held (its grant taken away): said in place, by its name.
@@ -232,8 +234,18 @@ export function useDocuments({
   const packOne = useCallback((bundle: string): Promise<void> => {
     const workDir = latest.current.paths[bundle];
     const file = workDir ? documents.current.get(workDir) : undefined;
-    if (!workDir || !file) return Promise.resolve();
-    return packer.current(workDir, file);
+    if (!workDir || !file) {
+      filesLog(`pack ${bundle}: not a single file (folder ${workDir ?? "none"})`);
+      return Promise.resolve();
+    }
+    filesLog(`pack ${bundle}: ${workDir} into ${file}`);
+    return packer.current(workDir, file).then(
+      () => filesLog(`pack ${bundle}: done`),
+      (error: unknown) => {
+        filesLog(`pack ${bundle}: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
+      },
+    );
   }, []);
   const pack = useCallback(async (keys: string[]) => {
     await Promise.all(keys.map(packOne));
@@ -241,13 +253,13 @@ export function useDocuments({
 
   const open = useCallback(async (held: HeldDocument[]) => {
     const already = new Set(Object.values(latest.current.paths).map((p) => documents.current.get(p) ?? p));
-    const opened = await openDocuments(
-      held.filter((doc) => !already.has(doc.uri.replace(/\/+$/, ""))),
-      Object.keys(latest.current.bundles),
-      store,
-    );
+    const fresh = held.filter((doc) => !already.has(doc.uri.replace(/\/+$/, "")));
+    const opened = await openDocuments(fresh, Object.keys(latest.current.bundles), store);
     for (const [workDir, uri] of opened.documents) documents.current.set(workDir, uri);
     for (const [uri, bookmark] of opened.bookmarks) bookmarks.current.set(uri, bookmark);
+    // A document that couldn't be read isn't kept open: what it was granted goes back.
+    const read = new Set(opened.documents.values());
+    for (const doc of fresh) if (!doc.directory && !read.has(doc.uri.replace(/\/+$/, ""))) releaseDocument(doc.path);
     return { library: opened.library, first: opened.first };
   }, [store]);
 
@@ -264,6 +276,7 @@ export function useDocuments({
               await packOne(key);
             })
             .catch((error: unknown) => {
+              filesLog(`write ${key}: ${error instanceof Error ? error.message : String(error)}`);
               // Shown by the app, from useTableApp's `saving`.
               throw new Error(`${key}.table: ${error instanceof Error ? error.message : String(error)}`);
             });
