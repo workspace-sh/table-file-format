@@ -36,7 +36,7 @@ import {
   type Library,
 } from "@workspace.sh/table-app";
 import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
-import { expoFs, pathOfUri, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
+import { documentStamp, expoFs, pathOfUri, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
 
 export const OPENED_KEY = "table-mobile:opened";
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */
@@ -45,8 +45,15 @@ export const LARGE_KEY = "table-mobile:large-documents";
 /** Where single files' working folders are kept: the phone's own, apart from anything else there. */
 const singleFilesHome = (): string => new Directory(Paths.document, "single-files").uri.replace(/\/+$/, "");
 
-/** A single file as it is now, to tell whether its working folder was made from it. */
-function stampOf(uri: string): string {
+/**
+ * A single file as it is now, to tell whether its working folder was made
+ * from it: the document's own size and time where the file held is a copy
+ * of it (Android), so a change made to it elsewhere is seen; the file's own
+ * where it's the document.
+ */
+async function stampOf(uri: string): Promise<string> {
+  const held = await documentStamp(pathOfUri(uri));
+  if (held !== null) return held;
   const file = new File(uri);
   return `${file.size}:${file.modificationTime ?? ""}`;
 }
@@ -68,6 +75,8 @@ function largeKeys(store: KeyValueStore | null): Record<string, string> {
 /** Read documents, which single file each working folder among them stands for, and each document's bookmark. */
 export interface OpenedDocuments {
   library: Library;
+  /** Documents opened last time that are there but couldn't be opened again, and why. */
+  unavailable?: { name: string; message: string }[];
   /** A large table's first rows, by table key, to show while the rest is read into the index. */
   first: Record<string, Row[]>;
   /** Each single file (its URL), by its working folder. */
@@ -120,12 +129,12 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
           documents.set(dir, uri);
           keys[uri] = opened.key;
           // What the file was when its folder was made: a save checks it's still that (packTableFile).
-          await expoFs.writeText(`${dir}.stamp`, stampOf(uri));
+          await expoFs.writeText(`${dir}.stamp`, await stampOf(uri));
           continue;
         }
         // Judged large, read as not: unpacked as any.
       }
-      await unpackTableFile(expoFs, bytes, workDir, stampOf(uri));
+      await unpackTableFile(expoFs, bytes, workDir, await stampOf(uri));
       folders.push(workDir);
       documents.set(workDir, uri);
     } catch (error) {
@@ -158,11 +167,22 @@ export async function reopenDocuments(store: KeyValueStore | null, taken: Iterab
   } catch {
     // Unreadable: start with none.
   }
-  const held = remembered.flatMap((bookmark) => {
-    const doc = resolveBookmark(bookmark);
-    return doc ? [doc] : [];
-  });
-  return openDocuments(held, taken, store);
+  const found = await Promise.all(remembered.map((bookmark) => resolveBookmark(bookmark).catch((error: unknown) => ({ error: String(error), bookmark }))));
+  const held = found.filter((doc): doc is HeldDocument => doc !== null && !("error" in doc));
+  // There, but not to be held (its grant taken away): said in place, by its name.
+  const unavailable = found.flatMap((doc) => (doc && "error" in doc ? [{ name: nameOfBookmark(doc.bookmark), message: doc.error }] : []));
+  return { ...(await openDocuments(held, taken, store)), unavailable };
+}
+
+/** A document's name from its bookmark, where that is a URI (Android's): its last part, decoded. */
+function nameOfBookmark(bookmark: string): string {
+  let path = bookmark.replace(/\/+$/, "");
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    // Not encoded: as it is.
+  }
+  return path.slice(path.lastIndexOf("/") + 1).replace(/^.*:/, "") || "A document";
 }
 
 export interface Documents {
@@ -259,7 +279,13 @@ export function useDocuments({
   const held = useRef(new Set<string>());
   useEffect(() => {
     const now = new Set(Object.values(paths).map((p) => documents.current.get(p) ?? p));
-    for (const uri of held.current) if (!now.has(uri)) releaseDocument(pathOfUri(uri));
+    // Let go only once the writes asked for so far are done: a save queued as it closed still reaches it.
+    const closed = [...held.current].filter((uri) => !now.has(uri));
+    if (closed.length > 0) {
+      void Promise.allSettled(Object.values(queues.current)).then(() => {
+        for (const uri of closed) releaseDocument(pathOfUri(uri));
+      });
+    }
     held.current = now;
     try {
       store?.setItem(OPENED_KEY, JSON.stringify([...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : []))));

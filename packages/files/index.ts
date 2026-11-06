@@ -23,7 +23,10 @@ type TableFilesModule = {
   shakeToUndoEnabled(): boolean;
   requestOrientation(to: string): void;
   pickDocument(types: string[]): Promise<HeldDocument | null>;
-  resolveBookmark(bookmark: string): HeldDocument | null;
+  /** Sync on Apple's, async on Android's (which copies the document); an error where it's there but can't be held. */
+  resolveBookmark(bookmark: string): HeldDocument | Unheld | null | Promise<HeldDocument | Unheld | null>;
+  /** Android's: the document's own size and time, for a copy held for one. */
+  documentStamp?(path: string): Promise<string | null>;
   holdDocument(path: string): HeldDocument;
   writeCoordinated(path: string, bytes: Uint8Array): Promise<void>;
   release(path: string): void;
@@ -52,9 +55,24 @@ export function holdDocument(path: string): HeldDocument {
   return native().holdDocument(path);
 }
 
-/** A document kept from before, held open again; null when it's no longer there. */
-export function resolveBookmark(bookmark: string): HeldDocument | null {
+/** A document kept from before that's there but can't be held again: why (its grant taken away, say). */
+export interface Unheld {
+  error: string;
+  bookmark: string;
+}
+
+/** A document kept from before, held open again; null when it's no longer there, `Unheld` when it can't be held. */
+export async function resolveBookmark(bookmark: string): Promise<HeldDocument | Unheld | null> {
   return native().resolveBookmark(bookmark);
+}
+
+/**
+ * The document itself as it is now (its size and time), where a held file
+ * is a copy of it (Android): what says whether it changed elsewhere. Null
+ * where the held file is the document (Apple's), whose own stamp is that.
+ */
+export async function documentStamp(path: string): Promise<string | null> {
+  return Native?.documentStamp ? Native.documentStamp(path) : null;
 }
 
 /** Replace the file at `path` (a path, not a URL) with `bytes`, as one coordinated write. */

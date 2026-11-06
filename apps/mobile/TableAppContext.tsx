@@ -81,6 +81,8 @@ const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 export interface TableAppContextValue {
   state: TableAppState;
+  /** Documents opened last time that couldn't be opened again (their grant taken away), and why. */
+  unavailable?: { name: string; message: string }[];
   dispatch: (action: AppAction) => void;
   derived: Derived;
   /** The display settings with their direction, for DisplaySettingsProvider. */
@@ -372,6 +374,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
     openBytes: async (bytes, name) =>
       take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
     indexed,
+    unavailable: reopened.unavailable,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
