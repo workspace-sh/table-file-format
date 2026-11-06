@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { columnActions, rowActions } from "./controlSlots.ts";
 
@@ -65,10 +65,13 @@ test("every Material Symbol a menu names is drawn on Android (internal/material)
     ...rowActions("r1", { ...all, onUnmergeCells: () => {} }),
     ...columnActions("status", { onInsertField: () => {}, onResetWidth: () => {}, onDeleteField: () => {} }),
   ];
+  // The menu's own map (RowActions.android), which Metro bundles: each name in it, with its drawable.
+  const menu = readFileSync(new URL("./internal/RowActions.android.tsx", import.meta.url), "utf8");
   for (const a of actions) {
     const material = a.symbol?.material;
     assert.ok(material, a.id);
     assert.ok(existsSync(new URL(`./internal/material/${material}.xml`, import.meta.url)), `${a.id}: ${material}.xml`);
+    assert.ok(menu.includes(`${material}: require("./material/${material}.xml")`), `${a.id}: ${material} in RowActions.android's symbols`);
   }
 });
 
