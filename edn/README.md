@@ -23,7 +23,7 @@ edn/
 | Web | WebAssembly (`js/`) | Works out the web app's formulas once loaded (Firefox checked) |
 | Linux (Node, GTKX) | Native (N-API, `js/native/`) | Works out the Linux app's formulas |
 | macOS, iOS (Hermes) | C interface (`crates/ffi`) → JSI (`js/apple`, `@workspace.sh/edn/jsi`) | Built and tested on Linux through C and Node; the apps load it, but no Mac build has run yet |
-| Android (Hermes) | C interface → JSI (`js/android`, `@workspace.sh/edn/jsi`) | Built for its four ABIs and linked on Linux; no device run yet |
+| Android (Hermes) | C interface → JSI (`js/android`, `@workspace.sh/edn/jsi`) | Built for its four ABIs; runs on a Galaxy A15 (Android 15), formulas recomputing on edit |
 | Bare | native addon over the C interface | To do |
 
 ## The canonical form
