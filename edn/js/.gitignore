@@ -1,2 +1,5 @@
 apple/WorkspaceEdnCore.xcframework/
 apple/build/
+android/src/main/jniLibs/
+android/build/
+android/.cxx/
