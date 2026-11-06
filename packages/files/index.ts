@@ -27,6 +27,10 @@ type TableFilesModule = {
   resolveBookmark(bookmark: string): HeldDocument | Unheld | null | Promise<HeldDocument | Unheld | null>;
   /** Android's: the document's own size and time, for a copy held for one. */
   documentStamp?(path: string): Promise<string | null>;
+  /** Android's: a line in its log (logcat's TableFiles), in release builds too. */
+  log?(message: string): void;
+  /** Android's: give back every grant kept but for these bookmarks, dropping their copies. */
+  releaseAllBut?(keep: string[]): Promise<void>;
   holdDocument(path: string): HeldDocument;
   writeCoordinated(path: string, bytes: Uint8Array): Promise<void>;
   release(path: string): void;
@@ -53,6 +57,20 @@ export function pickDocument(types: string[]): Promise<HeldDocument | null> {
 /** A document the app was given some other way (the system opening it in the app), held open as a picked one is. */
 export function holdDocument(path: string): HeldDocument {
   return native().holdDocument(path);
+}
+
+/** A line in the platform's files log, where it has one (Android's logcat, tag TableFiles; release builds too). */
+export function filesLog(message: string): void {
+  Native?.log?.(message);
+}
+
+/**
+ * Give back every document grant the app keeps but for these bookmarks (the
+ * documents open), where grants outlive the app (Android): what a pick that
+ * couldn't be read, or a close cut short, left behind.
+ */
+export async function releaseAllBut(keep: string[]): Promise<void> {
+  await Native?.releaseAllBut?.(keep);
 }
 
 /** A document kept from before that's there but can't be held again: why (its grant taken away, say). */

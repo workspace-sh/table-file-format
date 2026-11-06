@@ -29,6 +29,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.Exceptions
@@ -41,6 +42,8 @@ import java.security.MessageDigest
 import kotlinx.coroutines.launch
 
 private const val PICK_DOCUMENT = 7311
+// What the module does with documents, at debug level, in release builds too: `adb logcat -s TableFiles`.
+private const val TAG = "TableFiles"
 private const val GRANT = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
 class TableFilesException(message: String) : CodedException("ERR_TABLE_FILES", message, null)
@@ -125,7 +128,23 @@ class TableFilesModule : Module() {
     /// The document's own size and time, for a copy held for one; null for any other path.
     AsyncFunction("documentStamp") { path: String ->
       val uri = synchronized(documents) { documents[path] } ?: return@AsyncFunction null
-      stampOf(uri)
+      stampOf(uri).also { Log.d(TAG, "documentStamp: $path is $it") }
+    }
+
+    /// A line in the log (TableFiles), from the app's own steps around these: what was packed, and why not.
+    Function("log") { message: String -> Log.d(TAG, message) }
+
+    /// Give back every grant kept but for these bookmarks (the documents open), and drop their copies:
+    /// what a pick that couldn't be read, or a close the app didn't live to finish, left behind.
+    AsyncFunction("releaseAllBut") { keep: List<String> ->
+      val kept = keep.toSet()
+      for (permission in context.contentResolver.persistedUriPermissions) {
+        val uri = permission.uri
+        if (uri.toString() in kept) continue
+        Log.d(TAG, "releaseAllBut: giving back $uri")
+        giveBack(uri)
+        File(context.filesDir, "held/${digest(uri.toString())}").deleteRecursively()
+      }
     }
 
     /// Replace the document held at `path` with `bytes` (written and synced first), then its copy.
@@ -134,6 +153,7 @@ class TableFilesModule : Module() {
       bytes.read(data, 0, bytes.byteLength)
       val copy = File(path)
       val uri = synchronized(documents) { documents[path] }
+      Log.d(TAG, "writeCoordinated: ${data.size} bytes to $path, document ${uri ?: "none"}")
       if (uri == null) {
         // A held copy whose document was let go: saving it would save nowhere.
         if (isHeld(copy)) throw TableFilesException("${copy.name} isn't open any more, so it wasn't saved.")
@@ -143,25 +163,34 @@ class TableFilesModule : Module() {
       val pending = pendingOf(copy)
       replace(pending, data)
       writeDocument(uri, data)
+      Log.d(TAG, "writeCoordinated: $uri now ${stampOf(uri)}")
       if (!pending.renameTo(copy)) throw TableFilesException("${copy.name} was saved, but its copy here couldn't be.")
     }
 
     /// Stop holding the document whose copy is at `path`, and give back the grant to it.
     Function("release") { path: String ->
       val uri = synchronized(documents) { documents.remove(path) } ?: return@Function
-      for (flags in listOf(GRANT, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
-        try {
-          context.contentResolver.releasePersistableUriPermission(uri, flags)
-          return@Function
-        } catch (_: SecurityException) {
-          // Not held with these: try read alone.
-        }
-      }
+      Log.d(TAG, "release: $uri")
+      giveBack(uri)
+      // Its copy goes too, unless it holds a write the document never got.
+      val copy = File(path)
+      if (!pendingOf(copy).exists()) copy.parentFile?.deleteRecursively()
     }
 
     /// Move the file at `from` to `to` (paths, not URLs), replacing what is there, in one step.
     Function("rename") { from: String, to: String ->
       if (!File(from).renameTo(File(to))) throw TableFilesException("Couldn't move $from to $to.")
+    }
+  }
+
+  private fun giveBack(uri: Uri) {
+    for (flags in listOf(GRANT, Intent.FLAG_GRANT_READ_URI_PERMISSION)) {
+      try {
+        context.contentResolver.releasePersistableUriPermission(uri, flags)
+        return
+      } catch (_: SecurityException) {
+        // Not held with these: try read alone.
+      }
     }
   }
 
@@ -190,6 +219,7 @@ class TableFilesModule : Module() {
     val pending = pendingOf(copy)
     if (pending.exists()) {
       // Edits the document didn't get last time: it gets them now, before it's read.
+      Log.d(TAG, "hold: writing ${pending.length()} pending bytes to $uri")
       writeDocument(uri, pending.readBytes())
       pending.delete()
     }
@@ -198,6 +228,7 @@ class TableFilesModule : Module() {
     input.use { from -> staged.outputStream().use { to -> from.copyTo(to) } }
     if (!staged.renameTo(copy)) throw TableFilesException("$name couldn't be held.")
     synchronized(documents) { documents[copy.path] = uri }
+    Log.d(TAG, "hold: $uri as ${copy.path} (${copy.length()} bytes)")
     return mapOf(
       "uri" to Uri.fromFile(copy).toString(),
       "path" to copy.path,
