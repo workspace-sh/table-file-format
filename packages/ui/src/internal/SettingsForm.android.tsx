@@ -18,6 +18,7 @@ import {
   Column,
   DropdownMenu,
   DropdownMenuItem,
+  FlowRow,
   Host,
   Icon,
   IconButton,
@@ -33,7 +34,8 @@ import {
   useMaterialColors,
   useNativeState,
 } from "@expo/ui/jetpack-compose";
-import { clickable, fillMaxSize, fillMaxWidth, imePadding, padding, selectable, toggleable, verticalScroll, weight } from "@expo/ui/jetpack-compose/modifiers";
+import { clickable, fillMaxSize, fillMaxWidth, imePadding, padding, selectable, toggleable, verticalScroll, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import type { SettingsFormProps, SettingsFormSlot, SettingsRow, SettingsSection } from "../controlSlots";
 import { InSettingsSheet } from "./settingsSheet";
 
@@ -154,7 +156,7 @@ function FieldOf({ row, compact }: { row: Extract<SettingsRow, { kind: "text" }>
       onValueChange={row.onChange}
       keyboardOptions={row.onSubmit ? { imeAction: "done" } : undefined}
       keyboardActions={row.onSubmit ? { onDone: (value) => row.onSubmit!(value) } : undefined}
-      modifiers={compact ? [weight(1)] : [fillMaxWidth(), padding(16, 4, 16, 4)]}
+      modifiers={compact ? [width(160)] : [fillMaxWidth(), padding(16, 4, 16, 4)]}
     >
       {compact || row.onSubmit ? (
         <OutlinedTextField.Placeholder>
@@ -191,17 +193,18 @@ function Compound({
   const { onMove, onRemove } = section;
   return (
     <Row verticalAlignment="center" modifiers={[fillMaxWidth(), padding(8, 0, 4, 0)]}>
-      <Row verticalAlignment="center" modifiers={[weight(1)]}>
+      {/* Its parts wrap onto further lines on a narrow screen (a colour's rule is five). */}
+      <FlowRow verticalArrangement="center" modifiers={[weight(1)]}>
         {row.parts.map((part) =>
           part.kind === "choice" ? (
             <Choice key={part.id} row={part} compact colors={colors} />
           ) : part.kind === "text" ? (
             <Field key={part.id} row={part} compact />
           ) : (
-            <FormRow key={part.id} row={part} colors={colors} />
+            <CompactPart key={part.id} row={part} colors={colors} />
           ),
         )}
-      </Row>
+      </FlowRow>
       {(onMove || onRemove) && (
         <DropdownMenu expanded={open} onDismissRequest={() => setOpen(false)}>
           <DropdownMenu.Trigger>
@@ -245,6 +248,28 @@ function Compound({
       )}
     </Row>
   );
+}
+
+/** A part of a filter's or sort's row that isn't a menu or a field: as small as it can be, beside the others. */
+function CompactPart({ row, colors }: { row: SettingsRow; colors: Colors }): ReactElement | null {
+  switch (row.kind) {
+    case "info":
+      return (
+        <Text color={colors.onSurfaceVariant} style={{ typography: "bodyMedium" }} modifiers={[padding(12, 0, 12, 0)]}>
+          {`${row.label} ${row.value}`}
+        </Text>
+      );
+    case "toggle":
+      return <Switch value={row.value} onCheckedChange={row.onChange} />;
+    case "action":
+      return (
+        <TextButton onClick={row.onPress} enabled={!row.disabled}>
+          <Text>{row.label}</Text>
+        </TextButton>
+      );
+    default:
+      return null;
+  }
 }
 
 function FormRow({ row, colors }: { row: SettingsRow; colors: Colors }): ReactElement {
@@ -324,9 +349,10 @@ function FormSection({ section, first, colors }: { section: SettingsSection; fir
 
 function Form({ sections }: SettingsFormProps): ReactElement {
   const colors = useMaterialColors();
+  // The foot clear of the navigation bar, which the sheet runs under (a host without a safe-area provider: its usual height).
+  const bottom = useContext(SafeAreaInsetsContext)?.bottom ?? 48;
   return (
-    // The foot clear of the navigation bar, which the sheet runs under.
-    <Column modifiers={[fillMaxSize(), verticalScroll(), imePadding(), padding(0, 0, 0, 72)]}>
+    <Column modifiers={[fillMaxSize(), verticalScroll(), imePadding(), padding(0, 0, 0, bottom + 16)]}>
       {sections.map((section, i) => (
         <FormSection key={section.id} section={section} first={i === 0} colors={colors} />
       ))}
