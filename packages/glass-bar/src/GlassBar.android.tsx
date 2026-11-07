@@ -14,7 +14,7 @@
  * text as coloured spans (Compose's TextField in @expo/ui takes plain text).
  */
 import { useEffect, useImperativeHandle, useRef, useState, type ReactElement } from "react";
-import { Keyboard, Pressable, ScrollView, Text, TextInput, View, useColorScheme, type ImageSourcePropType, type TextInputSelectionChangeEvent } from "react-native";
+import { AppState, BackHandler, Keyboard, Pressable, ScrollView, Text, TextInput, View, useColorScheme, type ImageSourcePropType, type TextInputSelectionChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AssistChip,
@@ -31,6 +31,7 @@ import {
 } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, horizontalScroll, padding, weight } from "@expo/ui/jetpack-compose/modifiers";
 import type { GlassBarEditing, GlassBarProps, GlassBarSpan } from "./types";
+import { androidBarInset } from "./keyboardInset";
 
 // Material Symbols (weight 400) as vector drawables, which Compose's Icon draws.
 const symbols = {
@@ -63,10 +64,30 @@ function FormulaBar({ state, ref, onCancel, onChange, onSave, onSubmit, onChip, 
   // Docked on the keyboard: Android reports its height as it shows.
   useEffect(() => {
     const subs = [
-      Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height)),
+      Keyboard.addListener("keyboardDidShow", (e) => setKeyboard(e.endCoordinates.height + androidBarInset())),
       Keyboard.addListener("keyboardDidHide", () => setKeyboard(0)),
     ];
     return () => subs.forEach((s) => s.remove());
+  }, []);
+
+  // Back, once the keyboard is down (the first Back puts it away), closes the bar as Cancel does,
+  // rather than leaving the screen with the formula half written.
+  const latest = useRef({ text, onCancel, onSave, initial: state.initialValue });
+  latest.current = { text, onCancel, onSave, initial: state.initialValue };
+  useEffect(() => {
+    const back = BackHandler.addEventListener("hardwareBackPress", () => {
+      latest.current.onCancel?.();
+      return true;
+    });
+    // Going to the background saves what was typed, as scrolling the table away does: the app may not come back.
+    const away = AppState.addEventListener("change", (next) => {
+      const { text: now, initial, onSave: save } = latest.current;
+      if (next !== "active" && now !== initial) save?.(now);
+    });
+    return () => {
+      back.remove();
+      away.remove();
+    };
   }, []);
 
   const change = (next: string) => {
