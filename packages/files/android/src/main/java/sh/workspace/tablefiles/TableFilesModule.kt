@@ -151,6 +151,9 @@ class TableFilesModule : Module() {
       }
       try {
         hold(uri)
+      } catch (_: java.io.FileNotFoundException) {
+        // The provider's own message names its paths: said in words instead.
+        mapOf("error" to "It isn't there any more. It may have been moved, renamed or deleted.", "bookmark" to bookmark)
       } catch (e: Exception) {
         mapOf("error" to (e.message ?: e.toString()), "bookmark" to bookmark)
       }
