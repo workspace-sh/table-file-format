@@ -124,6 +124,8 @@ import { Bleed, GutterSpacer } from "./internal/Bleed";
 import { onWindowResize } from "./internal/onWindowResize";
 import { useCompactSide, useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
+import { afterWindowFocus } from "./internal/afterWindowFocus";
+import { FieldAbout } from "./FieldAbout";
 import { passThrough } from "./internal/passThrough";
 import { PageReveal } from "./pageReveal";
 import { Select, Toggle } from "./PlatformControls";
@@ -3252,6 +3254,8 @@ export function TableView({
   // The height the drag last ticked at, so each line passed ticks once.
   const lastStep = useRef(0);
   const [editingFieldName, setEditingFieldName] = useState<string | null>(null);
+  // The column whose About This Field is open (FieldAbout): Android, from its header's menu.
+  const [aboutField, setAboutField] = useState<string | null>(null);
   // The schema as a field's settings opened, for their Cancel to put back.
   const schemaBefore = useRef<TableSchema | null>(null);
   // A field renamed with its settings open: they follow it, and what Cancel puts back has the new name.
@@ -3410,13 +3414,7 @@ export function TableView({
       // but the editor waits for a place, so a heading scrolled away still opens it.
       ...(schemaEditable
         ? {
-            openFieldSettings: (name: string) => {
-              setFormulaCell(null);
-              void measureAnchor(headerButtonRefs.current[name]).then((rect) => {
-                setAnchorRect(rect ?? { top: 0, left: 0, width: 0, height: 0 });
-                setEditingFieldName(name);
-              });
-            },
+            openFieldSettings: (name: string) => openFieldSettings(name),
           }
         : {}),
     });
@@ -4089,6 +4087,16 @@ export function TableView({
     return starts;
   }, [widthsKey]);
 
+  // As clicking the heading does; a sheet ignores where the heading is,
+  // but the editor waits for a place, so a heading scrolled away still opens it.
+  const openFieldSettings = (name: string) => {
+    setFormulaCell(null);
+    void measureAnchor(headerButtonRefs.current[name]).then((rect) => {
+      setAnchorRect(rect ?? { top: 0, left: 0, width: 0, height: 0 });
+      setEditingFieldName(name);
+    });
+  };
+
   // Cell renderers — extracted because both panes share them.
   const renderHeaderCell = (name: string, idxInPane: number, paneLen: number) => {
     const field = fieldMap.get(name);
@@ -4129,6 +4137,8 @@ export function TableView({
     // Right-click the header (touch and hold on a phone) to insert a field
     // beside it, put back a width that was dragged, or delete it.
     const menu = columnActions(name, {
+      // Android: what the column is, in a sheet; elsewhere its header's hint says it (and the phone's ⓘ, the Mac's inspector).
+      onAbout: PLATFORM_OS === "android" && SheetControl.presentsSettings ? (n) => setAboutField(n) : undefined,
       onInsertField: canAddField ? (n, side) => void insertField(n, side) : undefined,
       onResetWidth: onUpdateView && view.columnWidths?.[name] !== undefined ? resetWidth : undefined,
       onDeleteField,
@@ -4176,6 +4186,31 @@ export function TableView({
           {/* In a span: on native a bare string in a view isn't drawn (and is an error). */}
           <html.span style={styles.headerTitle}>{field?.title ?? name}</html.span>
         </html.button>
+        {aboutField === name && (
+          <FieldAbout
+            hint={fieldHint({ field, name, schema, editable: false, formulaSyntax })}
+            name={name}
+            onSettings={
+              schemaEditable
+                ? () => {
+                    setAboutField(null);
+                    afterWindowFocus(() => openFieldSettings(name));
+                  }
+                : undefined
+            }
+            onEditFormula={
+              editor && field?.computed
+                ? () => {
+                    setAboutField(null);
+                    // For the selected row, or the first: a formula column's formula is every row's.
+                    const rowId = sel?.rowId ?? idAt(0);
+                    if (rowId) afterWindowFocus(() => void openCell(rowId, name));
+                  }
+                : undefined
+            }
+            onClose={() => setAboutField(null)}
+          />
+        )}
         {isEditing && field && (anchorRect || settingsApart) && (
           <SchemaFieldEditor
             // The field as the file has it. fieldMap's copy carries the

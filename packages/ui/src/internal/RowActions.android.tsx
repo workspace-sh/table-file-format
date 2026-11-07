@@ -23,6 +23,7 @@ const symbols: Record<string, ImageSourcePropType> = {
   first_page: require("./material/first_page.xml"),
   grid_view: require("./material/grid_view.xml"),
   height: require("./material/height.xml"),
+  info: require("./material/info.xml"),
   last_page: require("./material/last_page.xml"),
   note_add: require("./material/note_add.xml"),
   restart_alt: require("./material/restart_alt.xml"),
