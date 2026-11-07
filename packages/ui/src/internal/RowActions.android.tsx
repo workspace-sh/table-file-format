@@ -1,18 +1,37 @@
 /**
  * Android default: touch and hold a row for its actions in Material's
- * dropdown menu (Compose's, from @expo/ui), opening where the finger is.
+ * dropdown menu (Compose's, from @expo/ui), opening where the finger is,
+ * each action with its Material Symbol and Delete in the error colour,
+ * set apart by a divider, as iOS's menu has each action's SF Symbol and
+ * Delete in red.
  * The hold is react-native-gesture-handler's, so it's recognised over a
  * cell that takes taps, and a scroll that starts first wins.
  */
 import { useMemo, useRef, useState, type ReactElement } from "react";
-import { View } from "react-native";
+import { View, type ImageSourcePropType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { AndroidHaptics, performAndroidHapticsAsync } from "expo-haptics";
-import { Box, DropdownMenu, DropdownMenuItem, Host, Text } from "@expo/ui/jetpack-compose";
+import { Box, DropdownMenu, DropdownMenuItem, HorizontalDivider, Host, Icon, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import type { RowActionsProps } from "../controlSlots";
 
-// Material's error colour (M3 baseline), for an action that removes something.
-const DESTRUCTIVE = "#B3261E";
+// The actions' Material Symbols (controlSlots' rowActions and columnActions),
+// weight 400, as vector drawables, which Compose's Icon draws.
+const symbols: Record<string, ImageSourcePropType> = {
+  arrow_range: require("./material/arrow_range.xml"),
+  delete: require("./material/delete.xml"),
+  description: require("./material/description.xml"),
+  first_page: require("./material/first_page.xml"),
+  grid_view: require("./material/grid_view.xml"),
+  height: require("./material/height.xml"),
+  last_page: require("./material/last_page.xml"),
+  note_add: require("./material/note_add.xml"),
+  restart_alt: require("./material/restart_alt.xml"),
+  select_all: require("./material/select_all.xml"),
+  sticky_note_2: require("./material/sticky_note_2.xml"),
+  vertical_align_bottom: require("./material/vertical_align_bottom.xml"),
+  vertical_align_top: require("./material/vertical_align_top.xml"),
+  visibility_off: require("./material/visibility_off.xml"),
+};
 
 export function RowActions({ actions, children }: RowActionsProps): ReactElement {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
@@ -31,6 +50,7 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
         }),
     [],
   );
+  const colors = useMaterialColors();
   if (actions.length === 0) return children;
   const close = () => setAt(null);
   // A plain View between the detector and the (React Strict DOM) row, as
@@ -51,20 +71,31 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
                 <Box />
               </DropdownMenu.Trigger>
               <DropdownMenu.Items>
-                {actions.map((action) => (
-                  <DropdownMenuItem
-                    key={action.id}
-                    elementColors={action.destructive ? { textColor: DESTRUCTIVE } : undefined}
-                    onClick={() => {
-                      close();
-                      action.onSelect();
-                    }}
-                  >
-                    <DropdownMenuItem.Text>
-                      <Text>{action.label}</Text>
-                    </DropdownMenuItem.Text>
-                  </DropdownMenuItem>
-                ))}
+                {actions.flatMap((action, i) => {
+                  const symbol = action.symbol?.material ? symbols[action.symbol.material] : undefined;
+                  const tint = action.destructive ? colors.error : colors.onSurfaceVariant;
+                  const item = (
+                    <DropdownMenuItem
+                      key={action.id}
+                      elementColors={action.destructive ? { textColor: colors.error } : undefined}
+                      onClick={() => {
+                        close();
+                        action.onSelect();
+                      }}
+                    >
+                      {symbol && (
+                        <DropdownMenuItem.LeadingIcon>
+                          <Icon source={symbol} size={24} tint={tint} />
+                        </DropdownMenuItem.LeadingIcon>
+                      )}
+                      <DropdownMenuItem.Text>
+                        <Text>{action.label}</Text>
+                      </DropdownMenuItem.Text>
+                    </DropdownMenuItem>
+                  );
+                  // What removes something is set apart from the rest.
+                  return action.destructive && i > 0 ? [<HorizontalDivider key={`${action.id}-divider`} />, item] : [item];
+                })}
               </DropdownMenu.Items>
             </DropdownMenu>
           </Host>
