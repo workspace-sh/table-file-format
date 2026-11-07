@@ -7,8 +7,8 @@
  * The hold is react-native-gesture-handler's, so it's recognised over a
  * cell that takes taps, and a scroll that starts first wins.
  */
-import { useMemo, useRef, useState, type ReactElement } from "react";
-import { View, type ImageSourcePropType } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { AppState, View, type ImageSourcePropType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { AndroidHaptics, performAndroidHapticsAsync } from "expo-haptics";
 import { Box, DropdownMenu, DropdownMenuItem, HorizontalDivider, Host, Icon, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
@@ -21,6 +21,7 @@ const symbols: Record<string, ImageSourcePropType> = {
   delete: require("./material/delete.xml"),
   description: require("./material/description.xml"),
   first_page: require("./material/first_page.xml"),
+  function: require("./material/function.xml"),
   grid_view: require("./material/grid_view.xml"),
   height: require("./material/height.xml"),
   last_page: require("./material/last_page.xml"),
@@ -50,6 +51,26 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
         }),
     [],
   );
+  // An action chosen runs once the menu has gone and the screen has its window's focus back: the
+  // menu is a window of its own, and Android shows no keyboard for a field focused in a window
+  // without focus (Cell Formula… opens one).
+  const chosen = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (at !== null || !chosen.current) return;
+    const run = chosen.current;
+    chosen.current = null;
+    let done = false;
+    const go = () => {
+      if (done) return;
+      done = true;
+      sub.remove();
+      clearTimeout(fallback);
+      requestAnimationFrame(run);
+    };
+    const sub = AppState.addEventListener("focus", go);
+    // A menu that never took the focus (TalkBack's actions, a menu already gone): it isn't waited for.
+    const fallback = setTimeout(go, 400);
+  }, [at]);
   const colors = useMaterialColors();
   if (actions.length === 0) return children;
   const close = () => setAt(null);
@@ -79,8 +100,8 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
                       key={action.id}
                       elementColors={action.destructive ? { textColor: colors.error } : undefined}
                       onClick={() => {
+                        chosen.current = action.onSelect;
                         close();
-                        action.onSelect();
                       }}
                     >
                       {symbol && (
