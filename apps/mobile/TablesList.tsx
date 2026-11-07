@@ -3,7 +3,7 @@
 
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { TablesListProps } from "./tablesList.types";
+import { groupsOf, type TablesListProps } from "./tablesList.types";
 
 export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavailable }: TablesListProps) {
   return (
@@ -40,14 +40,14 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavai
           </html.div>
         </html.div>
       ))}
-      {unavailable && unavailable.length > 0 ? (
-        // Opened last time, and not to be opened again: each with why, where the file would be.
-        <html.div style={styles.file}>
+      {groupsOf(unavailable).map(([group, docs]) => (
+        // Opened last time, and not to be opened again (or edits kept apart): each with why, where the file would be.
+        <html.div key={group} style={styles.file}>
           <html.div style={styles.fileHeading}>
-            <html.span style={styles.fileTitle}>Couldn't open</html.span>
+            <html.span style={styles.fileTitle}>{group}</html.span>
           </html.div>
           <html.div style={styles.group}>
-            {unavailable.map((doc, i) => (
+            {docs.map((doc, i) => (
               <html.div key={`${doc.name}-${i}`} style={[styles.row, styles.unavailable, i > 0 && styles.rowRule]}>
                 <html.span dir="auto" style={styles.rowTitle}>{doc.name}</html.span>
                 <html.span dir="auto" style={styles.rowNote}>{doc.message}</html.span>
@@ -60,7 +60,7 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavai
             ))}
           </html.div>
         </html.div>
-      ) : null}
+      ))}
     </ScrollView>
   );
 }
