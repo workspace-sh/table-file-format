@@ -4,7 +4,7 @@ import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { readTableDocument, writeTableFileTo } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 
-import { ChangedElsewhere, copyPathFor, keepEditsAsCopy, packTableFile, replacingFs, restampTableFile, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { ChangedElsewhere, changedElsewherePrompt, copyPathFor, displayNameOf, keepEditsAsCopy, packTableFile, replacingFs, restampTableFile, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 
 const fs = () => {
   const m = memoryFs();
@@ -150,4 +150,15 @@ test("replacingFs writes a pack's file in one replace, and leaves everything els
   assert.deepEqual(replaced.map((b) => [...b]), [[1, 2]]);
   assert.deepEqual([...(await m.readBytes!("/docs/other.bin"))!], [3]);
   assert.equal(await m.readBytes!("/docs/a.table.tmp"), null);
+});
+
+test("what's said of a file names it as its reader knows it, never by its encoded URI", () => {
+  assert.equal(displayNameOf("/data/user/0/app/files/held/ab12/Budget.table"), "Budget.table");
+  assert.equal(displayNameOf("file:///storage/emulated/0/Download/My%20Budget.table"), "My Budget.table");
+  assert.equal(displayNameOf("content://com.android.externalstorage.documents/document/primary%3ADownload%2FBudget.table"), "Budget.table");
+  assert.equal(displayNameOf("content://com.android.externalstorage.documents/document/primary%3ABudget.table"), "Budget.table");
+  assert.equal(displayNameOf("/Users/me/Notes: 2026.table"), "Notes: 2026.table");
+  const target = "content://com.android.externalstorage.documents/document/primary%3ADownload%2FBudget.table";
+  assert.match(new ChangedElsewhere(target).message, /^Budget\.table was changed/);
+  assert.equal(changedElsewherePrompt(target).heading, "“Budget.table” was changed somewhere else");
 });
