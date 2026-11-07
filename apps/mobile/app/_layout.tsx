@@ -5,7 +5,7 @@
 
 import "react-native-gesture-handler";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { LogBox, useColorScheme } from "react-native";
+import { LogBox, Platform, StatusBar, useColorScheme } from "react-native";
 // From expo-router, not @react-navigation/native: expo-router carries its own
 // copy of React Navigation, and a theme given through the other copy never
 // reached the stack (it stayed Light in Dark: light screen, dark text).
@@ -36,6 +36,9 @@ export default function Layout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider value={scheme === "dark" ? DARK : LIGHT}>
+      {/* Android draws edge to edge with nothing setting the status bar's icons, which stayed
+          white over the light top app bar: dark on light, light on dark, as the appearance is. */}
+      {Platform.OS === "android" ? <StatusBar barStyle={scheme === "dark" ? "light-content" : "dark-content"} /> : null}
       <TableAppProvider>
         <Providers>
           <Stack>
