@@ -10,13 +10,21 @@ export type MaterialSymbol =
   | "note_add"
   | "folder_open"
   | "share"
-  | "settings";
+  | "settings"
+  | "undo"
+  | "redo"
+  | "add_column_right"
+  | "close";
 
 export interface MenuItem {
   label: string;
   icon?: MaterialSymbol;
   /** Shown with a check: the one chosen, as the view on screen. */
   checked?: boolean;
+  /** Shown, but not to be pressed now: Undo with nothing to undo. */
+  disabled?: boolean;
+  /** A line above it: where a new group of actions starts. */
+  startsGroup?: boolean;
   onPress: () => void;
 }
 
