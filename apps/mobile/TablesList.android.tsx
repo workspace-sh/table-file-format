@@ -12,12 +12,13 @@ import {
   ListItem,
   Row,
   Text,
+  TextButton,
   useMaterialColors,
 } from "@expo/ui/jetpack-compose";
 import { clickable, fillMaxSize, fillMaxWidth, padding, verticalScroll } from "@expo/ui/jetpack-compose/modifiers";
 import { SafeAreaInsetsContext } from "react-native-safe-area-context";
 import { useContext } from "react";
-import type { TablesListProps } from "./tablesList.types";
+import { groupsOf, type TablesListProps } from "./tablesList.types";
 
 const symbols = {
   add: require("./assets/symbols/add.xml"),
@@ -81,13 +82,13 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavai
             ) : null}
           </Column>
         ))}
-        {unavailable && unavailable.length > 0 ? (
-          // Opened last time, and not to be opened again: each with why, where the file would be.
-          <Column modifiers={[fillMaxWidth(), padding(0, 8, 0, 8)]}>
+        {groupsOf(unavailable).map(([group, docs]) => (
+          // Opened last time, and not to be opened again (or edits kept apart): each with why, under its heading.
+          <Column key={group} modifiers={[fillMaxWidth(), padding(0, 8, 0, 8)]}>
             <Text color={colors.primary} style={{ typography: "titleSmall" }} modifiers={[padding(16, 8, 16, 8)]}>
-              Couldn't open
+              {group}
             </Text>
-            {unavailable.map((doc, i) => (
+            {docs.map((doc, i) => (
               <ListItem key={`${doc.name}-${i}`} colors={itemColors} modifiers={[fillMaxWidth()]}>
                 <ListItem.HeadlineContent>
                   <Text>{doc.name}</Text>
@@ -95,10 +96,17 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavai
                 <ListItem.SupportingContent>
                   <Text>{doc.message}</Text>
                 </ListItem.SupportingContent>
+                {doc.action ? (
+                  <ListItem.TrailingContent>
+                    <TextButton onClick={() => void doc.action!.onPress()}>
+                      <Text>{doc.action.label}</Text>
+                    </TextButton>
+                  </ListItem.TrailingContent>
+                ) : null}
               </ListItem>
             ))}
           </Column>
-        ) : null}
+        ))}
       </Column>
     </Host>
   );
