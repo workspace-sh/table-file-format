@@ -1,7 +1,10 @@
-// Files on iOS, for the .table apps and Workspace (ios/TableFilesModule.swift):
-// rename(2), a file moved over another in one step, which core's writer
-// needs of a TableFs; documents opened where they are, and a coordinated
-// write for a file the app was only given; and the shake that asks to undo.
+// Files on iOS and Android, for the .table apps and Workspace
+// (ios/TableFilesModule.swift, android/…/TableFilesModule.kt): rename(2), a
+// file moved over another in one step, which core's writer needs of a
+// TableFs; documents opened where they are, and a coordinated write for a
+// file the app was only given; and, on iOS, the shake that asks to undo.
+// Android holds a picked document as a copy in the app's files, written
+// through to the document on each write.
 import { requireOptionalNativeModule } from "expo-modules-core";
 
 /** A document held open where it is (by its security scope), and kept for next time as `bookmark`. */
@@ -13,6 +16,10 @@ export interface HeldDocument {
   /** A folder (a .table's folder form), or a file. */
   directory: boolean;
   bookmark: string;
+  /** Android's: the document's own stamp, read before its bytes were (null where the provider gives none). */
+  stamp?: string | null;
+  /** Android's: edits it never got were kept apart (it changed elsewhere), to be saved as a copy (keepEditsAsCopy). */
+  unsavedEdits?: boolean;
 }
 
 type TableFilesModule = {
@@ -20,22 +27,34 @@ type TableFilesModule = {
   shakeToUndoEnabled(): boolean;
   requestOrientation(to: string): void;
   pickDocument(types: string[]): Promise<HeldDocument | null>;
-  resolveBookmark(bookmark: string): HeldDocument | null;
+  /** Sync on Apple's, async on Android's (which copies the document); an error where it's there but can't be held. */
+  resolveBookmark(bookmark: string): HeldDocument | Unheld | null | Promise<HeldDocument | Unheld | null>;
+  /** Android's: the document's own size and time, for a copy held for one. */
+  documentStamp?(path: string): Promise<string | null>;
+  /** Android's: a line in its log (logcat's TableFiles), in release builds too. */
+  log?(message: string): void;
+  /** Android's: give back every grant kept but for these bookmarks, dropping their copies. */
+  releaseAllBut?(keep: string[]): Promise<void>;
   holdDocument(path: string): HeldDocument;
   writeCoordinated(path: string, bytes: Uint8Array): Promise<void>;
-  release(path: string): void;
+  /** True (Android's) when it's kept: edits its document never got wait until they're settled. */
+  release(path: string): boolean | void;
+  /** Android's: a document closed with edits it never got, held again to finish them; true when settled. */
+  settle?(bookmark: string): Promise<boolean>;
+  /** Android's: edits kept apart from a document changed elsewhere, saved as a new file; true when saved. */
+  keepEditsAsCopy?(path: string): Promise<boolean>;
   addListener(event: "onShake", listener: () => void): { remove(): void };
 };
 
-// Apple's module (ios/TableFilesModule.swift). Android has none yet, so it's
-// loaded optionally: the app starts, and what needs it says so when used.
+// The platform's module. Loaded optionally: an app built without it (the
+// web, or a build that leaves it out) starts, and what needs it says so when used.
 const Native = requireOptionalNativeModule<TableFilesModule>("TableFiles");
 
-/** Whether this build has the native module (Apple's; not Android's yet). */
+/** Whether this build has the native module. */
 export const hasTableFiles = Native !== null;
 
 function native(): TableFilesModule {
-  if (Native === null) throw new Error("This needs Files support that isn’t on Android yet.");
+  if (Native === null) throw new Error("This needs Files support that this build doesn’t have.");
   return Native;
 }
 
@@ -49,9 +68,38 @@ export function holdDocument(path: string): HeldDocument {
   return native().holdDocument(path);
 }
 
-/** A document kept from before, held open again; null when it's no longer there. */
-export function resolveBookmark(bookmark: string): HeldDocument | null {
+/** A line in the platform's files log, where it has one (Android's logcat, tag TableFiles; release builds too). */
+export function filesLog(message: string): void {
+  Native?.log?.(message);
+}
+
+/**
+ * Give back every document grant the app keeps but for these bookmarks (the
+ * documents open), where grants outlive the app (Android): what a pick that
+ * couldn't be read, or a close cut short, left behind.
+ */
+export async function releaseAllBut(keep: string[]): Promise<void> {
+  await Native?.releaseAllBut?.(keep);
+}
+
+/** A document kept from before that's there but can't be held again: why (its grant taken away, say). */
+export interface Unheld {
+  error: string;
+  bookmark: string;
+}
+
+/** A document kept from before, held open again; null when it's no longer there, `Unheld` when it can't be held. */
+export async function resolveBookmark(bookmark: string): Promise<HeldDocument | Unheld | null> {
   return native().resolveBookmark(bookmark);
+}
+
+/**
+ * The document itself as it is now (its size and time), where a held file
+ * is a copy of it (Android): what says whether it changed elsewhere. Null
+ * where the held file is the document (Apple's), whose own stamp is that.
+ */
+export async function documentStamp(path: string): Promise<string | null> {
+  return Native?.documentStamp ? Native.documentStamp(path) : null;
 }
 
 /** Replace the file at `path` (a path, not a URL) with `bytes`, as one coordinated write. */
@@ -59,9 +107,19 @@ export function writeCoordinated(path: string, bytes: Uint8Array): Promise<void>
   return native().writeCoordinated(path, bytes);
 }
 
-/** Stop holding the document at `path` open. */
-export function releaseDocument(path: string): void {
-  native().release(path);
+/** Stop holding the document at `path` open. True when it's kept (Android): edits its document never got wait to be settled. */
+export function releaseDocument(path: string): boolean {
+  return native().release(path) === true;
+}
+
+/** A document closed with edits it never got, held again to finish them (Android); true when settled. */
+export async function settleDocument(bookmark: string): Promise<boolean> {
+  return Native?.settle ? Native.settle(bookmark) : true;
+}
+
+/** Edits kept apart from a document changed elsewhere, saved as a new file the person names (Android); true when saved. */
+export async function keepEditsAsCopy(path: string): Promise<boolean> {
+  return Native?.keepEditsAsCopy ? Native.keepEditsAsCopy(path) : true;
 }
 
 /** Move the file at `from` over `to` (paths, not URLs), replacing it atomically. */

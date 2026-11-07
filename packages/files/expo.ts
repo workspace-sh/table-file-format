@@ -68,8 +68,8 @@ export const expoFs: TableFs = {
       renameOver(pathOfUri(from), pathOfUri(to));
       return;
     }
-    // Android, until it has the native rename: the old one removed, then
-    // the new one moved into its place (two steps, not one).
+    // A build without the native module: the old one removed, then the
+    // new one moved into its place (two steps, not one).
     const folder = Paths.info(from).isDirectory;
     const target = folder ? new Directory(to) : new File(to);
     if (target.exists) target.delete();

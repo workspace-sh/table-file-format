@@ -4,7 +4,7 @@ import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { readTableDocument, writeTableFileTo } from "@workspace.sh/table-core";
 import { tables } from "@workspace.sh/table-fixtures";
 
-import { ChangedElsewhere, copyPathFor, keepEditsAsCopy, packTableFile, replacingFs, restampTableFile, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
+import { ChangedElsewhere, copyPathFor, largeBundlesToPack, keepEditsAsCopy, packTableFile, replacingFs, restampTableFile, singleFilePacker, takeFileAsItIs, unpackTableFile, workDirFor } from "./singleFile.ts";
 
 const fs = () => {
   const m = memoryFs();
@@ -150,4 +150,18 @@ test("replacingFs writes a pack's file in one replace, and leaves everything els
   assert.deepEqual(replaced.map((b) => [...b]), [[1, 2]]);
   assert.deepEqual([...(await m.readBytes!("/docs/other.bin"))!], [3]);
   assert.equal(await m.readBytes!("/docs/a.table.tmp"), null);
+});
+
+test("after a save, only the edited opened files holding a large table are packed again", () => {
+  const bundleOf = (key: string) => key.slice(0, key.indexOf("/"));
+  const tables = {
+    "big/deals": { indexed: { count: 50000 } },
+    "small/deals": { indexed: { count: 10000 } },
+    "other/tasks": {},
+    "kept/deals": { indexed: { count: 60000 } },
+  };
+  const opened = new Set(["big", "small", "other"]);
+  // "small" was edited, "big" wasn't: big's document is left as it is; "kept" isn't an opened file.
+  assert.deepEqual(largeBundlesToPack(tables, opened, ["small", "other", "kept"], bundleOf), ["small"]);
+  assert.deepEqual(largeBundlesToPack(tables, opened, [], bundleOf), []);
 });
