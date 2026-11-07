@@ -42,7 +42,12 @@ views the platform's way; table-ui itself owns no navigation:
   storage and packed back into the file by one coordinated write after each
   save (`@workspace.sh/table-files`, packages/files), since the file is the app's to replace but
   its folder isn't. Export as a Single File hands the file on screen to the
-  share sheet. Reading and writing the format is table-app's.
+  share sheet. Reading and writing the format is table-app's. On Android
+  a picked file is a document the app is granted for good, not a path:
+  it's held as a copy in the app's own files, refreshed from the document
+  each time it opens, and each save is written through to the document
+  (packages/files' Android module). Android opens single files only, not
+  folders.
 - **Leaving:** going to the background writes what's left at once.
 
 ## Running it

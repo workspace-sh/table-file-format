@@ -25,6 +25,7 @@ export default function TablesScreen() {
         dispatch({ type: "create", making: { kind: "table", bundle } });
       }}
       onClose={(bundle) => dispatch({ type: "close", bundle })}
+      unavailable={app.unavailable}
     />
   );
 }
