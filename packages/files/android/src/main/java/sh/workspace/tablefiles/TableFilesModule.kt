@@ -29,6 +29,8 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
@@ -38,6 +40,7 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.typedarray.Uint8Array
 import java.io.File
 import java.io.FileOutputStream
+import java.io.SyncFailedException
 import java.security.MessageDigest
 import kotlinx.coroutines.launch
 
@@ -143,7 +146,9 @@ class TableFilesModule : Module() {
         if (uri.toString() in kept) continue
         Log.d(TAG, "releaseAllBut: giving back $uri")
         giveBack(uri)
-        File(context.filesDir, "held/${digest(uri.toString())}").deleteRecursively()
+        val folder = File(context.filesDir, "held/${digest(uri.toString())}")
+        // Never a copy holding a write its document never got.
+        if (folder.listFiles()?.none { it.name.endsWith(".pending") } != false) folder.deleteRecursively()
       }
     }
 
@@ -161,10 +166,15 @@ class TableFilesModule : Module() {
         return@AsyncFunction
       }
       val pending = pendingOf(copy)
+      // The bytes wait beside the copy until the document has them, with the document's stamp as
+      // it was: a write cut short is finished later only over that same document (hold).
+      replace(stampFileOf(copy), (stampOf(uri) ?: "").toByteArray())
       replace(pending, data)
       writeDocument(uri, data)
       Log.d(TAG, "writeCoordinated: $uri now ${stampOf(uri)}")
       if (!pending.renameTo(copy)) throw TableFilesException("${copy.name} was saved, but its copy here couldn't be.")
+      stampFileOf(copy).delete()
+      syncFolder(copy.parentFile)
     }
 
     /// Stop holding the document whose copy is at `path`, and give back the grant to it.
@@ -210,6 +220,23 @@ class TableFilesModule : Module() {
 
   private fun pendingOf(copy: File): File = File(copy.parentFile, ".${copy.name}.pending")
 
+  private fun stampFileOf(copy: File): File = File(copy.parentFile, ".${copy.name}.pending-stamp")
+
+  /// A folder's entries (a rename in it) made durable, where the system allows it.
+  private fun syncFolder(folder: File?) {
+    if (folder == null) return
+    try {
+      val fd = Os.open(folder.path, OsConstants.O_RDONLY, 0)
+      try {
+        Os.fsync(fd)
+      } finally {
+        Os.close(fd)
+      }
+    } catch (_: Exception) {
+      // Not every file system lets a folder be synced.
+    }
+  }
+
   /// The document held: first given a write it never finished, then copied, as it is now, into the app's files.
   private fun hold(uri: Uri): Map<String, Any> {
     val name = nameOf(uri)
@@ -218,10 +245,19 @@ class TableFilesModule : Module() {
     val copy = File(folder, name)
     val pending = pendingOf(copy)
     if (pending.exists()) {
-      // Edits the document didn't get last time: it gets them now, before it's read.
+      // Edits the document didn't get last time: it gets them now, before it's read, if it is still
+      // as it was when they were written. Changed elsewhere since, it isn't written over: the edits
+      // stay beside it, and it's said where it's listed.
+      val was = stampFileOf(copy).takeIf { it.exists() }?.readText()
+      val now = stampOf(uri) ?: ""
+      if (was != null && was != "" && was != now) {
+        Log.d(TAG, "hold: $uri changed elsewhere ($was, now $now); its pending edits kept")
+        throw TableFilesException("$name was changed somewhere else after edits here weren't all saved to it. Those edits are kept on this phone; it isn't written over.")
+      }
       Log.d(TAG, "hold: writing ${pending.length()} pending bytes to $uri")
       writeDocument(uri, pending.readBytes())
       pending.delete()
+      stampFileOf(copy).delete()
     }
     val input = context.contentResolver.openInputStream(uri) ?: throw TableFilesException("$name can't be read.")
     val staged = File(folder, ".$name.reading")
@@ -245,7 +281,14 @@ class TableFilesModule : Module() {
       FileOutputStream(it.fileDescriptor).use { out ->
         out.write(data)
         out.flush()
-        out.fd.sync()
+        try {
+          out.fd.sync()
+        } catch (_: SyncFailedException) {
+          // A provider's pipe can't be synced: what it took is checked instead, where it can say.
+          // (statSize is -1 for a pipe, which says nothing of its length.)
+          val size = it.statSize
+          if (size >= 0 && size != data.size.toLong()) throw TableFilesException("The document took $size of ${data.size} bytes.")
+        }
       }
     }
   }
