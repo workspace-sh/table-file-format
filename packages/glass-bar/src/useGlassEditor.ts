@@ -75,7 +75,16 @@ export interface GlassEditorOptions {
   ownFormulas?: boolean;
   /** No search at rest: the host has nothing to search yet (a document). */
   noSearch?: boolean;
+  /**
+   * Where an edit the app was sent away from is kept, by cell, when it
+   * couldn't be saved as it stood: it's there again when that cell is next
+   * edited, after a relaunch too.
+   */
+  drafts?: { get(cell: string): string | null; set(cell: string, draft: string | null): void };
 }
+
+/** A cell, as drafts are kept by. */
+const cellOf = (s: CellEditSession) => `${s.rowId}\u0000${s.name}`;
 
 /** Roughly how tall the editor stands above the keyboard, by what it shows. */
 function editorHeight(s: CellEditSession): number {
@@ -92,7 +101,7 @@ const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, ownFormulas, noSearch }: GlassEditorOptions) {
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, ownFormulas, noSearch, drafts }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
   // The edit's removable prefix (a cell's own formula's "="), until the reader takes it away.
@@ -124,6 +133,8 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   // from outside React's render.
   const typed = useRef("");
   const open = useRef<CellEditSession | null>(null);
+  const kept = useRef(drafts);
+  kept.current = drafts;
 
   const editor = useMemo<CellEditor>(
     () => ({
@@ -134,14 +145,17 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       begin: (next) => {
         // A cell's own formula is a session with its `=` as a prefix that can be dropped.
         if (formulasOnly && next.mode !== "formula" && !(ownFormulas && next.dropPrefix)) return false;
-        open.current = next;
-        typed.current = next.initial;
-        setSession(next);
+        // A draft kept when the app last went away from this cell: the edit starts from it.
+        const draft = next.choices || next.date ? null : (kept.current?.get(cellOf(next)) ?? null);
+        const started = draft !== null && draft !== next.initial ? { ...next, initial: draft } : next;
+        open.current = started;
+        typed.current = started.initial;
+        setSession(started);
         setPrefixKept(true);
         setSearching(false);
         setMany(next.selectedMany ?? []);
         setShownDate(next.date?.shown ?? "");
-        setStatus(next.mode === "formula" ? next.change(next.initial) : {});
+        setStatus(next.mode === "formula" || started !== next ? next.change(started.initial) : {});
         return true;
       },
       end: (key) => {
@@ -199,7 +213,9 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
     [formulasOnly, ownFormulas],
   );
 
+  // Saved, discarded or handed on: its draft, if it had one, goes.
   const close = () => {
+    if (open.current) kept.current?.set(cellOf(open.current), null);
     open.current = null;
     setSession(null);
     setStatus({});
@@ -330,6 +346,14 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       if (s) setStatus(s.change(text));
     },
     onSave: (text) => save(text),
+    // Sent away mid-edit: saved only if it saves as it stands; otherwise nothing is said, the edit
+    // stays open, and what's typed is kept as a draft, for a relaunch too.
+    onBackground: (text) => {
+      const s = open.current;
+      if (!s || s.choices || s.date) return;
+      if (text !== s.initial && s.saveIfClean?.(text)) close();
+      else if (text !== s.initial) kept.current?.set(cellOf(s), text);
+    },
     // Empty a single choice, link or date, and close: there's nothing left to edit.
     onClear: () => {
       open.current?.clear?.();

@@ -14,7 +14,7 @@
  * text as coloured spans (Compose's TextField in @expo/ui takes plain text).
  */
 import { useEffect, useImperativeHandle, useRef, useState, type ReactElement } from "react";
-import { AppState, BackHandler, Keyboard, Pressable, ScrollView, Text, TextInput, View, useColorScheme, type ImageSourcePropType, type TextInputSelectionChangeEvent } from "react-native";
+import { AppState, Keyboard, Pressable, ScrollView, Text, TextInput, View, useColorScheme, type ImageSourcePropType, type TextInputSelectionChangeEvent } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   AssistChip,
@@ -49,7 +49,7 @@ export function GlassBar(props: GlassBarProps): ReactElement | null {
   return <FormulaBar key={props.state.editKey} {...props} state={props.state} />;
 }
 
-function FormulaBar({ state, ref, onCancel, onChange, onSave, onSubmit, onChip, onFix, onPrefixRemove, onFieldSettings, onHeight }: GlassBarProps & { state: GlassBarEditing }) {
+function FormulaBar({ state, ref, onCancel, onChange, onSave, onBackground, onSubmit, onChip, onFix, onPrefixRemove, onFieldSettings, onHeight }: GlassBarProps & { state: GlassBarEditing }) {
   const dark = useColorScheme() === "dark";
   // The system's colours (Material You's dynamic colour, where the phone has it).
   const p = useMaterialColors();
@@ -70,24 +70,15 @@ function FormulaBar({ state, ref, onCancel, onChange, onSave, onSubmit, onChip, 
     return () => subs.forEach((s) => s.remove());
   }, []);
 
-  // Back, once the keyboard is down (the first Back puts it away), closes the bar as Cancel does,
-  // rather than leaving the screen with the formula half written.
-  const latest = useRef({ text, onCancel, onSave, initial: state.initialValue });
-  latest.current = { text, onCancel, onSave, initial: state.initialValue };
+  // Going to the background: the app may not come back, so what's typed is saved if it can be, or
+  // kept as a draft (onBackground). Back is the screen's: it closes the bar as Cancel does.
+  const latest = useRef({ text, onBackground });
+  latest.current = { text, onBackground };
   useEffect(() => {
-    const back = BackHandler.addEventListener("hardwareBackPress", () => {
-      latest.current.onCancel?.();
-      return true;
-    });
-    // Going to the background saves what was typed, as scrolling the table away does: the app may not come back.
     const away = AppState.addEventListener("change", (next) => {
-      const { text: now, initial, onSave: save } = latest.current;
-      if (next !== "active" && now !== initial) save?.(now);
+      if (next === "background") latest.current.onBackground?.(latest.current.text);
     });
-    return () => {
-      back.remove();
-      away.remove();
-    };
+    return () => away.remove();
   }, []);
 
   const change = (next: string) => {
