@@ -11,6 +11,7 @@ import type { CellEditor, CellEditorCommands, CellEditorSelection, CellEditSessi
 import type { GlassBarAction, GlassBarHandle, GlassBarProps, GlassBarState, GlassBarWorking } from "./types";
 import { expectsReference } from "@workspace.sh/table-ui/shared";
 import { formulaSpans } from "@workspace.sh/table-core";
+import { androidBarInset } from "./keyboardInset";
 
 /** Said in place of the field's name while a formula waits for a column: a pointer clicks, a finger taps. */
 const ADD_A_COLUMN = Platform.OS === "macos" ? "Click a column to add it" : "Tap a column to add it";
@@ -109,8 +110,9 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
   const [keyboard, setKeyboard] = useState(0);
   useEffect(() => {
     const subs = [
-      Keyboard.addListener("keyboardWillShow", (e) => setKeyboard(e.endCoordinates.height)),
-      Keyboard.addListener("keyboardWillHide", () => setKeyboard(0)),
+      // Android reports the keyboard only once it's shown (and, edge to edge, without the navigation bar under it).
+      Keyboard.addListener(Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow", (e) => setKeyboard(e.endCoordinates.height + androidBarInset())),
+      Keyboard.addListener(Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide", () => setKeyboard(0)),
     ];
     return () => subs.forEach((s) => s.remove());
   }, []);
