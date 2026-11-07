@@ -5,11 +5,11 @@
 // table-ui's views, scrolling under the glass bars.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
-import { Alert, Platform, Pressable, ScrollView } from "react-native";
+import { Alert, BackHandler, Platform, Pressable, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
@@ -173,6 +173,17 @@ export default function TableScreen() {
     const { onShakeToUndo } = require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files");
     return onShakeToUndo(() => shake.current.ask?.());
   }, []);
+  // Android's Back closes the formula bar, or steps back through what was shown (the view, the
+  // cell, the place, as iOS's toolbar Back does) while this screen is on top; with
+  // nowhere to go back to, it does what it always does.
+  const back = useRef<{ go?: () => boolean }>({});
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => back.current.go?.() ?? false);
+      return () => sub.remove();
+    }, []),
+  );
   // The page's sides: the margin, or the safe area where it's wider, as in
   // landscape, where the Dynamic Island and the corners take the sides. What
   // runs over the margin to the screen's edge (PageGutter) runs over the
@@ -183,6 +194,17 @@ export default function TableScreen() {
   const gutter = Math.min(sideLeft, sideRight);
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
+  back.current.go = () => {
+    // A formula half written in the bar above the keyboard: Back closes it as Cancel does (the
+    // first Back, while the keyboard is up, puts the keyboard away).
+    if (glass.props.state.kind === "editing") {
+      glass.props.onCancel?.();
+      return true;
+    }
+    if (!derived.canGoBack) return false;
+    dispatch({ type: "back" });
+    return true;
+  };
   shake.current.ask = () => {
     const step = derived.canUndo ? ("undo" as const) : derived.canRedo ? ("redo" as const) : null;
     if (!step) return;
