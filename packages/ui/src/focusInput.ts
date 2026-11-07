@@ -13,11 +13,17 @@ import { PLATFORM_OS } from "./internal/platformOS";
  * the keyboard left down, and a second tap was needed. There the focus
  * waits a frame.
  */
-export function focusInput(el: unknown): void {
+export function focusInput(el: unknown, options: { still?: () => boolean; then?: () => void } = {}): void {
   const input = el as { focus?: () => void; getNativeRef?: () => { focus?: () => void } | null } | null;
   const native = typeof input?.getNativeRef === "function" ? input.getNativeRef() : null;
   const target = native ?? input;
   if (typeof target?.focus !== "function") return;
-  if (PLATFORM_OS === "android") requestAnimationFrame(() => target.focus?.());
-  else target.focus();
+  const focus = () => {
+    // Not if what asked for it has gone meanwhile (the edit closed).
+    if (options.still && !options.still()) return;
+    target.focus?.();
+    options.then?.();
+  };
+  if (PLATFORM_OS === "android") requestAnimationFrame(focus);
+  else focus();
 }

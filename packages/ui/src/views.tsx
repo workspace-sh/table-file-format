@@ -2365,24 +2365,31 @@ function EditableCell({
   const hints = inputHints(field);
   // A cell's own formula is typed as a formula, whatever the column holds: letters and
   // brackets, not the number pad a number column asks for.
-  const typing = asFormula ? FORMULA_INPUT : hints;
+  // (Android's: iOS's number pad for numbers and punctuation has what a formula needs.)
+  const typing = asFormula && PLATFORM_OS === "android" ? FORMULA_INPUT : hints;
   const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
       applyKeyboard(el, typing);
+      const still = () => !closed.current;
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
-        focusInput(el);
         // A native input's ref doesn't carry its value: what was typed is the draft.
         const end = (typeof el.value === "string" ? el.value : draft).length;
-        try {
-          el.setSelectionRange(end, end);
-        } catch {
-          // number and date inputs have no caret to place
-        }
+        // The caret placed once it has the focus (which waits a frame on Android).
+        focusInput(el, {
+          still,
+          then: () => {
+            try {
+              el.setSelectionRange(end, end);
+            } catch {
+              // number and date inputs have no caret to place
+            }
+          },
+        });
       } else if (el && "select" in el && typeof el.select === "function") el.select();
-      else focusInput(el);
+      else focusInput(el, { still });
     }
   }, [editing]);
 
@@ -4676,9 +4683,9 @@ export function TableView({
       session = {
         key, rowId, name, label, rowLabel, initial,
         mode: field.format === "markdown" ? "text" : "line",
-        // The keyboard the field wants, as a cell's own input has (inputHints); a cell's own formula is typed as a formula.
-        keyboard: asFormula ? "default" : (BAR_KEYBOARD[hints.kind] ?? "default"),
-        suggestions: asFormula ? false : hints.autocorrect,
+        // The keyboard the field wants, as a cell's own input has (inputHints); on Android a cell's own formula is typed as a formula.
+        keyboard: asFormula && PLATFORM_OS === "android" ? "default" : (BAR_KEYBOARD[hints.kind] ?? "default"),
+        suggestions: asFormula && PLATFORM_OS === "android" ? false : hints.autocorrect,
         ...(asFormula
           ? {
               prefix: FORMULA_PREFIX,
