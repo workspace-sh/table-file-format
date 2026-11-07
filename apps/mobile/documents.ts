@@ -76,7 +76,7 @@ function largeKeys(store: KeyValueStore | null): Record<string, string> {
 export interface OpenedDocuments {
   library: Library;
   /** Documents opened last time that are there but couldn't be opened again, and why. */
-  unavailable?: { name: string; message: string }[];
+  unavailable?: { name: string; message: string; bookmark: string }[];
   /** A large table's first rows, by table key, to show while the rest is read into the index. */
   first: Record<string, Row[]>;
   /** Each single file (its URL), by its working folder. */
@@ -110,6 +110,8 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
         continue;
       }
       const workDir = workDirFor(singleFilesHome(), uri);
+      // The file's stamp before its bytes: a change that lands between the two is then seen at the next save, not taken as read.
+      const stamp = await stampOf(uri);
       const bytes = await expoFs.readBytes!(uri);
       if (!bytes) throw new Error("it isn't there");
       if (await holdsLargeTable(bytes)) {
@@ -129,12 +131,12 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
           documents.set(dir, uri);
           keys[uri] = opened.key;
           // What the file was when its folder was made: a save checks it's still that (packTableFile).
-          await expoFs.writeText(`${dir}.stamp`, await stampOf(uri));
+          await expoFs.writeText(`${dir}.stamp`, stamp);
           continue;
         }
         // Judged large, read as not: unpacked as any.
       }
-      await unpackTableFile(expoFs, bytes, workDir, await stampOf(uri));
+      await unpackTableFile(expoFs, bytes, workDir, stamp);
       folders.push(workDir);
       documents.set(workDir, uri);
     } catch (error) {
@@ -172,7 +174,7 @@ export async function reopenDocuments(store: KeyValueStore | null, taken: Iterab
   const found = await Promise.all(remembered.map((bookmark) => resolveBookmark(bookmark).catch((error: unknown) => ({ error: String(error), bookmark }))));
   const held = found.filter((doc): doc is HeldDocument => doc !== null && !("error" in doc));
   // There, but not to be held (its grant taken away): said in place, by its name.
-  const unavailable = found.flatMap((doc) => (doc && "error" in doc ? [{ name: nameOfBookmark(doc.bookmark), message: doc.error }] : []));
+  const unavailable = found.flatMap((doc) => (doc && "error" in doc ? [{ name: nameOfBookmark(doc.bookmark), message: doc.error, bookmark: doc.bookmark }] : []));
   return { ...(await openDocuments(held, taken, store)), unavailable };
 }
 
@@ -215,7 +217,7 @@ export function useDocuments({
   /** Each opened document's folder, by bundle key. */
   paths: Record<string, string>;
   /** What was opened again at launch. */
-  reopened?: Pick<OpenedDocuments, "documents" | "bookmarks">;
+  reopened?: Pick<OpenedDocuments, "documents" | "bookmarks" | "unavailable">;
 }): Documents {
   // The latest of each, for writes and opens that finish later.
   const latest = useRef({ bundles, paths });
@@ -247,8 +249,15 @@ export function useDocuments({
       },
     );
   }, []);
+  // Each pack waits its turn behind the bundle's writes, and closing waits for it in turn.
   const pack = useCallback(async (keys: string[]) => {
-    await Promise.all(keys.map(packOne));
+    await Promise.all(
+      keys.map((key) => {
+        const next = (queues.current[key] ?? Promise.resolve()).catch(() => {}).then(() => packOne(key));
+        queues.current[key] = next;
+        return next;
+      }),
+    );
   }, [packOne]);
 
   const open = useCallback(async (held: HeldDocument[]) => {
@@ -301,7 +310,9 @@ export function useDocuments({
     }
     held.current = now;
     try {
-      store?.setItem(OPENED_KEY, JSON.stringify([...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : []))));
+      // Documents that couldn't be opened again stay remembered, listed with why, for when they can be.
+      const kept = (reopened?.unavailable ?? []).map((doc) => doc.bookmark);
+      store?.setItem(OPENED_KEY, JSON.stringify([...[...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : [])), ...kept]));
     } catch {
       // Full or refused: the documents just won't reopen next launch.
     }
