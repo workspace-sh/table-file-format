@@ -58,7 +58,7 @@ test("each action names its symbol on both phones", () => {
 });
 
 test("every Material Symbol a menu names is drawn on Android (internal/material)", () => {
-  const all = { onOpenBody: () => {}, onInsertRow: () => {}, onFitRow: () => {}, onResetRowHeight: () => {}, onDeleteRow: () => {}, onCellNote: () => {}, onHideRow: () => {} };
+  const all = { onOpenBody: () => {}, onInsertRow: () => {}, onFitRow: () => {}, onResetRowHeight: () => {}, onDeleteRow: () => {}, onCellNote: () => {}, onCellFormula: () => {}, onHideRow: () => {} };
   const actions = [
     ...rowActions("r1", { ...all, hasBody: true }),
     ...rowActions("r1", { ...all, hasBody: false, onMergeCells: () => {} }),
