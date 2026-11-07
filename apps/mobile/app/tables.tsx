@@ -1,7 +1,7 @@
 // The tables, file by file (table-app's sidebar tree, as the other apps'
 // sidebars list them), in a native sheet over the table on screen.
 // Choosing one shows it and closes the sheet. The list is the platform's
-// own where it has one (TablesList.ios.tsx).
+// own where it has one (TablesList.ios.tsx, TablesList.android.tsx).
 
 import { useRouter } from "expo-router";
 import { useTableAppContext } from "../TableAppContext";
