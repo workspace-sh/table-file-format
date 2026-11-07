@@ -29,6 +29,12 @@ views the platform's way; table-ui itself owns no navigation:
     Material Symbols as vector drawables (`assets/symbols/`).
   - The tables list (`app/tables.tsx`) is a native form sheet with
     detents.
+- **Editing a cell:** on iOS the selected cell and its editor are one
+  glass control at the foot (`@workspace.sh/glass-bar`). On Android a cell
+  is edited where it is, with Material's menus and date dialogs, and a
+  formula in a bar docked above the keyboard (`GlassBar.android.tsx`), as
+  Android's spreadsheets have it: coloured as it's typed, the columns as
+  chips (a tap on a cell adds it too), its working, Cancel and Save.
 - **Storage:** edits and the viewer's settings are kept on the phone in
   AsyncStorage (`store.ts`), under the keys the web uses in localStorage.
 - **Questions:** native alerts. On iOS a name (new table, new `.table`
