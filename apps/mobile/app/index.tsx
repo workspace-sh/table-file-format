@@ -215,7 +215,7 @@ export default function TableScreen() {
     { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
     // New Field is here because on a phone the end of the header, where its "+" is, is usually off screen.
     ...(canAddFieldHere
-      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
+      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, material: "add_column_right" as MaterialSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
       : []),
     {
       startsGroup: !canAddFieldHere,
@@ -435,7 +435,7 @@ export default function TableScreen() {
                 views={views.map((v) => ({ label: v.label, icon: v.material, checked: v.on, onPress: v.onPress }))}
                 settingsOpen={state.settingsOpen}
                 onSettings={toggleSettings}
-                more={fileActions.map((a) => ({ label: a.label, icon: a.material, onPress: a.onPress }))}
+                more={fileActions.map((a) => ({ label: a.label, icon: a.material, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
               />
             ),
           }),
