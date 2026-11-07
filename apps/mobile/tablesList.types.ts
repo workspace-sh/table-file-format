@@ -10,4 +10,6 @@ export interface TablesListProps {
   onNewTable: (bundle: string) => void;
   /** Close a file (asks first); offered where the file is `closable`. */
   onClose: (bundle: string) => void;
+  /** Documents opened last time that couldn't be opened again, and why: said here, in place. */
+  unavailable?: { name: string; message: string }[];
 }

@@ -26,7 +26,7 @@ const symbols = {
   table: require("./assets/symbols/table.xml"),
 } satisfies Record<string, ImageSourcePropType>;
 
-export function TablesList({ tree, active, onChoose, onNewTable, onClose }: TablesListProps) {
+export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavailable }: TablesListProps) {
   const colors = useMaterialColors();
   const bottom = useContext(SafeAreaInsetsContext)?.bottom ?? 48;
   // Rows on the sheet's own surface; counts in the secondary colour.
@@ -81,6 +81,24 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose }: Tabl
             ) : null}
           </Column>
         ))}
+        {unavailable && unavailable.length > 0 ? (
+          // Opened last time, and not to be opened again: each with why, where the file would be.
+          <Column modifiers={[fillMaxWidth(), padding(0, 8, 0, 8)]}>
+            <Text color={colors.primary} style={{ typography: "titleSmall" }} modifiers={[padding(16, 8, 16, 8)]}>
+              Couldn't open
+            </Text>
+            {unavailable.map((doc, i) => (
+              <ListItem key={`${doc.name}-${i}`} colors={itemColors} modifiers={[fillMaxWidth()]}>
+                <ListItem.HeadlineContent>
+                  <Text>{doc.name}</Text>
+                </ListItem.HeadlineContent>
+                <ListItem.SupportingContent>
+                  <Text>{doc.message}</Text>
+                </ListItem.SupportingContent>
+              </ListItem>
+            ))}
+          </Column>
+        ) : null}
       </Column>
     </Host>
   );
