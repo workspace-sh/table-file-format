@@ -167,8 +167,8 @@ export default function TableScreen() {
     const { onShakeToUndo } = require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files");
     return onShakeToUndo(() => shake.current.ask?.());
   }, []);
-  // Android's Back steps back through what was shown (the view, the cell, the
-  // place, as iOS's toolbar Back does) while this screen is on top; with
+  // Android's Back closes the formula bar, or steps back through what was shown (the view, the
+  // cell, the place, as iOS's toolbar Back does) while this screen is on top; with
   // nowhere to go back to, it does what it always does.
   const back = useRef<{ go?: () => boolean }>({});
   useFocusEffect(
@@ -189,6 +189,12 @@ export default function TableScreen() {
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
   back.current.go = () => {
+    // A formula half written in the bar above the keyboard: Back closes it as Cancel does (the
+    // first Back, while the keyboard is up, puts the keyboard away).
+    if (glass.props.state.kind === "editing") {
+      glass.props.onCancel?.();
+      return true;
+    }
     if (!derived.canGoBack) return false;
     dispatch({ type: "back" });
     return true;
