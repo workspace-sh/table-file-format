@@ -20,7 +20,7 @@ interface Action<Id extends string> {
 }
 
 /** Something that can be done to a row as a whole, from its row menu. */
-export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "merge-cells" | "unmerge-cells" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
+export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "cell-formula" | "merge-cells" | "unmerge-cells" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
 
 /** Something that can be done to a column, from its header's menu (columnActions). */
 export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
@@ -342,6 +342,8 @@ export function rowActions(
     onDeleteRow?: (rowId: string) => void;
     /** The selected cell's note, in this row (D57). */
     onCellNote?: () => void;
+    /** Start a formula of the selected cell's own, in this row (D52): where the keyboard has no `=` (Android's number pad). */
+    onCellFormula?: () => void;
     /** Leave the row out of this view by hand (D58). */
     onHideRow?: (rowId: string) => void;
     /** Merge a block of a Sheet view's cells, from the selected one (D58). */
@@ -351,7 +353,7 @@ export function rowActions(
   },
 ): RowAction[] {
   const actions: RowAction[] = [];
-  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote, onHideRow, onMergeCells, onUnmergeCells } = can;
+  const { onOpenBody, onInsertRow, onFitRow, onResetRowHeight, onDeleteRow, onCellNote, onCellFormula, onHideRow, onMergeCells, onUnmergeCells } = can;
   // A row's page opens from here, or starts here: on a touch screen
   // the menu is the only way in to a row without one.
   if (onOpenBody) {
@@ -364,6 +366,9 @@ export function rowActions(
   if (onInsertRow) {
     actions.push({ id: "insert-above", label: "Insert Row Above", symbol: { sf: "arrow.up.to.line", material: "vertical_align_top" }, onSelect: () => onInsertRow(rowId, "above") });
     actions.push({ id: "insert-below", label: "Insert Row Below", symbol: { sf: "arrow.down.to.line", material: "vertical_align_bottom" }, onSelect: () => onInsertRow(rowId, "below") });
+  }
+  if (onCellFormula) {
+    actions.push({ id: "cell-formula", label: "Cell Formula…", symbol: { sf: "function", material: "function" }, onSelect: onCellFormula });
   }
   if (onCellNote) {
     actions.push({ id: "cell-note", label: "Cell Note…", symbol: { sf: "note.text", material: "sticky_note_2" }, onSelect: onCellNote });
@@ -420,7 +425,7 @@ export function columnActions(
     });
   }
   if (onResetWidth) {
-    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "width" }, onSelect: () => onResetWidth(name) });
+    actions.push({ id: "reset-width", label: "Reset Column Width", symbol: { sf: "arrow.left.and.right", material: "arrow_range" }, onSelect: () => onResetWidth(name) });
   }
   if (onDeleteField) {
     actions.push({ id: "delete-field", label: "Delete Field", symbol: { sf: "trash", material: "delete" }, destructive: true, onSelect: () => onDeleteField(name) });
