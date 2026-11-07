@@ -119,7 +119,13 @@ export default function TableScreen() {
     query: search ?? "",
     onQuery: (text) => app?.dispatch({ type: "search", text }),
     onFilter: () => app?.dispatch({ type: "settings", open: !app.state.settingsOpen }),
+    // Android: only a formula (a formula column's, or a cell's own) leaves its cell, for the bar above the keyboard; every other cell edits in place.
+    formulasOnly: !GLASS,
+    ownFormulas: !GLASS,
+    drafts: app?.drafts,
   });
+  // Android's formula bar, while it's open: room under the table for a low cell to scroll clear of it.
+  const formulaRoom = !GLASS && glass.props.state.kind === "editing" ? glass.reserve : 0;
   // Development only: lets a script drive the app through React Native's
   // debugger connection, as the Mac's __tableDesktop does (taps can't be
   // sent from an agent's session). Not in release builds, unless built for
@@ -237,7 +243,7 @@ export default function TableScreen() {
       {/* The table first, before the bars' elements below: expo-router
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
-      <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
+      <CellEditorContext.Provider value={glass.editor}>
       <PageGutter.Provider value={gutter}>
       <PortalHost>
         <ScrollView
@@ -259,7 +265,7 @@ export default function TableScreen() {
           style={{ flex: 1 }}
           // Room under the last row for the glass control on iOS.
           // and, while an editor is open, room for any cell to scroll clear of it.
-          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
+          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24 + formulaRoom, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped. On iOS the
           // glass bar's editor leaves that room itself (`reserve`) and scrolls
@@ -477,6 +483,8 @@ export default function TableScreen() {
           moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
         />
       )}
+      {/* Android: a formula's editor, above the keyboard. */}
+      {!GLASS && <GlassBar ref={glass.bar} {...glass.props} />}
     </>
   );
 }

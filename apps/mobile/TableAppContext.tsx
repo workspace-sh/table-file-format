@@ -102,6 +102,32 @@ export interface TableAppContextValue {
   resetDemo: () => void;
   /** A table's history as NDJSON, from where the phone keeps it; undefined when it has none. For the Files sheet. */
   historyText: (key: string) => string | undefined;
+  /** An edit the app was sent away from that couldn't be saved as it stood, by cell (useGlassEditor's `drafts`). */
+  drafts: { get(cell: string): string | null; set(cell: string, draft: string | null): void };
+}
+
+/** Where `drafts` are kept: one entry, a cell to its draft. */
+const DRAFTS_KEY = "table-mobile:drafts";
+
+function draftsIn(store: KeyValueStore | null): TableAppContextValue["drafts"] {
+  const read = (): Record<string, string> => {
+    try {
+      const parsed: unknown = JSON.parse(store?.getItem(DRAFTS_KEY) ?? "{}");
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  };
+  return {
+    get: (cell) => read()[cell] ?? null,
+    set: (cell, draft) => {
+      const all = read();
+      if (draft === null && !(cell in all)) return;
+      if (draft === null) delete all[cell];
+      else all[cell] = draft;
+      store?.setItem(DRAFTS_KEY, JSON.stringify(all));
+    },
+  };
 }
 
 const Context = createContext<TableAppContextValue | null>(null);
@@ -135,7 +161,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved. The documents
     // opened last time are held open again and read before the first screen.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY])
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY, DRAFTS_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, reopened: await reopenDocuments(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
@@ -236,6 +262,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
   tablesNow.current = state.tables;
   openedNow.current = state.opened;
   const documents = useDocuments({ store, bundles: state.bundles, paths: state.opened, reopened });
+  const drafts = useMemo(() => draftsIn(store), [store]);
   documentsRef.current = documents;
   // A table's folder, where its history is: its document's, or a large table's.
   const historyFolder = (key: string): string | undefined =>
@@ -331,6 +358,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
     labelOf: (id) => derived.commands.find((c) => c.id === id)!.label,
     systemLocale,
     historyText,
+    drafts,
     // The reducer asks first; on yes the saved edits are cleared above.
     resetDemo: () => dispatch({ type: "reset", fresh: { tables: initialTables, bundles: bundleMetas, paths: {}, problems: {} } }),
     // A .table from the Files app or elsewhere, opened where it is: a folder, or a single file
