@@ -49,6 +49,24 @@ export async function unpackTableFile(fs: TableFs, bytes: Uint8Array, workDir: s
 }
 
 /**
+ * A file's name as its reader knows it, for what's said about it: the last
+ * part of a path or URL, decoded. A content URI's last part is a document
+ * id (Android's `primary%3ADownload%2FBudget.table`): its own last part.
+ */
+export function displayNameOf(target: string): string {
+  const trimmed = target.replace(/\/+$/, "");
+  const last = trimmed.slice(trimmed.lastIndexOf("/") + 1);
+  let decoded = last;
+  try {
+    decoded = decodeURIComponent(last);
+  } catch {
+    // Not encoded: as it is.
+  }
+  if (decoded === last) return last;
+  return decoded.slice(Math.max(decoded.lastIndexOf("/"), decoded.lastIndexOf(":")) + 1);
+}
+
+/**
  * The file changed since its working folder was made from it (or last
  * packed into it): another app, another copy of this one, a sync. Packing
  * would write over that, so it isn't packed; the edits stay in the working
@@ -56,7 +74,7 @@ export async function unpackTableFile(fs: TableFs, bytes: Uint8Array, workDir: s
  */
 export class ChangedElsewhere extends Error {
   constructor(readonly target: string) {
-    super(`${target.slice(target.lastIndexOf("/") + 1)} was changed somewhere else since it was opened here, so it wasn't saved over. Open it again to see it as it is now.`);
+    super(`${displayNameOf(target)} was changed somewhere else since it was opened here, so it wasn't saved over. Open it again to see it as it is now.`);
     this.name = "ChangedElsewhere";
   }
 }
@@ -206,7 +224,7 @@ export async function takeFileAsItIs(fs: TableFs, workDir: string): Promise<void
  * working folder.
  */
 export function changedElsewherePrompt(target: string): Confirm {
-  const name = target.slice(target.lastIndexOf("/") + 1);
+  const name = displayNameOf(target);
   return {
     heading: `“${name}” was changed somewhere else`,
     body: "Your edits weren't saved into it, so nothing was lost. Keep your edits as a copy beside it, or let them go and see it as it is now.",
