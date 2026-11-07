@@ -18,6 +18,7 @@ import {
   DropdownMenu,
   DropdownMenuItem,
   FilledTonalIconButton,
+  HorizontalDivider,
   Host,
   Icon,
   IconButton,
@@ -37,6 +38,10 @@ const symbols = {
   folder_open: require("./assets/symbols/folder_open.xml"),
   share: require("./assets/symbols/share.xml"),
   settings: require("./assets/symbols/settings.xml"),
+  undo: require("./assets/symbols/undo.xml"),
+  redo: require("./assets/symbols/redo.xml"),
+  add_column_right: require("./assets/symbols/add_column_right.xml"),
+  close: require("./assets/symbols/close.xml"),
 } satisfies Record<MaterialSymbol, ImageSourcePropType>;
 
 /** The navigation icon: the tables list. */
@@ -88,9 +93,12 @@ function Menu({ symbol, label, items }: { symbol: MaterialSymbol; label: string;
         </IconButton>
       </DropdownMenu.Trigger>
       <DropdownMenu.Items>
-        {items.map((item) => (
+        {items.flatMap((item, i) => [
+          // Groups apart, as Material's menus set them.
+          ...(item.startsGroup && i > 0 ? [<HorizontalDivider key={`${item.label}-divider`} />] : []),
           <DropdownMenuItem
             key={item.label}
+            enabled={!item.disabled}
             onClick={() => {
               setOpen(false);
               item.onPress();
@@ -101,8 +109,8 @@ function Menu({ symbol, label, items }: { symbol: MaterialSymbol; label: string;
               <Text>{item.label}</Text>
             </DropdownMenuItem.Text>
             {item.checked && <DropdownMenuItem.TrailingIcon>{icon("check")}</DropdownMenuItem.TrailingIcon>}
-          </DropdownMenuItem>
-        ))}
+          </DropdownMenuItem>,
+        ])}
       </DropdownMenu.Items>
     </DropdownMenu>
   );
