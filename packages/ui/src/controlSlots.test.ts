@@ -100,3 +100,14 @@ test("a Sheet view's selected cell offers Merge Cells…, or Unmerge Cells when 
   assert.deepEqual(ids({ onMergeCells: () => {} }), ["merge-cells"]);
   assert.deepEqual(ids({ onMergeCells: () => {}, onUnmergeCells: () => {} }), ["unmerge-cells"]);
 });
+
+test("a cell's formula is offered where asked, before its note, with its symbols", () => {
+  const started: string[] = [];
+  const actions = rowActions("r1", { onCellFormula: () => started.push("formula"), onCellNote: () => {}, onDeleteRow: () => {} });
+  assert.deepEqual(actions.map((a) => a.id), ["cell-formula", "cell-note", "delete"]);
+  assert.equal(actions[0]!.label, "Cell Formula…");
+  assert.deepEqual(actions[0]!.symbol, { sf: "function", material: "function" });
+  actions[0]!.onSelect();
+  assert.deepEqual(started, ["formula"]);
+  assert.ok(!rowActions("r1", { onCellNote: () => {} }).some((a) => a.id === "cell-formula"));
+});
