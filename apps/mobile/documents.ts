@@ -36,9 +36,19 @@ import {
   type Library,
 } from "@workspace.sh/table-app";
 import { bundleDir, openZip, removeFolder, tablesHome } from "./indexHost";
-import { documentStamp, expoFs, filesLog, pathOfUri, releaseAllBut, releaseDocument, resolveBookmark, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
+import { documentStamp, expoFs, filesLog, keepEditsAsCopy, pathOfUri, releaseAllBut, releaseDocument, resolveBookmark, settleDocument, writeCoordinated, type HeldDocument } from "@workspace.sh/table-files";
 
 export const OPENED_KEY = "table-mobile:opened";
+/** Documents closed with edits they never got (Android), by bookmark: settled at the next launch. */
+export const UNSAVED_KEY = "table-mobile:unsaved";
+
+/** Something said of a document in place (the tables sheet), with what can be done about it. */
+export interface DocumentNotice {
+  name: string;
+  message: string;
+  bookmark?: string;
+  action?: { label: string; onPress: () => Promise<void> | void };
+}
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */
 export const LARGE_KEY = "table-mobile:large-documents";
 
@@ -76,7 +86,7 @@ function largeKeys(store: KeyValueStore | null): Record<string, string> {
 export interface OpenedDocuments {
   library: Library;
   /** Documents opened last time that are there but couldn't be opened again, and why. */
-  unavailable?: { name: string; message: string; bookmark: string }[];
+  unavailable?: DocumentNotice[];
   /** A large table's first rows, by table key, to show while the rest is read into the index. */
   first: Record<string, Row[]>;
   /** Each single file (its URL), by its working folder. */
@@ -97,6 +107,7 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
   const documents = new Map<string, string>();
   const bookmarks = new Map<string, string>();
   const problems: Record<string, string[]> = {};
+  const notices: DocumentNotice[] = [];
   const names = new Set(taken);
   const read: Library = { tables: {}, bundles: {}, paths: {}, problems: {} };
   const first: Record<string, Row[]> = {};
@@ -104,6 +115,7 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
   for (const doc of held) {
     const uri = doc.uri.replace(/\/+$/, "");
     bookmarks.set(uri, doc.bookmark);
+    if (doc.unsavedEdits) notices.push(unsavedNotice(doc));
     try {
       if (doc.directory) {
         folders.push(uri);
@@ -111,7 +123,7 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
       }
       const workDir = workDirFor(singleFilesHome(), uri);
       // The file's stamp before its bytes: a change that lands between the two is then seen at the next save, not taken as read.
-      const stamp = await stampOf(uri);
+      const stamp = doc.stamp != null ? doc.stamp : await stampOf(uri);
       const bytes = await expoFs.readBytes!(uri);
       if (!bytes) throw new Error("it isn't there");
       if (await holdsLargeTable(bytes)) {
@@ -156,7 +168,16 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
   // Which bundles are single files, and where each file is: Export as a Single File is for folders only.
   const singleFiles = Object.fromEntries(Object.entries(library.paths).flatMap(([key, folder]) => (documents.has(folder) ? [[key, documents.get(folder)!]] : [])));
   if (Object.keys(singleFiles).length > 0) library.singleFiles = singleFiles;
-  return { library, first, documents, bookmarks };
+  return { library, first, documents, bookmarks, ...(notices.length > 0 ? { unavailable: notices } : {}) };
+}
+
+/** A document changed elsewhere after edits here weren't all saved to it: its edits, offered as a copy. */
+function unsavedNotice(doc: HeldDocument): DocumentNotice {
+  return {
+    name: doc.name,
+    message: "Changed somewhere else before edits here were all saved to it. It's shown as it is; those edits are kept on this phone.",
+    action: { label: "Keep My Edits as a Copy…", onPress: () => void keepEditsAsCopy(doc.path) },
+  };
 }
 
 /** The documents opened last time, held open again from their bookmarks and read: what the app starts with, beside the fixtures. */
@@ -169,13 +190,29 @@ export async function reopenDocuments(store: KeyValueStore | null, taken: Iterab
   } catch {
     // Unreadable: start with none.
   }
+  // Documents closed with edits they never got: held again to finish them, and let go once they're settled.
+  let unsaved: string[] = [];
+  try {
+    const raw = store?.getItem(UNSAVED_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) unsaved = parsed.filter((b): b is string => typeof b === "string" && !remembered.includes(b));
+  } catch {
+    // Unreadable: none.
+  }
+  const waiting = (await Promise.all(unsaved.map(async (b) => ((await settleDocument(b).catch(() => false)) ? [] : [b])))).flat();
+  try {
+    store?.setItem(UNSAVED_KEY, JSON.stringify(waiting));
+  } catch {
+    // Full or refused: tried again next launch.
+  }
   // Grants kept for anything but these (a pick that couldn't be read, a close cut short) are given back.
-  await releaseAllBut(remembered).catch(() => {});
+  await releaseAllBut([...remembered, ...waiting]).catch(() => {});
   const found = await Promise.all(remembered.map((bookmark) => resolveBookmark(bookmark).catch((error: unknown) => ({ error: String(error), bookmark }))));
   const held = found.filter((doc): doc is HeldDocument => doc !== null && !("error" in doc));
   // There, but not to be held (its grant taken away): said in place, by its name.
-  const unavailable = found.flatMap((doc) => (doc && "error" in doc ? [{ name: nameOfBookmark(doc.bookmark), message: doc.error, bookmark: doc.bookmark }] : []));
-  return { ...(await openDocuments(held, taken, store)), unavailable };
+  const unavailable: DocumentNotice[] = found.flatMap((doc) => (doc && "error" in doc ? [{ name: nameOfBookmark(doc.bookmark), message: doc.error, bookmark: doc.bookmark }] : []));
+  const opened = await openDocuments(held, taken, store);
+  return { ...opened, unavailable: [...unavailable, ...(opened.unavailable ?? [])] };
 }
 
 /** A document's name from its bookmark, where that is a URI (Android's): its last part, decoded. */
@@ -305,14 +342,26 @@ export function useDocuments({
     const closed = [...held.current].filter((uri) => !now.has(uri));
     if (closed.length > 0) {
       void Promise.allSettled(Object.values(queues.current)).then(() => {
-        for (const uri of closed) releaseDocument(pathOfUri(uri));
+        for (const uri of closed) {
+          // Kept (edits it never got wait beside it): remembered, to be settled at the next launch.
+          const bookmark = bookmarks.current.get(uri);
+          if (releaseDocument(pathOfUri(uri)) && bookmark) {
+            try {
+              const raw = store?.getItem(UNSAVED_KEY);
+              const list: string[] = raw ? JSON.parse(raw) : [];
+              store?.setItem(UNSAVED_KEY, JSON.stringify([...new Set([...list, bookmark])]));
+            } catch {
+              // Full or refused: its grant is kept regardless, and it's settled when opened again.
+            }
+          }
+        }
       });
     }
     held.current = now;
     try {
       // Documents that couldn't be opened again stay remembered, listed with why, for when they can be.
-      const kept = (reopened?.unavailable ?? []).map((doc) => doc.bookmark);
-      store?.setItem(OPENED_KEY, JSON.stringify([...[...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : [])), ...kept]));
+      const kept = (reopened?.unavailable ?? []).flatMap((doc) => (doc.bookmark ? [doc.bookmark] : []));
+      store?.setItem(OPENED_KEY, JSON.stringify([...new Set([...[...now].flatMap((uri) => (bookmarks.current.has(uri) ? [bookmarks.current.get(uri)!] : [])), ...kept])]));
     } catch {
       // Full or refused: the documents just won't reopen next launch.
     }
