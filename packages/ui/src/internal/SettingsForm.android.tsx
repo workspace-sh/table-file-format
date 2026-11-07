@@ -347,12 +347,13 @@ function FormSection({ section, first, colors }: { section: SettingsSection; fir
   );
 }
 
-function Form({ sections }: SettingsFormProps): ReactElement {
+function Form({ sections, standalone }: SettingsFormProps & { standalone: boolean }): ReactElement {
   const colors = useMaterialColors();
-  // The foot clear of the navigation bar, which the sheet runs under (a host without a safe-area provider: its usual height).
+  // On its own (a Host in a screen), the foot clears the navigation bar and the keyboard; in the
+  // settings sheet, the sheet's own window insets do that (a host without a safe-area provider: the bar's usual height).
   const bottom = useContext(SafeAreaInsetsContext)?.bottom ?? 48;
   return (
-    <Column modifiers={[fillMaxSize(), verticalScroll(), imePadding(), padding(0, 0, 0, bottom + 16)]}>
+    <Column modifiers={[fillMaxSize(), verticalScroll(), ...(standalone ? [imePadding(), padding(0, 0, 0, bottom + 16)] : [padding(0, 0, 0, 16)])]}>
       {sections.map((section, i) => (
         <FormSection key={section.id} section={section} first={i === 0} colors={colors} />
       ))}
@@ -362,10 +363,10 @@ function Form({ sections }: SettingsFormProps): ReactElement {
 
 function SettingsFormView(props: SettingsFormProps): ReactElement {
   // In the settings sheet, part of its Compose tree; elsewhere, a Host of its own.
-  if (useContext(InSettingsSheet)) return <Form {...props} />;
+  if (useContext(InSettingsSheet)) return <Form {...props} standalone={false} />;
   return (
     <Host style={{ flex: 1 }}>
-      <Form {...props} />
+      <Form {...props} standalone />
     </Host>
   );
 }
