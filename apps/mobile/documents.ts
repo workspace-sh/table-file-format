@@ -49,7 +49,8 @@ export interface DocumentNotice {
   name: string;
   message: string;
   bookmark?: string;
-  action?: { label: string; onPress: () => Promise<void> | void };
+  /** Done when it resolves true: the notice goes. */
+  action?: { label: string; onPress: () => Promise<boolean | void> | boolean | void };
 }
 /** Each large single file's bundle key last time (its folder in the index host's home), by its URL. */
 export const LARGE_KEY = "table-mobile:large-documents";
@@ -179,7 +180,7 @@ function unsavedNotice(doc: HeldDocument): DocumentNotice {
     group: "Edits kept on this phone",
     name: doc.name,
     message: "Changed somewhere else before edits here were all saved to it. It's shown as it is; those edits are kept on this phone.",
-    action: { label: "Keep My Edits as a Copy…", onPress: () => void keepEditsAsCopy(doc.path) },
+    action: { label: "Keep My Edits as a Copy…", onPress: () => keepEditsAsCopy(doc.path) },
   };
 }
 

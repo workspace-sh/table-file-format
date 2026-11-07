@@ -262,6 +262,29 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
   const historyText = (key: string): string | undefined =>
     historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
+  // What's said of documents in the tables sheet; one whose action is done (its edits kept as a copy) goes.
+  const [notices, setNotices] = useState<DocumentNotice[]>(() => reopened.unavailable ?? []);
+  const unavailable = useMemo(
+    () =>
+      notices.map((notice) =>
+        notice.action
+          ? {
+              ...notice,
+              action: {
+                ...notice.action,
+                onPress: async () => {
+                  try {
+                    if ((await notice.action!.onPress()) === true) setNotices((all) => all.filter((n) => n !== notice));
+                  } catch (error) {
+                    tell(`Couldn't keep the edits to ${notice.name}`, error instanceof Error ? error.message : String(error));
+                  }
+                },
+              },
+            }
+          : notice,
+      ),
+    [notices, tell],
+  );
   // Tables held in the index (large ones): read, edited and saved there.
   // The view follows the search a step behind what's typed (useSearchBehind).
   const behind = useSearchBehind(state);
@@ -376,7 +399,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
     openBytes: async (bytes, name) =>
       take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
     indexed,
-    unavailable: reopened.unavailable,
+    unavailable,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
