@@ -197,7 +197,9 @@ function WindowedRows<T>({
       const m = motion.current;
       const when = Date.now();
       const dt = when - m.when;
-      m.speed = dt > 0 && dt < 200 ? (at - m.at) / dt : 0;
+      // The list's own moves (a settle, a jump to a row) and long jumps aren't the reader's speed.
+      const ownMove = last.current.jump || last.current.settled !== null || Math.abs(at - m.at) > 3 * screen;
+      m.speed = !ownMove && dt > 0 && dt < 200 ? (at - m.at) / dt : 0;
       m.at = at;
       m.when = when;
       ahead = DRAW_DISTANCE + Math.min(MAX_LEAD, Math.abs(m.speed) * LEAD_MS);
