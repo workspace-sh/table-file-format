@@ -44,6 +44,8 @@ export const UNSAVED_KEY = "table-mobile:unsaved";
 
 /** Something said of a document in place (the tables sheet), with what can be done about it. */
 export interface DocumentNotice {
+  /** The heading it's listed under; "Couldn't open" when absent. */
+  group?: string;
   name: string;
   message: string;
   bookmark?: string;
@@ -174,6 +176,7 @@ async function openDocuments(held: HeldDocument[], taken: Iterable<string>, stor
 /** A document changed elsewhere after edits here weren't all saved to it: its edits, offered as a copy. */
 function unsavedNotice(doc: HeldDocument): DocumentNotice {
   return {
+    group: "Edits kept on this phone",
     name: doc.name,
     message: "Changed somewhere else before edits here were all saved to it. It's shown as it is; those edits are kept on this phone.",
     action: { label: "Keep My Edits as a Copy…", onPress: () => void keepEditsAsCopy(doc.path) },
