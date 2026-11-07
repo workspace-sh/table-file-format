@@ -1,5 +1,5 @@
 // The tables, file by file: the shared list (React Native), for the
-// platforms without one of their own (Android, for now).
+// platforms without one of their own (iOS and Android have theirs).
 
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
