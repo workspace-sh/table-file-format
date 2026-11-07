@@ -4648,6 +4648,7 @@ export function TableView({
           barSession.current = null;
           return { ok: true };
         },
+        saveIfClean: (t) => explain(t).status?.kind !== "error" && session.save(t).ok,
         // Left unfinished (a tap on another cell): kept as it stands, its cells saying what's wrong (D65).
         leave: (t) => keepAsTyped(t).ok,
         cancel: () => {
@@ -4782,6 +4783,17 @@ export function TableView({
           if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
           if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
           return { ok: true };
+        },
+        saveIfClean: (t) => {
+          if (linksOne) return false;
+          // Asked about afresh (no draft queried before): a problem or a question means it isn't saved.
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "key", null, cellFormula);
+          if (r.kind === "problem") return false;
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
+          return true;
         },
         // Left unfinished (a tap on another cell): kept as typed, as leaving a cell on the web keeps it (D65).
         leave: (t) => {
