@@ -16,6 +16,10 @@ export interface HeldDocument {
   /** A folder (a .table's folder form), or a file. */
   directory: boolean;
   bookmark: string;
+  /** Android's: the document's own stamp, read before its bytes were (null where the provider gives none). */
+  stamp?: string | null;
+  /** Android's: edits it never got were kept apart (it changed elsewhere), to be saved as a copy (keepEditsAsCopy). */
+  unsavedEdits?: boolean;
 }
 
 type TableFilesModule = {
@@ -33,7 +37,12 @@ type TableFilesModule = {
   releaseAllBut?(keep: string[]): Promise<void>;
   holdDocument(path: string): HeldDocument;
   writeCoordinated(path: string, bytes: Uint8Array): Promise<void>;
-  release(path: string): void;
+  /** True (Android's) when it's kept: edits its document never got wait until they're settled. */
+  release(path: string): boolean | void;
+  /** Android's: a document closed with edits it never got, held again to finish them; true when settled. */
+  settle?(bookmark: string): Promise<boolean>;
+  /** Android's: edits kept apart from a document changed elsewhere, saved as a new file; true when saved. */
+  keepEditsAsCopy?(path: string): Promise<boolean>;
   addListener(event: "onShake", listener: () => void): { remove(): void };
 };
 
@@ -98,9 +107,19 @@ export function writeCoordinated(path: string, bytes: Uint8Array): Promise<void>
   return native().writeCoordinated(path, bytes);
 }
 
-/** Stop holding the document at `path` open. */
-export function releaseDocument(path: string): void {
-  native().release(path);
+/** Stop holding the document at `path` open. True when it's kept (Android): edits its document never got wait to be settled. */
+export function releaseDocument(path: string): boolean {
+  return native().release(path) === true;
+}
+
+/** A document closed with edits it never got, held again to finish them (Android); true when settled. */
+export async function settleDocument(bookmark: string): Promise<boolean> {
+  return Native?.settle ? Native.settle(bookmark) : true;
+}
+
+/** Edits kept apart from a document changed elsewhere, saved as a new file the person names (Android); true when saved. */
+export async function keepEditsAsCopy(path: string): Promise<boolean> {
+  return Native?.keepEditsAsCopy ? Native.keepEditsAsCopy(path) : true;
 }
 
 /** Move the file at `from` over `to` (paths, not URLs), replacing it atomically. */

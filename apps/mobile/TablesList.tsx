@@ -51,6 +51,11 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavai
               <html.div key={`${doc.name}-${i}`} style={[styles.row, styles.unavailable, i > 0 && styles.rowRule]}>
                 <html.span dir="auto" style={styles.rowTitle}>{doc.name}</html.span>
                 <html.span dir="auto" style={styles.rowNote}>{doc.message}</html.span>
+                {doc.action ? (
+                  <html.button onClick={() => void doc.action!.onPress()} style={styles.noteAction}>
+                    <html.span style={styles.rowAction}>{doc.action.label}</html.span>
+                  </html.button>
+                ) : null}
               </html.div>
             ))}
           </html.div>
@@ -129,6 +134,7 @@ const styles = css.create({
   rowCount: { fontSize: 15, color: dim },
   unavailable: { flexDirection: "column", alignItems: "flex-start", justifyContent: "center", paddingBlock: 8, gap: 2 },
   rowNote: { fontSize: 13, color: dim },
+  noteAction: { borderWidth: 0, backgroundColor: "transparent", paddingBlock: 6, paddingInline: 0 },
   rowAction: { fontSize: 17, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
   rowDestructive: { fontSize: 17, color: { default: "#ff3b30", "@media (prefers-color-scheme: dark)": "#ff453a" } },
 });

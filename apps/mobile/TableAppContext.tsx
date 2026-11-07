@@ -57,7 +57,7 @@ import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZip } from "./files";
-import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
+import { LARGE_KEY, OPENED_KEY, UNSAVED_KEY, reopenDocuments, useDocuments, type DocumentNotice, type Documents, type OpenedDocuments } from "./documents";
 import { pickDocument, releaseDocument, type HeldDocument } from "@workspace.sh/table-files";
 import { File } from "expo-file-system";
 import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
@@ -83,7 +83,7 @@ const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 export interface TableAppContextValue {
   state: TableAppState;
   /** Documents opened last time that couldn't be opened again (their grant taken away), and why. */
-  unavailable?: { name: string; message: string }[];
+  unavailable?: DocumentNotice[];
   dispatch: (action: AppAction) => void;
   derived: Derived;
   /** The display settings with their direction, for DisplaySettingsProvider. */
@@ -138,7 +138,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved. The documents
     // opened last time are held open again and read before the first screen.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY])
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, UNSAVED_KEY, LARGE_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, reopened: await reopenDocuments(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);

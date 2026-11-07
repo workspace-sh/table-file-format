@@ -11,5 +11,5 @@ export interface TablesListProps {
   /** Close a file (asks first); offered where the file is `closable`. */
   onClose: (bundle: string) => void;
   /** Documents opened last time that couldn't be opened again, and why: said here, in place. */
-  unavailable?: { name: string; message: string }[];
+  unavailable?: { name: string; message: string; action?: { label: string; onPress: () => void | Promise<void> } }[];
 }
