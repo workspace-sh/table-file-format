@@ -225,6 +225,8 @@ export type GlassBarProps = {
   onChange?: (value: string) => void;
   /** Save tapped. */
   onSave?: (value: string) => void;
+  /** Editing, and the app went to the background: saved if it can be as it stands, else kept as a draft. */
+  onBackground?: (value: string) => void;
   /**
    * Return in a `line` or `formula` field: save and move on. The bar never
    * saves on its own when the keyboard goes; a host whose content dismisses

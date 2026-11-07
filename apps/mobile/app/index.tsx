@@ -122,6 +122,7 @@ export default function TableScreen() {
     // Android: only a formula (a formula column's, or a cell's own) leaves its cell, for the bar above the keyboard; every other cell edits in place.
     formulasOnly: !GLASS,
     ownFormulas: !GLASS,
+    drafts: app?.drafts,
   });
   // Android's formula bar, while it's open: room under the table for a low cell to scroll clear of it.
   const formulaRoom = !GLASS && glass.props.state.kind === "editing" ? glass.reserve : 0;
