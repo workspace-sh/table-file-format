@@ -203,6 +203,8 @@ function hasWindowSize(): boolean {
 const GROUP_ROW_HEIGHT = 32;
 /** The line under each row (tableRow's borderBottomWidth). */
 const ROW_BORDER = 1;
+/** The colour of a row's rule and a column's line (tableRow, tableCellSeparator), for what's drawn outside StyleX. */
+const RULE = { light: "#e5e5ea", dark: "#26262b" };
 /** The line at the frozen column's end (frozenEdge's borderInlineEndWidth). */
 const FROZEN_EDGE = 1;
 
@@ -4091,6 +4093,17 @@ export function TableView({
   // cut in half at the edge with its title out of sight. (Row numbers,
   // when they scroll with the columns, stay before the first.)
   const widthsKey = restNames.map((name) => colWidth(name)).join(",");
+  // An empty row of this table, for a list to show where its rows aren't drawn yet (RowList's
+  // `placeholder`): the view's row height, the rule under it, and the line after each column.
+  const rowPlaceholder = (names: readonly string[], from: number) => {
+    let x = from;
+    return {
+      rowHeight: defaultHeight + ROW_BORDER,
+      rule: RULE,
+      ruleWidth: ROW_BORDER,
+      columns: names.map((name) => (x += colWidth(name))),
+    };
+  };
   const columnStarts = useMemo(() => {
     const starts: number[] = [];
     let at = 0;
@@ -5283,6 +5296,7 @@ export function TableView({
               raised={rowRaised}
               handle={frozenRows}
               layout={layoutOf}
+              placeholder={rowPlaceholder(frozenNames, coords ? numberWidth : 0)}
               stampOf={rowStamp}
               drawKey={drawKey}
               render={(place) => drawn(place, ({ row, starts }, i) => (
@@ -5357,6 +5371,7 @@ export function TableView({
                 raised={rowRaised}
                 handle={paneRows}
                 layout={layoutOf}
+                placeholder={rowPlaceholder(restNames, coords && !frozenOn ? numberWidth : 0)}
                 stampOf={rowStamp}
                 drawKey={drawKey}
                 onShown={onShown}
