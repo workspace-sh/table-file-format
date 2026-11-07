@@ -21,6 +21,7 @@ const symbols: Record<string, ImageSourcePropType> = {
   delete: require("./material/delete.xml"),
   description: require("./material/description.xml"),
   first_page: require("./material/first_page.xml"),
+  function: require("./material/function.xml"),
   grid_view: require("./material/grid_view.xml"),
   height: require("./material/height.xml"),
   last_page: require("./material/last_page.xml"),
