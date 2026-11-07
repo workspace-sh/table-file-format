@@ -111,6 +111,12 @@ import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 
 /** No place yet: for field settings shown apart from the header, which don't point at it. */
 const NO_ANCHOR: AnchorRect = { top: 0, left: 0, width: 0, height: 0 };
+/** Whether a cell of this field can hold a formula of its own (D52): a typed value, not a date, a choice or a link. */
+const takesCellFormula = (field: Field | undefined): boolean => {
+  if (!field || field.computed) return false;
+  const kind = inputHints(field).kind;
+  return editorKind(field) === "text" && kind !== "date" && kind !== "time" && kind !== "datetime";
+};
 /** How a formula is typed: plain text, no capitals or corrections. */
 const FORMULA_INPUT: InputHints = { kind: "text", autocapitalize: "none", autocorrect: false, enter: "done" };
 import { useContainerWidth } from "./internal/useContainerWidth";
@@ -2399,8 +2405,10 @@ function EditableCell({
     caretAtEnd.current = text !== undefined;
     // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` outside the box.
     const own = text === undefined && formula?.own !== undefined;
-    setAsFormula(own);
-    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
+    // Asked to start one (FORMULA_PREFIX alone, from the row menu's Cell Formula…): an empty formula, its `=` outside the box.
+    const starting = text === FORMULA_PREFIX && formula !== undefined;
+    setAsFormula(own || starting);
+    setDraft(starting ? "" : (text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value))));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -3309,6 +3317,10 @@ export function TableView({
       onResetRowHeight: onUpdateView && view.rowHeights?.[rowId] !== undefined ? (id) => resetRowHeight(id) : undefined,
       onDeleteRow,
       ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
+      // Android: a formula for the selected cell, as its keyboard for a number has no `=` to start one with.
+      ...(PLATFORM_OS === "android" && onSetCellFormula && sel?.rowId === rowId && editable(sel.name) && takesCellFormula(fieldMap.get(sel.name))
+        ? { onCellFormula: () => void openCell(rowId, sel.name, ownFormula(cells, rowId, sel.name, drawnRows.current.get(rowId)) !== undefined ? undefined : FORMULA_PREFIX) }
+        : {}),
       ...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {}),
       // In a Sheet view, from the selected cell: merge a block, or show a merged one's cells again (D58).
       ...(coords && sel?.rowId === rowId && sheet && onAskMerge && onUnmerge
