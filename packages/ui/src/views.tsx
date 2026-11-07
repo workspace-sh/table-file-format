@@ -2271,7 +2271,7 @@ interface EditableCellProps {
    * An editor outside the cell (#352): asked first whenever the cell would
    * start editing; true means it took the edit and the cell stays idle.
    */
-  editOutside?: (text?: string) => boolean;
+  editOutside?: (text?: string, startFormula?: boolean) => boolean;
   /** That editor's draft, shown in the cell as it is typed. */
   outsideDraft?: string;
 }
@@ -2280,6 +2280,8 @@ interface EditableCellProps {
 export interface EditRequest {
   n: number;
   text?: string;
+  /** Start a formula of the cell's own (D52), empty, its `=` before the box: Android's Cell Formula…. */
+  formula?: boolean;
 }
 export type EditEnd = "enter" | "tab" | "shift-tab" | "escape" | "done";
 
@@ -2399,14 +2401,14 @@ function EditableCell({
     }
   }, [editing]);
 
-  const startEdit = (text?: string) => {
-    if (editOutside?.(text)) return;
+  const startEdit = (text?: string, startFormula = false) => {
+    if (editOutside?.(text, startFormula)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
     // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` outside the box.
     const own = text === undefined && formula?.own !== undefined;
-    // Asked to start one (FORMULA_PREFIX alone, from the row menu's Cell Formula…): an empty formula, its `=` outside the box.
-    const starting = text === FORMULA_PREFIX && formula !== undefined;
+    // Asked to start one (Android's Cell Formula…): an empty formula, its `=` outside the box.
+    const starting = startFormula && formula !== undefined;
     setAsFormula(own || starting);
     setDraft(starting ? "" : (text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value))));
     setProblem(null);
@@ -2461,7 +2463,7 @@ function EditableCell({
   useEffect(() => {
     if (editRequest && !readOnly) {
       if (kind === "attachment" && onAttach) onAttach();
-      else startEdit(editRequest.text);
+      else startEdit(editRequest.text, editRequest.formula);
     }
     if (editRequest) onEditHeard?.();
     // Each request once, as it arrives.
@@ -3319,7 +3321,7 @@ export function TableView({
       ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
       // Android: a formula for the selected cell, as its keyboard for a number has no `=` to start one with.
       ...(PLATFORM_OS === "android" && onSetCellFormula && sel?.rowId === rowId && editable(sel.name) && takesCellFormula(fieldMap.get(sel.name))
-        ? { onCellFormula: () => void openCell(rowId, sel.name, ownFormula(cells, rowId, sel.name, drawnRows.current.get(rowId)) !== undefined ? undefined : FORMULA_PREFIX) }
+        ? { onCellFormula: () => void openCell(rowId, sel.name, undefined, ownFormula(cells, rowId, sel.name, drawnRows.current.get(rowId)) === undefined) }
         : {}),
       ...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {}),
       // In a Sheet view, from the selected cell: merge a block, or show a merged one's cells again (D58).
@@ -4455,7 +4457,7 @@ export function TableView({
             editRequest={request}
             onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text, startFormula) => beginBar(row.id, name, text, startFormula) : undefined}
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
             formula={
               onSetCellFormula
@@ -4589,7 +4591,7 @@ export function TableView({
    * a list, a date with its picker, a file) stays in the cell. False when
    * there is no editor or it doesn't take this cell.
    */
-  const beginBar = (rowId: string, name: string, text?: string): boolean => {
+  const beginBar = (rowId: string, name: string, text?: string, startFormula = false): boolean => {
     if (!editor) return false;
     const field = fieldMap.get(name);
     const row = rowOf(rowId);
@@ -4682,10 +4684,12 @@ export function TableView({
           ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
           : undefined;
       // Its own formula, its `=` drawn as the bar's prefix and put back on saving.
-      const asFormula = text === undefined && cellFormula?.own !== undefined;
+      // Or one started empty (Android's Cell Formula…), its `=` the prefix as for one it has.
+      const starting = startFormula && cellFormula !== undefined;
+      const asFormula = starting || (text === undefined && cellFormula?.own !== undefined);
       // Whether the `=` is still there: the reader may drop it (dropPrefix), and every save after says so.
       let prefixed = asFormula;
-      const initial = text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name]));
+      const initial = starting ? "" : (text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name])));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
       // A multi-select's value as it's toggled, each toggle saved.
@@ -4836,8 +4840,8 @@ export function TableView({
     return true;
   };
 
-  const openCell = async (rowId: string, name: string, text?: string) => {
-    if (beginBar(rowId, name, text)) return;
+  const openCell = async (rowId: string, name: string, text?: string, startFormula = false) => {
+    if (beginBar(rowId, name, text, startFormula)) return;
     const field = fieldMap.get(name);
     if (field?.computed) {
       // A formula cell opens its formula, as a click does.
@@ -4851,7 +4855,7 @@ export function TableView({
       onUpdateRow!(rowId, name, !(row?.[name] === true));
       return;
     }
-    setEditReq({ rowId, name, req: { n: Date.now(), text } });
+    setEditReq({ rowId, name, req: { n: Date.now(), text, ...(startFormula ? { formula: true } : {}) } });
   };
   // Where the selection goes when editing ends from the keyboard; the
   // table takes the keyboard back either way.
