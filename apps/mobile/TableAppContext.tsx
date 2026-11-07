@@ -50,13 +50,14 @@ import {
   type Derived,
   type KeyValueStore,
   storedTableRows,
+  largeBundlesToPack,
 } from "@workspace.sh/table-app";
 import { useFolderHistories, useTableApp } from "@workspace.sh/table-app/react";
 import type { DisplaySettings } from "@workspace.sh/table-ui";
 import { openStore } from "./store";
 import { NameSheet } from "./NameSheet";
 import { ZipError, readSpreadsheet, readZip, shareZip, OPEN_TYPES, type OpenedZip } from "./files";
-import { LARGE_KEY, OPENED_KEY, reopenDocuments, useDocuments, type Documents, type OpenedDocuments } from "./documents";
+import { LARGE_KEY, OPENED_KEY, UNSAVED_KEY, reopenDocuments, useDocuments, type DocumentNotice, type Documents, type OpenedDocuments } from "./documents";
 import { pickDocument, releaseDocument, type HeldDocument } from "@workspace.sh/table-files";
 import { File } from "expo-file-system";
 import { useIndexedTables, useSearchBehind, type IndexedTables } from "@workspace.sh/table-app/react";
@@ -81,6 +82,8 @@ const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 
 export interface TableAppContextValue {
   state: TableAppState;
+  /** Documents opened last time that couldn't be opened again (their grant taken away), and why. */
+  unavailable?: DocumentNotice[];
   dispatch: (action: AppAction) => void;
   derived: Derived;
   /** The display settings with their direction, for DisplaySettingsProvider. */
@@ -135,7 +138,7 @@ export function TableAppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // No store (it failed to open) still runs, from the fixtures, unsaved. The documents
     // opened last time are held open again and read before the first screen.
-    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, LARGE_KEY])
+    openStore([STORAGE_KEY, ARRANGEMENTS_KEY, DISPLAY_KEY, SIDEBAR_KEY, HISTORY_KEY, OPENED_KEY, UNSAVED_KEY, LARGE_KEY])
       .catch(() => null)
       .then(async (store) => ({ store, reopened: await reopenDocuments(store, Object.keys(bundleMetas)) }))
       .then(setLoaded);
@@ -204,7 +207,8 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
         await documentsRef.current?.write(edited.filter((b) => opened.has(b)), tables, bundles);
         await saveIndexed.current(tables);
         // An opened single file holding a large table: its rows, saved above, packed back into it too.
-        await documentsRef.current?.pack([...new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && opened.has(bundleOf(key)) ? [bundleOf(key)] : [])))]);
+        // Only those edited (largeBundlesToPack): packing writes the whole file.
+        await documentsRef.current?.pack(largeBundlesToPack(tables, opened, edited, bundleOf));
         // A bundle kept as a folder (it has a large table) has the rest of its files written there too,
         // so the folder is the whole .table; the writer leaves an indexed table's rows file to the index.
         const folders = new Set(Object.entries(tables).flatMap(([key, table]) => (table.indexed && !opened.has(bundleOf(key)) ? [bundleOf(key)] : [])));
@@ -258,6 +262,29 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
   const historyText = (key: string): string | undefined =>
     historyFolder(key) !== undefined ? folderHistories.texts[key] || undefined : (store && storedHistory(store, key)) || undefined;
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
+  // What's said of documents in the tables sheet; one whose action is done (its edits kept as a copy) goes.
+  const [notices, setNotices] = useState<DocumentNotice[]>(() => reopened.unavailable ?? []);
+  const unavailable = useMemo(
+    () =>
+      notices.map((notice) =>
+        notice.action
+          ? {
+              ...notice,
+              action: {
+                ...notice.action,
+                onPress: async () => {
+                  try {
+                    if ((await notice.action!.onPress()) === true) setNotices((all) => all.filter((n) => n !== notice));
+                  } catch (error) {
+                    tell(`Couldn't keep the edits to ${notice.name}`, error instanceof Error ? error.message : String(error));
+                  }
+                },
+              },
+            }
+          : notice,
+      ),
+    [notices, tell],
+  );
   // Tables held in the index (large ones): read, edited and saved there.
   // The view follows the search a step behind what's typed (useSearchBehind).
   const behind = useSearchBehind(state);
@@ -372,6 +399,7 @@ function Loaded({ store, reopened, children }: { store: KeyValueStore | null; re
     openBytes: async (bytes, name) =>
       take(isSpreadsheetFile(name) ? readSpreadsheet(bytes, Object.keys(state.bundles), name) : await readZip(bytes, Object.keys(state.bundles), name)),
     indexed,
+    unavailable,
     // The file on screen as a .table.zip, to the share sheet (Save to Files, AirDrop, Mail…).
     exportZip: async () => {
       const bundle = bundleOf(state.active);
