@@ -63,7 +63,7 @@ test("every Material Symbol a menu names is drawn on Android (internal/material)
     ...rowActions("r1", { ...all, hasBody: true }),
     ...rowActions("r1", { ...all, hasBody: false, onMergeCells: () => {} }),
     ...rowActions("r1", { ...all, onUnmergeCells: () => {} }),
-    ...columnActions("status", { onInsertField: () => {}, onResetWidth: () => {}, onDeleteField: () => {} }),
+    ...columnActions("status", { onAbout: () => {}, onInsertField: () => {}, onResetWidth: () => {}, onDeleteField: () => {} }),
   ];
   // The menu's own map (RowActions.android), which Metro bundles: each name in it, with its drawable.
   const menu = readFileSync(new URL("./internal/RowActions.android.tsx", import.meta.url), "utf8");
@@ -99,4 +99,10 @@ test("a Sheet view's selected cell offers Merge Cells…, or Unmerge Cells when 
   const ids = (can: Parameters<typeof rowActions>[1]) => rowActions("r1", can).map((a) => a.id);
   assert.deepEqual(ids({ onMergeCells: () => {} }), ["merge-cells"]);
   assert.deepEqual(ids({ onMergeCells: () => {}, onUnmergeCells: () => {} }), ["unmerge-cells"]);
+});
+
+test("About This Field comes first in a column's menu, where it's offered", () => {
+  const ids = columnActions("status", { onAbout: () => {}, onInsertField: () => {}, onDeleteField: () => {} }).map((a) => a.id);
+  assert.deepEqual(ids, ["about-field", "insert-left", "insert-right", "delete-field"]);
+  assert.ok(!columnActions("status", { onInsertField: () => {} }).some((a) => a.id === "about-field"));
 });

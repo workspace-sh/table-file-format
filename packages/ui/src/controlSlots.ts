@@ -23,7 +23,7 @@ interface Action<Id extends string> {
 export type RowAction = Action<"open-page" | "add-page" | "insert-above" | "insert-below" | "cell-note" | "merge-cells" | "unmerge-cells" | "hide-row" | "fit-row" | "reset-row-height" | "delete">;
 
 /** Something that can be done to a column, from its header's menu (columnActions). */
-export type FieldAction = Action<"insert-left" | "insert-right" | "reset-width" | "delete-field">;
+export type FieldAction = Action<"about-field" | "insert-left" | "insert-right" | "reset-width" | "delete-field">;
 
 /** Either: what a menu drawn by the RowActions slot is made of. */
 export type MenuAction = RowAction | FieldAction;
@@ -396,6 +396,8 @@ export function rowActions(
 export function columnActions(
   name: string,
   can: {
+    /** What the column is, and the ways on to its settings (Android, whose column has no other place to say it). */
+    onAbout?: (name: string) => void;
     onInsertField?: (name: string, side: "before" | "after") => void;
     /** Only for a column the user has resized: back to its share of the width. */
     onResetWidth?: (name: string) => void;
@@ -404,7 +406,8 @@ export function columnActions(
   },
 ): FieldAction[] {
   const actions: FieldAction[] = [];
-  const { onInsertField, onResetWidth, onDeleteField, rtl } = can;
+  const { onAbout, onInsertField, onResetWidth, onDeleteField, rtl } = can;
+  if (onAbout) actions.push({ id: "about-field", label: "About This Field", symbol: { sf: "info.circle", material: "info" }, onSelect: () => onAbout(name) });
   if (onInsertField) {
     actions.push({
       id: "insert-left",
