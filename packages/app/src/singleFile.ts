@@ -221,3 +221,24 @@ export function changedElsewherePrompt(target: string): Confirm {
     responses: [{ id: "discard", label: "Discard my edits", destructive: true }, { id: "copy", label: "Keep my edits as a copy" }],
   };
 }
+
+/**
+ * The opened single files to pack again after a save that wrote large
+ * tables' rows to their index: those of the bundles the save edited, never
+ * the rest. Packing writes the whole file, so a document nobody touched
+ * isn't rewritten (nor its time changed) because another one was saved.
+ */
+export function largeBundlesToPack(
+  tables: Record<string, { indexed?: unknown }>,
+  opened: ReadonlySet<string>,
+  edited: Iterable<string>,
+  bundleOf: (key: string) => string,
+): string[] {
+  const editedNow = new Set(edited);
+  const out = new Set<string>();
+  for (const [key, table] of Object.entries(tables)) {
+    const bundle = bundleOf(key);
+    if (table.indexed && opened.has(bundle) && editedNow.has(bundle)) out.add(bundle);
+  }
+  return [...out];
+}

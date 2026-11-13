@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 
 import { columnActions, rowActions } from "./controlSlots.ts";
 
@@ -56,6 +57,24 @@ test("each action names its symbol on both phones", () => {
   for (const a of actions) assert.ok(a.symbol?.sf && a.symbol?.material, a.id);
 });
 
+test("every Material Symbol a menu names is drawn on Android (internal/material)", () => {
+  const all = { onOpenBody: () => {}, onInsertRow: () => {}, onFitRow: () => {}, onResetRowHeight: () => {}, onDeleteRow: () => {}, onCellNote: () => {}, onCellFormula: () => {}, onHideRow: () => {} };
+  const actions = [
+    ...rowActions("r1", { ...all, hasBody: true }),
+    ...rowActions("r1", { ...all, hasBody: false, onMergeCells: () => {} }),
+    ...rowActions("r1", { ...all, onUnmergeCells: () => {} }),
+    ...columnActions("status", { onInsertField: () => {}, onResetWidth: () => {}, onDeleteField: () => {} }),
+  ];
+  // The menu's own map (RowActions.android), which Metro bundles: each name in it, with its drawable.
+  const menu = readFileSync(new URL("./internal/RowActions.android.tsx", import.meta.url), "utf8");
+  for (const a of actions) {
+    const material = a.symbol?.material;
+    assert.ok(material, a.id);
+    assert.ok(existsSync(new URL(`./internal/material/${material}.xml`, import.meta.url)), `${a.id}: ${material}.xml`);
+    assert.ok(menu.includes(`${material}: require("./material/${material}.xml")`), `${a.id}: ${material} in RowActions.android's symbols`);
+  }
+});
+
 test("a column's actions: insert either side, reset a resized width, delete last", () => {
   const done: string[] = [];
   const can = {
@@ -80,4 +99,15 @@ test("a Sheet view's selected cell offers Merge Cells…, or Unmerge Cells when 
   const ids = (can: Parameters<typeof rowActions>[1]) => rowActions("r1", can).map((a) => a.id);
   assert.deepEqual(ids({ onMergeCells: () => {} }), ["merge-cells"]);
   assert.deepEqual(ids({ onMergeCells: () => {}, onUnmergeCells: () => {} }), ["unmerge-cells"]);
+});
+
+test("a cell's formula is offered where asked, before its note, with its symbols", () => {
+  const started: string[] = [];
+  const actions = rowActions("r1", { onCellFormula: () => started.push("formula"), onCellNote: () => {}, onDeleteRow: () => {} });
+  assert.deepEqual(actions.map((a) => a.id), ["cell-formula", "cell-note", "delete"]);
+  assert.equal(actions[0]!.label, "Cell Formula…");
+  assert.deepEqual(actions[0]!.symbol, { sf: "function", material: "function" });
+  actions[0]!.onSelect();
+  assert.deepEqual(started, ["formula"]);
+  assert.ok(!rowActions("r1", { onCellNote: () => {} }).some((a) => a.id === "cell-formula"));
 });

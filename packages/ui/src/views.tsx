@@ -112,6 +112,14 @@ import { measureAnchor, type AnchorRect } from "./internal/measureAnchor";
 
 /** No place yet: for field settings shown apart from the header, which don't point at it. */
 const NO_ANCHOR: AnchorRect = { top: 0, left: 0, width: 0, height: 0 };
+/** Whether a cell of this field can hold a formula of its own (D52): a typed value, not a date, a choice or a link. */
+const takesCellFormula = (field: Field | undefined): boolean => {
+  if (!field || field.computed) return false;
+  const kind = inputHints(field).kind;
+  return editorKind(field) === "text" && kind !== "date" && kind !== "time" && kind !== "datetime";
+};
+/** How a formula is typed: plain text, no capitals or corrections. */
+const FORMULA_INPUT: InputHints = { kind: "text", autocapitalize: "none", autocorrect: false, enter: "done" };
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
@@ -140,7 +148,7 @@ import {
 import { rowNumber } from "./sheets";
 import { adoptSystemColors } from "./internal/systemColors";
 import { CellLink } from "./internal/CellLink";
-import { inputHints, type InputHintKind } from "./inputHints";
+import { inputHints, type InputHintKind, type InputHints } from "./inputHints";
 import { applyKeyboard, cellInputFit, inputAttributes } from "./internal/inputAttributes";
 import { usePlatformControls } from "./PlatformControls";
 import { columnActions, rowActions } from "./controlSlots";
@@ -202,6 +210,8 @@ function hasWindowSize(): boolean {
 const GROUP_ROW_HEIGHT = 32;
 /** The line under each row (tableRow's borderBottomWidth). */
 const ROW_BORDER = 1;
+/** The colour of a row's rule and a column's line (tableRow, tableCellSeparator), for what's drawn outside StyleX. */
+const RULE = { light: "#e5e5ea", dark: "#26262b" };
 /** The line at the frozen column's end (frozenEdge's borderInlineEndWidth). */
 const FROZEN_EDGE = 1;
 
@@ -2274,7 +2284,7 @@ interface EditableCellProps {
    * An editor outside the cell (#352): asked first whenever the cell would
    * start editing; true means it took the edit and the cell stays idle.
    */
-  editOutside?: (text?: string) => boolean;
+  editOutside?: (text?: string, startFormula?: boolean) => boolean;
   /** That editor's draft, shown in the cell as it is typed. */
   outsideDraft?: string;
 }
@@ -2283,6 +2293,8 @@ interface EditableCellProps {
 export interface EditRequest {
   n: number;
   text?: string;
+  /** Start a formula of the cell's own (D52), empty, its `=` before the box: Android's Cell Formula…. */
+  formula?: boolean;
 }
 export type EditEnd = "enter" | "tab" | "shift-tab" | "escape" | "done";
 
@@ -2373,34 +2385,46 @@ function EditableCell({
     closed.current = true;
   }
   const hints = inputHints(field);
+  // A cell's own formula is typed as a formula, whatever the column holds: letters and
+  // brackets, not the number pad a number column asks for.
+  // (Android's: iOS's number pad for numbers and punctuation has what a formula needs.)
+  const typing = asFormula && PLATFORM_OS === "android" ? FORMULA_INPUT : hints;
   const { Select: SelectControl, DateInput: DateInputControl, CellProblem } = usePlatformControls();
 
   useEffect(() => {
     if (editing) {
       const el = inputRef.current;
-      applyKeyboard(el, hints);
+      applyKeyboard(el, typing);
+      const still = () => !closed.current;
       if (caretAtEnd.current && el && "setSelectionRange" in el) {
-        focusInput(el);
         // A native input's ref doesn't carry its value: what was typed is the draft.
         const end = (typeof el.value === "string" ? el.value : draft).length;
-        try {
-          el.setSelectionRange(end, end);
-        } catch {
-          // number and date inputs have no caret to place
-        }
+        // The caret placed once it has the focus (which waits a frame on Android).
+        focusInput(el, {
+          still,
+          then: () => {
+            try {
+              el.setSelectionRange(end, end);
+            } catch {
+              // number and date inputs have no caret to place
+            }
+          },
+        });
       } else if (el && "select" in el && typeof el.select === "function") el.select();
-      else focusInput(el);
+      else focusInput(el, { still });
     }
   }, [editing]);
 
-  const startEdit = (text?: string) => {
-    if (editOutside?.(text)) return;
+  const startEdit = (text?: string, startFormula = false) => {
+    if (editOutside?.(text, startFormula)) return;
     closed.current = false;
     caretAtEnd.current = text !== undefined;
     // A cell with its own formula is edited as that formula (D52), in the reader's syntax, its `=` outside the box.
     const own = text === undefined && formula?.own !== undefined;
-    setAsFormula(own);
-    setDraft(text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value)));
+    // Asked to start one (Android's Cell Formula…): an empty formula, its `=` outside the box.
+    const starting = startFormula && formula !== undefined;
+    setAsFormula(own || starting);
+    setDraft(starting ? "" : (text ?? (own ? cellFormulaText(formula!.own!, formula!.grid, formula!.syntax) : draftOf(value))));
     setProblem(null);
     queried.current = null;
     setEditing(true);
@@ -2453,7 +2477,7 @@ function EditableCell({
   useEffect(() => {
     if (editRequest && !readOnly) {
       if (kind === "attachment" && onAttach) onAttach();
-      else startEdit(editRequest.text);
+      else startEdit(editRequest.text, editRequest.formula);
     }
     if (editRequest) onEditHeard?.();
     // Each request once, as it arrives.
@@ -2762,7 +2786,7 @@ function EditableCell({
       ref={inputRef as any}
       // The keyboard the field wants: a number pad, an @ for an email, no
       // capitals or corrections in a code (inputHints).
-      {...inputAttributes(hints, inputType)}
+      {...inputAttributes(typing, inputType)}
       value={draft}
       onChange={(e: { target: { value: string } }) => {
         setDraft(e.target.value);
@@ -3326,6 +3350,10 @@ export function TableView({
       onResetRowHeight: onUpdateView && view.rowHeights?.[rowId] !== undefined ? (id) => resetRowHeight(id) : undefined,
       onDeleteRow,
       ...(onAskCellNote && sel?.rowId === rowId ? { onCellNote: () => onAskCellNote(rowId, sel.name, noteFor(rowId, sel.name)) } : {}),
+      // Android: a formula for the selected cell, as its keyboard for a number has no `=` to start one with.
+      ...(PLATFORM_OS === "android" && onSetCellFormula && sel?.rowId === rowId && editable(sel.name) && takesCellFormula(fieldMap.get(sel.name))
+        ? { onCellFormula: () => void openCell(rowId, sel.name, undefined, ownFormula(cells, rowId, sel.name, drawnRows.current.get(rowId)) === undefined) }
+        : {}),
       ...(onUpdateView ? { onHideRow: (id: string) => onUpdateView(hiddenPatch(view, id, true)) } : {}),
       // In a Sheet view, from the selected cell: merge a block, or show a merged one's cells again (D58).
       ...(coords && sel?.rowId === rowId && sheet && onAskMerge && onUnmerge
@@ -4108,6 +4136,17 @@ export function TableView({
   // cut in half at the edge with its title out of sight. (Row numbers,
   // when they scroll with the columns, stay before the first.)
   const widthsKey = restNames.map((name) => colWidth(name)).join(",");
+  // An empty row of this table, for a list to show where its rows aren't drawn yet (RowList's
+  // `placeholder`): the view's row height, the rule under it, and the line after each column.
+  const rowPlaceholder = (names: readonly string[], from: number) => {
+    let x = from;
+    return {
+      rowHeight: defaultHeight + ROW_BORDER,
+      rule: RULE,
+      ruleWidth: ROW_BORDER,
+      columns: names.map((name) => (x += colWidth(name))),
+    };
+  };
   const columnStarts = useMemo(() => {
     const starts: number[] = [];
     let at = 0;
@@ -4460,7 +4499,11 @@ export function TableView({
             editRequest={request}
             onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
-            editOutside={editor && !(editor.formulasOnly && !isFormula) ? (text) => beginBar(row.id, name, text) : undefined}
+            editOutside={
+              editor && (!editor.formulasOnly || isFormula || (editor.ownFormulas && ownFormula(cells, row.id, name, row) !== undefined))
+                ? (text, startFormula) => beginBar(row.id, name, text, startFormula)
+                : undefined
+            }
             outsideDraft={barDraft?.rowId === row.id && barDraft.name === name ? barDraft.text : undefined}
             formula={
               onSetCellFormula
@@ -4594,7 +4637,7 @@ export function TableView({
    * a list, a date with its picker, a file) stays in the cell. False when
    * there is no editor or it doesn't take this cell.
    */
-  const beginBar = (rowId: string, name: string, text?: string): boolean => {
+  const beginBar = (rowId: string, name: string, text?: string, startFormula = false): boolean => {
     if (!editor) return false;
     const field = fieldMap.get(name);
     const row = rowOf(rowId);
@@ -4661,6 +4704,7 @@ export function TableView({
           barSession.current = null;
           return { ok: true };
         },
+        saveIfClean: (t) => explain(t).status?.kind !== "error" && session.save(t).ok,
         // Left unfinished (a tap on another cell): kept as it stands, its cells saying what's wrong (D65).
         leave: (t) => keepAsTyped(t).ok,
         cancel: () => {
@@ -4687,10 +4731,12 @@ export function TableView({
           ? { fields: schema.fields, ...(grid ? { grid: { ...grid, here: rowId } } : {}), ...(own !== undefined ? { own } : {}) }
           : undefined;
       // Its own formula, its `=` drawn as the bar's prefix and put back on saving.
-      const asFormula = text === undefined && cellFormula?.own !== undefined;
+      // Or one started empty (Android's Cell Formula…), its `=` the prefix as for one it has.
+      const starting = startFormula && cellFormula !== undefined;
+      const asFormula = starting || (text === undefined && cellFormula?.own !== undefined);
       // Whether the `=` is still there: the reader may drop it (dropPrefix), and every save after says so.
       let prefixed = asFormula;
-      const initial = text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name]));
+      const initial = starting ? "" : (text ?? (asFormula ? cellFormulaText(cellFormula!.own!, cellFormula!.grid, formulaSyntax) : draftOf(row[name])));
       // A draft already asked about (an early year): Return again keeps it.
       let queried: string | null = null;
       // A multi-select's value as it's toggled, each toggle saved.
@@ -4700,9 +4746,9 @@ export function TableView({
       session = {
         key, rowId, name, label, rowLabel, initial,
         mode: field.format === "markdown" ? "text" : "line",
-        // The keyboard the field wants, as a cell's own input has (inputHints).
-        keyboard: BAR_KEYBOARD[hints.kind] ?? "default",
-        suggestions: hints.autocorrect,
+        // The keyboard the field wants, as a cell's own input has (inputHints); on Android a cell's own formula is typed as a formula.
+        keyboard: asFormula && PLATFORM_OS === "android" ? "default" : (BAR_KEYBOARD[hints.kind] ?? "default"),
+        suggestions: asFormula && PLATFORM_OS === "android" ? false : hints.autocorrect,
         ...(asFormula
           ? {
               prefix: FORMULA_PREFIX,
@@ -4796,6 +4842,17 @@ export function TableView({
           if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
           return { ok: true };
         },
+        saveIfClean: (t) => {
+          if (linksOne) return false;
+          // Asked about afresh (no draft queried before): a problem or a question means it isn't saved.
+          const r = commitDraft(field, row[name], prefixed ? FORMULA_PREFIX + t : t, "key", null, cellFormula);
+          if (r.kind === "problem") return false;
+          setBarDraft(null);
+          barSession.current = null;
+          if (r.kind === "save") onUpdateRow!(rowId, name, r.value);
+          if (r.kind === "formula") onSetCellFormula?.(rowId, name, r.expr);
+          return true;
+        },
         // Left unfinished (a tap on another cell): kept as typed, as leaving a cell on the web keeps it (D65).
         leave: (t) => {
           if (linksOne) return false;
@@ -4841,8 +4898,8 @@ export function TableView({
     return true;
   };
 
-  const openCell = async (rowId: string, name: string, text?: string) => {
-    if (beginBar(rowId, name, text)) return;
+  const openCell = async (rowId: string, name: string, text?: string, startFormula = false) => {
+    if (beginBar(rowId, name, text, startFormula)) return;
     const field = fieldMap.get(name);
     if (field?.computed) {
       // A formula cell opens its formula, as a click does.
@@ -4856,7 +4913,7 @@ export function TableView({
       onUpdateRow!(rowId, name, !(row?.[name] === true));
       return;
     }
-    setEditReq({ rowId, name, req: { n: Date.now(), text } });
+    setEditReq({ rowId, name, req: { n: Date.now(), text, ...(startFormula ? { formula: true } : {}) } });
   };
   // Where the selection goes when editing ends from the keyboard; the
   // table takes the keyboard back either way.
@@ -5284,6 +5341,7 @@ export function TableView({
               raised={rowRaised}
               handle={frozenRows}
               layout={layoutOf}
+              placeholder={rowPlaceholder(frozenNames, coords ? numberWidth : 0)}
               stampOf={rowStamp}
               drawKey={drawKey}
               render={(place) => drawn(place, ({ row, starts }, i) => (
@@ -5358,6 +5416,7 @@ export function TableView({
                 raised={rowRaised}
                 handle={paneRows}
                 layout={layoutOf}
+                placeholder={rowPlaceholder(restNames, coords && !frozenOn ? numberWidth : 0)}
                 stampOf={rowStamp}
                 drawKey={drawKey}
                 onShown={onShown}

@@ -101,6 +101,12 @@ export interface CellEditSession {
   /** Save. Refused, the edit stays open with the reason (the draft can't be held). */
   save(text: string): { ok: true } | { ok: false; error: { message: string; fix?: string; replace?: string } };
   /**
+   * Save only if it would save as it stands, with nothing to say about it
+   * (the app is going to the background): true when saved. Otherwise
+   * nothing is said or remembered, and the edit stays open.
+   */
+  saveIfClean?(text: string): boolean;
+  /**
    * Empty the cell and end the edit, as the Delete key does on the web: a
    * single choice, a single link or a date, which have nothing to type away.
    */
@@ -137,6 +143,8 @@ export interface CellEditor {
    * picker), as with no editor. A Mac, where a cell has room to be typed in.
    */
   formulasOnly?: boolean;
+  /** With `formulasOnly`, a cell's own formula (D52) comes here too, not only a formula column's. */
+  ownFormulas?: boolean;
   select(selection: CellEditorSelection | null): void;
   /** Take over an edit; false leaves the cell to edit in place. */
   begin(session: CellEditSession): boolean;
