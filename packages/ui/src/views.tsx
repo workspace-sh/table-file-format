@@ -5993,8 +5993,13 @@ export function GalleryView({
   // half a gap either side of it. Until it's measured, the last gallery's
   // width is used, so it doesn't open one card to a row.
   const perRowOf = (w: number) => galleryLayout(w - GALLERY_GAP).perRow;
+  // On the Mac a window being resized, or a sidebar sliding, changes the
+  // width at every frame, and each frame's layout would cut an easing short:
+  // there the cards keep their rows while it changes (stretching or
+  // squeezing) and ease to new ones once it's still. A phone turning is one
+  // change, so its cards ease at once.
   const { measureProps, width: measured } = useContainerWidth(
-    (from, to) => perRowOf(from) === perRowOf(to),
+    (from, to) => PLATFORM_OS === "macos" || perRowOf(from) === perRowOf(to),
     (from, to) => {
       if (from > 0 && perRowOf(from) !== perRowOf(to)) animateNextLayout();
     },
