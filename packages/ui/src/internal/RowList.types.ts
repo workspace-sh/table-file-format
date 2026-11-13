@@ -46,4 +46,11 @@ export interface RowListProps<T> {
   stampOf?: (item: T) => readonly unknown[];
   /** Changes when everything drawn must be drawn again (see `stampOf`). */
   drawKey?: unknown;
+  /**
+   * What an empty row of this list looks like: its height, its rule's colour
+   * (light and dark) and width, and where the lines between its columns are.
+   * Where a fast scroll can outrun the drawing (Android), the list shows
+   * such rows wherever its own aren't drawn yet, rather than nothing.
+   */
+  placeholder?: { rowHeight: number; rule: { light: string; dark: string }; ruleWidth: number; columns?: readonly number[] };
 }

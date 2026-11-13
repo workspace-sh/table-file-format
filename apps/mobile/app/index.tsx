@@ -5,11 +5,11 @@
 // table-ui's views, scrolling under the glass bars.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
-import { Alert, Platform, Pressable, ScrollView } from "react-native";
+import { Alert, BackHandler, Platform, Pressable, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SFSymbol } from "expo-symbols";
 import type { SearchBarCommands } from "react-native-screens";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
 import { html, css } from "react-strict-dom";
 import { isSheet, newId, newViewId } from "@workspace.sh/table-core";
 import type { Row } from "@workspace.sh/table-core";
@@ -119,7 +119,13 @@ export default function TableScreen() {
     query: search ?? "",
     onQuery: (text) => app?.dispatch({ type: "search", text }),
     onFilter: () => app?.dispatch({ type: "settings", open: !app.state.settingsOpen }),
+    // Android: only a formula (a formula column's, or a cell's own) leaves its cell, for the bar above the keyboard; every other cell edits in place.
+    formulasOnly: !GLASS,
+    ownFormulas: !GLASS,
+    drafts: app?.drafts,
   });
+  // Android's formula bar, while it's open: room under the table for a low cell to scroll clear of it.
+  const formulaRoom = !GLASS && glass.props.state.kind === "editing" ? glass.reserve : 0;
   // Development only: lets a script drive the app through React Native's
   // debugger connection, as the Mac's __tableDesktop does (taps can't be
   // sent from an agent's session). Not in release builds, unless built for
@@ -167,6 +173,17 @@ export default function TableScreen() {
     const { onShakeToUndo } = require("@workspace.sh/table-files") as typeof import("@workspace.sh/table-files");
     return onShakeToUndo(() => shake.current.ask?.());
   }, []);
+  // Android's Back closes the formula bar, or steps back through what was shown (the view, the
+  // cell, the place, as iOS's toolbar Back does) while this screen is on top; with
+  // nowhere to go back to, it does what it always does.
+  const back = useRef<{ go?: () => boolean }>({});
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== "android") return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => back.current.go?.() ?? false);
+      return () => sub.remove();
+    }, []),
+  );
   // The page's sides: the margin, or the safe area where it's wider, as in
   // landscape, where the Dynamic Island and the corners take the sides. What
   // runs over the margin to the screen's edge (PageGutter) runs over the
@@ -177,6 +194,17 @@ export default function TableScreen() {
   const gutter = Math.min(sideLeft, sideRight);
   if (!app || !callbacks) return null;
   const { state, dispatch, derived, labelOf, indexed } = app;
+  back.current.go = () => {
+    // A formula half written in the bar above the keyboard: Back closes it as Cancel does (the
+    // first Back, while the keyboard is up, puts the keyboard away).
+    if (glass.props.state.kind === "editing") {
+      glass.props.onCancel?.();
+      return true;
+    }
+    if (!derived.canGoBack) return false;
+    dispatch({ type: "back" });
+    return true;
+  };
   shake.current.ask = () => {
     const step = derived.canUndo ? ("undo" as const) : derived.canRedo ? ("redo" as const) : null;
     if (!step) return;
@@ -209,7 +237,7 @@ export default function TableScreen() {
     { label: labelOf("new-file"), sf: "doc.badge.plus", material: "note_add", onPress: () => dispatch({ type: "create", making: { kind: "file" } }) },
     // New Field is here because on a phone the end of the header, where its "+" is, is usually off screen.
     ...(canAddFieldHere
-      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
+      ? [{ startsGroup: true, label: "New Field", sf: "rectangle.split.3x1" as SFSymbol, material: "add_column_right" as MaterialSymbol, onPress: () => setNewFieldAsk((n) => n + 1) }]
       : []),
     {
       startsGroup: !canAddFieldHere,
@@ -237,7 +265,7 @@ export default function TableScreen() {
       {/* The table first, before the bars' elements below: expo-router
           draws those as native views too, and UIKit collapses the large
           title only for a scroll view that comes first in the screen. */}
-      <CellEditorContext.Provider value={GLASS ? glass.editor : null}>
+      <CellEditorContext.Provider value={glass.editor}>
       <PageGutter.Provider value={gutter}>
       <PortalHost>
         <ScrollView
@@ -259,7 +287,7 @@ export default function TableScreen() {
           style={{ flex: 1 }}
           // Room under the last row for the glass control on iOS.
           // and, while an editor is open, room for any cell to scroll clear of it.
-          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24, flexGrow: 1 }}
+          contentContainerStyle={{ paddingLeft: sideLeft, paddingRight: sideRight, paddingBottom: GLASS ? 96 + glass.reserve : 24 + formulaRoom, flexGrow: 1 }}
           // The keyboard makes room rather than covering the cell being edited,
           // and a tap elsewhere while typing goes to what's tapped. On iOS the
           // glass bar's editor leaves that room itself (`reserve`) and scrolls
@@ -429,7 +457,7 @@ export default function TableScreen() {
                 views={views.map((v) => ({ label: v.label, icon: v.material, checked: v.on, onPress: v.onPress }))}
                 settingsOpen={state.settingsOpen}
                 onSettings={toggleSettings}
-                more={fileActions.map((a) => ({ label: a.label, icon: a.material, onPress: a.onPress }))}
+                more={fileActions.map((a) => ({ label: a.label, icon: a.material, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
               />
             ),
           }),
@@ -477,6 +505,8 @@ export default function TableScreen() {
           moreActions={fileActions.map((a) => ({ label: a.label, symbol: a.sf, disabled: a.disabled, startsGroup: a.startsGroup, onPress: a.onPress }))}
         />
       )}
+      {/* Android: a formula's editor, above the keyboard. */}
+      {!GLASS && <GlassBar ref={glass.bar} {...glass.props} />}
     </>
   );
 }

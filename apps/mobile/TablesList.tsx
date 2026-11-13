@@ -1,11 +1,11 @@
 // The tables, file by file: the shared list (React Native), for the
-// platforms without one of their own (Android, for now).
+// platforms without one of their own (iOS and Android have theirs).
 
 import { ScrollView } from "react-native";
 import { html, css } from "react-strict-dom";
-import type { TablesListProps } from "./tablesList.types";
+import { groupsOf, type TablesListProps } from "./tablesList.types";
 
-export function TablesList({ tree, active, onChoose, onNewTable, onClose }: TablesListProps) {
+export function TablesList({ tree, active, onChoose, onNewTable, onClose, unavailable }: TablesListProps) {
   return (
     <ScrollView contentInsetAdjustmentBehavior="automatic" style={styles_sheet} contentContainerStyle={{ paddingBottom: 32 }}>
       {tree.map((file) => (
@@ -37,6 +37,27 @@ export function TablesList({ tree, active, onChoose, onNewTable, onClose }: Tabl
                 <html.span style={styles.rowDestructive}>Close File</html.span>
               </html.button>
             ) : null}
+          </html.div>
+        </html.div>
+      ))}
+      {groupsOf(unavailable).map(([group, docs]) => (
+        // Opened last time, and not to be opened again (or edits kept apart): each with why, where the file would be.
+        <html.div key={group} style={styles.file}>
+          <html.div style={styles.fileHeading}>
+            <html.span style={styles.fileTitle}>{group}</html.span>
+          </html.div>
+          <html.div style={styles.group}>
+            {docs.map((doc, i) => (
+              <html.div key={`${doc.name}-${i}`} style={[styles.row, styles.unavailable, i > 0 && styles.rowRule]}>
+                <html.span dir="auto" style={styles.rowTitle}>{doc.name}</html.span>
+                <html.span dir="auto" style={styles.rowNote}>{doc.message}</html.span>
+                {doc.action ? (
+                  <html.button onClick={() => void doc.action!.onPress()} style={styles.noteAction}>
+                    <html.span style={styles.rowAction}>{doc.action.label}</html.span>
+                  </html.button>
+                ) : null}
+              </html.div>
+            ))}
           </html.div>
         </html.div>
       ))}
@@ -111,6 +132,9 @@ const styles = css.create({
   rowTitle: { fontSize: 17, color: text },
   rowTitleOn: { fontWeight: "600" },
   rowCount: { fontSize: 15, color: dim },
+  unavailable: { flexDirection: "column", alignItems: "flex-start", justifyContent: "center", paddingBlock: 8, gap: 2 },
+  rowNote: { fontSize: 13, color: dim },
+  noteAction: { borderWidth: 0, backgroundColor: "transparent", paddingBlock: 6, paddingInline: 0 },
   rowAction: { fontSize: 17, color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
   rowDestructive: { fontSize: 17, color: { default: "#ff3b30", "@media (prefers-color-scheme: dark)": "#ff453a" } },
 });
