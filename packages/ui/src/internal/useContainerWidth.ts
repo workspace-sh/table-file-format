@@ -44,15 +44,21 @@ const LATER_MS = 250;
  * `later(from, to)`: whether a new width can wait until the size stops
  * changing, as when what's measured is laid out by it without being drawn
  * again (a table whose columns share its width either side). It's taken
- * once it has been still a moment.
+ * once it has been still a moment. `before(from, to)` is called as a new
+ * width is about to be drawn: to animate the layout it brings.
  */
-export function useContainerWidth(later?: (from: number, to: number) => boolean): ContainerMeasurement {
+export function useContainerWidth(
+  later?: (from: number, to: number) => boolean,
+  before?: (from: number, to: number) => void,
+): ContainerMeasurement {
   const [width, setWidth] = useState(0);
   const nodeRef = useRef<MeasurableNode | null>(null);
   const listen = useContext(LayoutChannel);
   const shown = useRef(0);
   const laterRef = useRef(later);
   laterRef.current = later;
+  const beforeRef = useRef(before);
+  beforeRef.current = before;
   const waiting = useRef<ReturnType<typeof setTimeout> | null>(null);
   // One measurement at a time: asked again while one is under way, it's
   // measured once more when that one comes back, not once for every ask.
@@ -65,6 +71,7 @@ export function useContainerWidth(later?: (from: number, to: number) => boolean)
     if (w === shown.current) return;
     const show = () => {
       waiting.current = null;
+      beforeRef.current?.(shown.current, w);
       shown.current = w;
       setWidth(w);
     };

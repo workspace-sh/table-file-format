@@ -93,7 +93,7 @@ export function orderSwapped(rows: Row[], a: string, b: string): string[] {
 export const BOARD_GAP = 12;
 /** Narrowest a gallery card gets before the row wraps. */
 export const MIN_GALLERY_CARD_WIDTH = 240;
-/** Gap between gallery cards. The views' `styles.galleryRows` and `galleryRow` gaps restate it for StyleX. */
+/** Gap between gallery cards. The views' `styles.gallery` (its row gap, and half of it either side of a card) restates it for StyleX. */
 export const GALLERY_GAP = 12;
 
 /** As many cards as fit a row at MIN_GALLERY_CARD_WIDTH, sharing the width. */
