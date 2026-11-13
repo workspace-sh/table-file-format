@@ -53,6 +53,7 @@ import {
   columnOf,
   columnValue,
   dateKey,
+  GALLERY_GAP,
   galleryLayout,
   initialMonth,
   localDay,
@@ -908,17 +909,19 @@ const styles = css.create({
   },
 
   // Gallery
-  galleryRows: { display: "flex", flexDirection: "column", gap: 12 },
-  galleryRow: { display: "flex", flexDirection: "row", gap: 12 },
-  // A row's share: every card in a row as wide as the others, the last row's
-  // too (its empty places take the shares no card has).
-  galleryCard: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    minWidth: 0,
-    boxSizing: "border-box",
+  // One wrapping container, half a gap past each side (each card has half a gap either side of it).
+  gallery: {
+    display: "flex",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 12,
+    marginInline: -6,
   },
+  // A card's share of its row: a percentage (galleryShareOf), less half a gap either side.
+  galleryShare: { paddingInline: 6, boxSizing: "border-box", display: "flex", flexDirection: "column" },
+  galleryShareOf: (width: string) => ({ width }),
+  // Not yet measured, with no gallery's width to go by: not shown, rather than one card to a row.
+  unmeasured: { opacity: 0 },
   /** A gallery card: no line around it, a soft fill, its picture to its edges. */
   galleryCardLook: {
     display: "flex",
@@ -5960,6 +5963,9 @@ export function BoardView({
 }
 
 
+/** The width the last gallery was measured at: a new one starts there until it is measured itself. */
+let lastGalleryWidth = 0;
+
 export function GalleryView({
   view,
   cut,
@@ -5978,20 +5984,28 @@ export function GalleryView({
   const [titleField, ...metaFields] = fields;
   const fieldMap = fieldsByName(schema);
 
-  // As many cards to a row as fit (galleryLayout), each row's cards sharing
-  // its width by the layout (flex), the last row's padded with empty places
-  // so its cards are as wide as the rest. A window being resized is followed
-  // by the layout alone: the cards are drawn again only when the number in a
-  // row changes, not at each step of the drag.
-  const perRowOf = (w: number) => galleryLayout(w).perRow;
-  const { measureProps, width: containerWidth } = useContainerWidth((from, to) => perRowOf(from) === perRowOf(to));
+  // As many cards to a row as fit (galleryLayout), each a share of the
+  // row's width (a percentage, which the layout resolves), all in one
+  // wrapping container. A window being resized, or a sidebar opening, is
+  // followed by the layout alone: the cards are drawn again only when the
+  // number in a row changes, and then they ease to their new places. The
+  // container reaches half a gap past each side, so every card can have
+  // half a gap either side of it. Until it's measured, the last gallery's
+  // width is used, so it doesn't open one card to a row.
+  const perRowOf = (w: number) => galleryLayout(w - GALLERY_GAP).perRow;
+  const { measureProps, width: measured } = useContainerWidth(
+    (from, to) => perRowOf(from) === perRowOf(to),
+    (from, to) => {
+      if (from > 0 && perRowOf(from) !== perRowOf(to)) animateNextLayout();
+    },
+  );
+  if (measured > 0) lastGalleryWidth = measured;
+  const containerWidth = measured || lastGalleryWidth;
   const cardsPerRow = perRowOf(containerWidth);
 
   // Cut (`cut`), only the first cards are drawn.
   const drawn = cut === undefined ? rows : rows.slice(0, cut);
   const ids = drawn.map((r) => r.id);
-  const lines: Row[][] = [];
-  for (let i = 0; i < drawn.length; i += cardsPerRow) lines.push(drawn.slice(i, i + cardsPerRow));
   const cards = useCardKeys({
     move: (id, key) => moveInGrid(ids, cardsPerRow, id, key),
     firstId: ids[0],
@@ -6007,11 +6021,9 @@ export function GalleryView({
         cards.containerProps.ref(el);
         measureProps.ref?.(el);
       }}
-      style={styles.galleryRows}
+      style={[styles.gallery, containerWidth === 0 && styles.unmeasured]}
     >
-      {lines.map((line, n) => (
-      <html.div key={n} style={styles.galleryRow}>
-      {line.map((row) => {
+      {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         // The lead field's picture: an attached image whose file is found.
@@ -6019,12 +6031,11 @@ export function GalleryView({
         const pictureName = typeof lead === "string" ? lead : "";
         const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName) ? attachmentUrl(pictureName) : undefined;
         return (
+          <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`)]}>
           <html.div
-            key={row.id}
             ref={cards.cardRef(row.id)}
             onClick={() => cards.setFocusId(row.id)}
             style={[
-              styles.galleryCard,
               styles.galleryCardLook,
               tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
@@ -6070,14 +6081,9 @@ export function GalleryView({
               )}
             </html.div>
           </html.div>
+          </html.div>
         );
       })}
-      {/* The last row's empty places, so its cards are as wide as the rest. */}
-      {Array.from({ length: cardsPerRow - line.length }, (_, k) => (
-        <html.div key={`empty${k}`} style={styles.galleryCard} />
-      ))}
-      </html.div>
-      ))}
     </html.div>
   );
 }
