@@ -17,7 +17,14 @@ export function useAttachmentUrl(): AttachmentUrl {
   return useContext(AttachmentsContext);
 }
 
-/** Files a browser can draw as an image. */
-export function isImageFile(fileName: string): boolean {
-  return /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(fileName);
+/**
+ * Files drawn as an image on the platform `os` (React Native's Platform.OS;
+ * absent, a browser): what a browser draws and, on iOS and macOS, HEIC (what
+ * an iPhone's camera keeps) and TIFF too, which their own image decoders
+ * read. The platform is handed in, so this file loads where React Native
+ * doesn't (Node, the web).
+ */
+export function isImageFile(fileName: string, os?: string): boolean {
+  if (/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(fileName)) return true;
+  return (os === "ios" || os === "macos") && /\.(heic|heif|tiff?)$/i.test(fileName);
 }

@@ -109,20 +109,35 @@ const indexIgnore = (text: string): boolean => text.split(/\r?\n/).every((line) 
  */
 export async function unpackTableFileTo(fs: TableFs, bytes: Uint8Array, dir: string): Promise<void> {
   if (!fs.writeBytes) throw new Error("this file system can't write a single-file .table's files (no writeBytes)");
-  const entries = readZipRaw(bytes).filter((e) => !isJunkEntry(e.name));
-  const roots = new Set(entries.map((e) => e.name.split("/")[0]!));
-  const root = [...roots][0];
-  if (roots.size !== 1 || !root?.endsWith(BUNDLE_EXTENSION) || entries.some((e) => !e.name.includes("/"))) {
-    throw new Error(`a single-file .table holds one <name>${BUNDLE_EXTENSION} folder`);
-  }
+  const entries = new Map(readZipRaw(bytes).map((e) => [e.name, e]));
+  const plan = unpackPlan([...entries.keys()]);
   await fs.mkdir(dir);
-  for (const entry of entries) {
-    const inside = entry.name.slice(root.length + 1);
-    if (notTheDocument(inside.slice(inside.lastIndexOf("/") + 1))) continue;
+  for (const [name, inside] of plan) {
+    const entry = entries.get(name)!;
     const at = joinPath(dir, inside);
     await fs.mkdir(at.slice(0, at.lastIndexOf("/")));
     await fs.writeBytes(at, joined([...rawChunks(entry)], entry.size));
   }
+}
+
+/**
+ * What unpacking a single-file `.table` writes, from its entries' names:
+ * each of the document's files, as it's named in the file and where it goes
+ * in the folder. For a host that unpacks with its own zip reader (straight
+ * from the file to the folder, the bytes never in JavaScript), so it
+ * unpacks what unpackTableFileTo would. Throws for a file that isn't one
+ * `<name>.table/` root.
+ */
+export function unpackPlan(names: string[]): [name: string, inside: string][] {
+  const files = names.filter((name) => !name.endsWith("/") && !isJunkEntry(name));
+  const roots = new Set(files.map((name) => name.split("/")[0]!));
+  const root = [...roots][0];
+  if (roots.size !== 1 || !root?.endsWith(BUNDLE_EXTENSION) || files.some((name) => !name.includes("/"))) {
+    throw new Error(`a single-file .table holds one <name>${BUNDLE_EXTENSION} folder`);
+  }
+  return files
+    .map((name): [string, string] => [name, name.slice(root.length + 1)])
+    .filter(([, inside]) => !notTheDocument(inside.slice(inside.lastIndexOf("/") + 1)));
 }
 
 /**

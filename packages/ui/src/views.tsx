@@ -53,6 +53,7 @@ import {
   columnOf,
   columnValue,
   dateKey,
+  GALLERY_GAP,
   galleryLayout,
   initialMonth,
   localDay,
@@ -918,22 +919,42 @@ const styles = css.create({
   },
 
   // Gallery
+  // One wrapping container, half a gap past each side (each card has half a gap either side of it).
   gallery: {
     display: "flex",
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 12,
+    rowGap: 12,
+    marginInline: -6,
   },
-  galleryCard: {
-    // Width applied at use-site via `cellWidth(cardWidth)` — uniform
-    // across the grid regardless of how many cards land on the last
-    // row. The flex:1 + min/maxWidth pattern (Notion / Airtable
-    // default) lets last-row cards stretch wider than the rows above;
-    // explicit container-relative widths avoid that.
-    flexShrink: 0,
-    flexGrow: 0,
-    boxSizing: "border-box",
+  // A card's share of its row: a percentage (galleryShareOf), less half a gap either side.
+  galleryShare: { paddingInline: 6, boxSizing: "border-box", display: "flex", flexDirection: "column" },
+  galleryShareOf: (width: string) => ({ width }),
+  // Not yet measured, with no gallery's width to go by: not shown, rather than one card to a row.
+  unmeasured: { opacity: 0 },
+  /** A gallery card: no line around it, a soft fill, its picture to its edges. */
+  galleryCardLook: {
+    display: "flex",
+    flexDirection: "column",
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#f2f2f7",
+      ":hover": { default: "#e9e9ef", "@media (prefers-color-scheme: dark)": "#27272b" },
+      "@media (prefers-color-scheme: dark)": "#1c1c1f",
+    },
   },
+  galleryPictureButton: { display: "flex", padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
+  galleryPicture: { width: "100%", aspectRatio: "16 / 9", objectFit: "cover" },
+  galleryBody: { display: "flex", flexDirection: "column", gap: 3, paddingInline: 12, paddingTop: 10, paddingBottom: 12 },
+  galleryTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  galleryMeta: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 6, rowGap: 2 },
+  galleryMetaDot: { fontSize: 12, color: { default: "#5f5f64", "@media (prefers-color-scheme: dark)": "#a1a1a6" } },
+  galleryMetaValue: { fontSize: 12, opacity: 0.75 },
   galleryCardHero: {
     fontSize: 12,
     lineHeight: 1.4,
@@ -1561,9 +1582,8 @@ const styles = css.create({
     textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
     color: { default: "#1d4ed8", "@media (prefers-color-scheme: dark)": "#8ab4ff" },
   },
-  attachment: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6 },
-  attachmentThumb: { width: 20, height: 20, borderRadius: 4, objectFit: "cover" },
-  galleryImage: { width: "100%", height: 120, objectFit: "contain", borderRadius: 6, marginBottom: 6 },
+  attachmentThumb: { width: 28, height: 28, borderRadius: 4, objectFit: "cover" },
+  attachmentAdd: { fontSize: 13, color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" } },
 
   /**
    * Relation cell — looks like a link, opens the target row on click.
@@ -2163,23 +2183,14 @@ function BoardColumnTitle({ field, value }: { field: Field | undefined; value: s
 function AttachmentValue({ fileName }: { fileName: string }) {
   const url = useAttachmentUrl()(fileName);
   if (!url) return <html.span>{fileName}</html.span>;
+  // An image is shown as itself, its filename only its label: the name is how the file is kept
+  // (SPEC section 6), not something to read. Any other file is its name, which opens it.
+  if (isImageFile(fileName, PLATFORM_OS)) return <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} />;
   return (
-    <html.span style={styles.attachment}>
-      {isImageFile(fileName) ? <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} /> : null}
-      <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
-        {fileName}
-      </CellLink>
-    </html.span>
+    <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
+      {fileName}
+    </CellLink>
   );
-}
-
-/** A gallery card's lead: the image itself when it's an attachment that resolves. */
-function GalleryHero({ field, value }: { field: Field | undefined; value: unknown }) {
-  const url = useAttachmentUrl()(typeof value === "string" ? value : "");
-  if (field?.attachment && typeof value === "string" && url && isImageFile(value)) {
-    return <AttachmentImage src={url} name={value} fit="contain" style={styles.galleryImage} />;
-  }
-  return <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
 }
 
 function RelationCellValue({
@@ -2325,6 +2336,7 @@ function EditableCell({
   const kind = editorKind(field);
   const readOnly = kind === "readonly";
   const [editing, setEditing] = useState(false);
+  const attachedName = typeof value === "string" ? value : "";
   const [draft, setDraft] = useState<string>("");
   // Editing the cell's own formula (D52): its `=` is drawn before the box, not in it, and put back on saving.
   const [asFormula, setAsFormula] = useState(false);
@@ -2498,6 +2510,23 @@ function EditableCell({
       <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
         <html.span dir="auto" style={styles.cellOutsideDraft}>{outsideDraft}</html.span>
       </html.div>
+    );
+  }
+
+  // An attachment a file can be chosen for: the file itself, or where one goes.
+  if (kind === "attachment" && onAttach) {
+    return (
+      <>
+        <html.div onClick={idleClick} style={[styles.cellEditableIdle, PLATFORM_OS === "web" && styles.cellIdleCursor, cellAlignStyle(align ?? "start")]}>
+          {attachedName !== "" ? (
+            <CellValue field={field} value={value} relatedTables={relatedTables} onOpenRelation={onOpenRelation} lines={lines} />
+          ) : (
+            <html.span aria-label="Add a file" style={styles.attachmentAdd}>
+              {selected ? "+ Add file" : "+"}
+            </html.span>
+          )}
+        </html.div>
+      </>
     );
   }
 
@@ -4466,7 +4495,7 @@ export function TableView({
             selected={isSelected}
             onSelect={select}
             clicksFromCell={cellClicks}
-            onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
+            onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name, typeof shownValue === "string" && shownValue !== "" ? shownValue : undefined) : undefined}
             editRequest={request}
             onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}
@@ -5993,6 +6022,22 @@ export function BoardView({
 }
 
 
+/**
+ * Asks for the system's layout animation as it's drawn, when `pending` says
+ * so: drawn after what's to ease, so the update the easing goes to is theirs.
+ */
+function EaseNextUpdate({ pending }: { pending: { current: boolean } }): null {
+  if (pending.current) {
+    pending.current = false;
+    animateNextLayout();
+  }
+  return null;
+}
+
+
+/** The width the last gallery was measured at: a new one starts there until it is measured itself. */
+let lastGalleryWidth = 0;
+
 export function GalleryView({
   view,
   cut,
@@ -6002,23 +6047,42 @@ export function GalleryView({
   onOpenBody,
   relatedTables,
   onOpenRelation,
+  onAttachFile,
 }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
+  const attachmentUrl = useAttachmentUrl();
   const galleryField = view.gallery_field;
   const fields = cardFields(view, schema, galleryField);
+  const [titleField, ...metaFields] = fields;
   const fieldMap = fieldsByName(schema);
 
-  // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
-  // grid (Notion / Airtable default) lets last-row cards stretch wider
-  // than the rows above them; explicit calc avoids that.
-  //
-  //   cardsPerRow = floor((container + gap) / (minCard + gap))
-  //   cardWidth   = (container - (cardsPerRow - 1) * gap) / cardsPerRow
-  //
-  // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
-  // cards (not trailing the last one in a row).
-  const { measureProps, width: containerWidth } = useContainerWidth();
-  const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
+  // As many cards to a row as fit (galleryLayout), each a share of the
+  // row's width (a percentage, which the layout resolves), all in one
+  // wrapping container. A window being resized, or a sidebar opening, is
+  // followed by the layout alone: the cards are drawn again only when the
+  // number in a row changes, and then they ease to their new places. The
+  // container reaches half a gap past each side, so every card can have
+  // half a gap either side of it. Until it's measured, the last gallery's
+  // width is used, so it doesn't open one card to a row.
+  const perRowOf = (w: number) => galleryLayout(w - GALLERY_GAP).perRow;
+  // When the number in a row changes, the cards ease to their new places:
+  // the system's layout animation, which eases whatever update comes next.
+  // The cards take a while to draw again (a tenth of a second for a hundred),
+  // and an update that lands in that time (a window being resized, another
+  // part of it drawn) would take the easing, the cards then jumping. So it's
+  // asked for as the cards' drawing ends (EaseNextUpdate, drawn after them),
+  // just before their own update.
+  const easeNext = useRef(false);
+  const { measureProps, width: measured } = useContainerWidth(
+    (from, to) => perRowOf(from) === perRowOf(to),
+    (from, to) => {
+      if (from <= 0 || perRowOf(from) === perRowOf(to)) return;
+      easeNext.current = true;
+    },
+  );
+  if (measured > 0) lastGalleryWidth = measured;
+  const containerWidth = measured || lastGalleryWidth;
+  const cardsPerRow = perRowOf(containerWidth);
 
   // Cut (`cut`), only the first cards are drawn.
   const drawn = cut === undefined ? rows : rows.slice(0, cut);
@@ -6038,50 +6102,70 @@ export function GalleryView({
         cards.containerProps.ref(el);
         measureProps.ref?.(el);
       }}
-      style={styles.gallery}
+      style={[styles.gallery, containerWidth === 0 && styles.unmeasured]}
     >
       {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
+        // The lead field's picture: an attached image whose file is found.
+        const lead = galleryField ? row[galleryField] : undefined;
+        const pictureName = typeof lead === "string" ? lead : "";
+        const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName, PLATFORM_OS) ? attachmentUrl(pictureName) : undefined;
         return (
+          <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`)]}>
           <html.div
-            key={row.id}
             ref={cards.cardRef(row.id)}
             onClick={() => cards.setFocusId(row.id)}
             style={[
-              styles.card,
-              styles.galleryCard,
-              styles.cellWidth(cardWidth),
+              styles.galleryCardLook,
               tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
             ]}
           >
-            {galleryField && (
-              <GalleryHero field={fieldMap.get(galleryField)} value={row[galleryField]} />
-            )}
-            <CardBody
-              row={row}
-              fields={fields}
-              fieldMap={fieldMap}
-              relatedTables={relatedTables}
-              onOpenRelation={onOpenRelation}
-              hideTitle={!!galleryField}
-            />
-            {excerpt && (
-              hasBody && onOpenBody ? (
-                <html.button
-                  onClick={() => onOpenBody(row.id)}
-                  style={[styles.bodyExcerpt, styles.bodyExcerptButton]}
-                >
-                  {excerpt}
+            {picture ? (
+              // The picture fills the card's head. Where files can be attached it opens as the cell's does.
+              onAttachFile && galleryField ? (
+                <html.button aria-label={`Open ${pictureName}`} style={styles.galleryPictureButton} onClick={() => onAttachFile(row.id, galleryField, pictureName)}>
+                  <AttachmentImage src={picture} name={pictureName} fit="cover" style={styles.galleryPicture} />
                 </html.button>
               ) : (
-                <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>
+                <AttachmentImage src={picture} name={pictureName} fit="cover" style={styles.galleryPicture} />
               )
-            )}
+            ) : null}
+            <html.div style={styles.galleryBody}>
+              {galleryField && !picture ? <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(row[galleryField])}</html.span> : null}
+              {/* The first field is the card's heading; the rest sit under it on a quiet line, each as its cell shows it. */}
+              {titleField ? <html.span dir="auto" style={styles.galleryTitle}>{rowTitle(row, titleField)}</html.span> : null}
+              {metaFields.length > 0 ? (
+                <html.div style={styles.galleryMeta}>
+                  {metaFields.map((name, i) => (
+                    <Fragment key={name}>
+                      {i > 0 ? <html.span style={styles.galleryMetaDot}>·</html.span> : null}
+                      <html.div style={styles.galleryMetaValue}>
+                        <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} onOpenRelation={onOpenRelation} inColumn />
+                      </html.div>
+                    </Fragment>
+                  ))}
+                </html.div>
+              ) : null}
+              {excerpt && (
+                hasBody && onOpenBody ? (
+                  <html.button
+                    onClick={() => onOpenBody(row.id)}
+                    style={[styles.bodyExcerpt, styles.bodyExcerptButton]}
+                  >
+                    {excerpt}
+                  </html.button>
+                ) : (
+                  <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>
+                )
+              )}
+            </html.div>
+          </html.div>
           </html.div>
         );
       })}
+      <EaseNextUpdate pending={easeNext} />
     </html.div>
   );
 }

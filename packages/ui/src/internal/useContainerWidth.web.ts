@@ -26,7 +26,7 @@ export interface ContainerMeasurement {
 
 // `later` is the native variant's: the browser lays out and draws a resize
 // itself, and a width it reports is taken as it comes.
-export function useContainerWidth(_later?: (from: number, to: number) => boolean): ContainerMeasurement {
+export function useContainerWidth(_later?: (from: number, to: number) => boolean, _before?: (from: number, to: number) => void): ContainerMeasurement {
   const [width, setWidth] = useState(0);
   const observerRef = useRef<ResizeObserver | null>(null);
 

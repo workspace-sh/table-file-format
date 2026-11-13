@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
 import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
+import { joinPath } from "@workspace.sh/table-core/io";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -22,6 +23,7 @@ import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { rowTitleFor, sheetReaders } from "./edits.ts";
+import { attachedNames, droppedAttachments } from "./droppedAttachments.ts";
 import type { Library } from "./library.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
@@ -126,6 +128,22 @@ export interface TableFileViewProps {
   saveRowsWhen?: "written" | "flushed";
   /** Set by the view: saves what waits, then calls `files.written`. For the host to call. */
   flush?: { current: (() => Promise<void>) | null };
+  /**
+   * An attachment cell is edited (SPEC section 6), answered in the host's own way. With nothing in the
+   * cell, the host asks for a file, copies it into `folder` (the table's attachments/, which may not be
+   * there yet) under a name nothing there has (attachmentName), and answers with that name, which the
+   * cell is set to. With `current` (the file the cell names, in `folder`), it shows that file and
+   * offers to replace it or take it out: a new name as before, or "" to empty the cell. Null leaves
+   * the cell as it is. Absent, or in a file to look at only, an attachment's name is typed.
+   */
+  attach?: (folder: string, current?: string) => Promise<string | null>;
+  /**
+   * As the file is closed: the files in `folder` (a table's attachments/) that its rows named when it
+   * was opened, or that were attached since, and that no row names any more (a cell's file taken out,
+   * or replaced). The host removes them, and packs a single file again. They're kept until then, so
+   * undo brings a cell back with its file.
+   */
+  discardAttachments?: (folder: string, fileNames: string[]) => Promise<void>;
 }
 
 /** How a large table in the file is read: through the platform's index host (createIndexHost). */
@@ -152,7 +170,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -219,6 +237,47 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = !!readOnly || fromArchive;
   const questions = ask ?? alertAsk;
+
+  // The files each table's rows named when it was opened, and those attached since: what's
+  // no longer named as the file is closed is the host's to remove (discardAttachments).
+  const namedAtOpen = useRef<Record<string, Set<string> | null> | null>(null);
+  if (!namedAtOpen.current) namedAtOpen.current = Object.fromEntries(Object.entries(state.tables).map(([key, t]) => [key, attachedNames(t)]));
+  const attachedSince = useRef<Record<string, string[]>>({});
+  const closing = useRef({ tables: state.tables, discardAttachments, lookOnly });
+  closing.current = { tables: state.tables, discardAttachments, lookOnly };
+  useEffect(
+    () => () => {
+      const { tables: now, discardAttachments: discard, lookOnly: looking } = closing.current;
+      if (!discard || looking) return;
+      for (const [key, before] of Object.entries(namedAtOpen.current ?? {})) {
+        const folder = shown.library.paths[bundleOf(key)];
+        const table = now[key];
+        if (folder === undefined || !table) continue;
+        const dropped = droppedAttachments(before, attachedSince.current[key] ?? [], attachedNames(table));
+        if (dropped.length > 0) void discard(joinPath(folder, "tables", tableNameOf(key), "attachments"), dropped).catch(() => {});
+      }
+    },
+    // Once, as it goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // A file for an attachment cell: the host's to choose and copy in, the cell then set to its name.
+  const attachFile = (rowId: string, fieldName: string, current?: string) => {
+    const key = state.active;
+    const folder = shown.library.paths[bundleOf(key)];
+    if (!attach || folder === undefined) return;
+    attach(joinPath(folder, "tables", tableNameOf(key), "attachments"), current).then(
+      (name) => {
+        if (name === null) return;
+        // "": the file taken out, the cell emptied as Delete empties it.
+        if (name !== "") (attachedSince.current[key] ??= []).push(name);
+        callbacks.onUpdateRow?.(rowId, fieldName, name === "" ? undefined : name);
+      },
+      (error: unknown) =>
+        dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
+    );
+  };
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
@@ -328,6 +387,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
         // A large table's rows: from its index, or as many as are read so far while it's made.
         {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}
+        {...(attach && !lookOnly ? { onAttachFile: attachFile } : {})}
         onOpenRelation={followLink}
         restorePlace={select}
         newFieldRequest={newFieldAsk}
