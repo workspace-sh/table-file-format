@@ -4,7 +4,6 @@
 
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
-import { PLATFORM_OS } from "./internal/platformOS";
 
 export type AttachmentUrl = (fileName: string) => string | undefined;
 
@@ -19,11 +18,13 @@ export function useAttachmentUrl(): AttachmentUrl {
 }
 
 /**
- * Files drawn as an image: what a browser draws and, on iOS and macOS, HEIC
- * (what an iPhone's camera keeps) and TIFF too, which their own image
- * decoders read.
+ * Files drawn as an image on the platform `os` (React Native's Platform.OS;
+ * absent, a browser): what a browser draws and, on iOS and macOS, HEIC (what
+ * an iPhone's camera keeps) and TIFF too, which their own image decoders
+ * read. The platform is handed in, so this file loads where React Native
+ * doesn't (Node, the web).
  */
-export function isImageFile(fileName: string): boolean {
+export function isImageFile(fileName: string, os?: string): boolean {
   if (/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(fileName)) return true;
-  return (PLATFORM_OS === "ios" || PLATFORM_OS === "macos") && /\.(heic|heif|tiff?)$/i.test(fileName);
+  return (os === "ios" || os === "macos") && /\.(heic|heif|tiff?)$/i.test(fileName);
 }

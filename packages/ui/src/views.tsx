@@ -2185,7 +2185,7 @@ function AttachmentValue({ fileName }: { fileName: string }) {
   if (!url) return <html.span>{fileName}</html.span>;
   // An image is shown as itself, its filename only its label: the name is how the file is kept
   // (SPEC section 6), not something to read. Any other file is its name, which opens it.
-  if (isImageFile(fileName)) return <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} />;
+  if (isImageFile(fileName, PLATFORM_OS)) return <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} />;
   return (
     <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
       {fileName}
@@ -6110,7 +6110,7 @@ export function GalleryView({
         // The lead field's picture: an attached image whose file is found.
         const lead = galleryField ? row[galleryField] : undefined;
         const pictureName = typeof lead === "string" ? lead : "";
-        const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName) ? attachmentUrl(pictureName) : undefined;
+        const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName, PLATFORM_OS) ? attachmentUrl(pictureName) : undefined;
         return (
           <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`)]}>
           <html.div
