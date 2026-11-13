@@ -1553,34 +1553,6 @@ const styles = css.create({
   },
   attachmentThumb: { width: 28, height: 28, borderRadius: 4, objectFit: "cover" },
   attachmentAdd: { fontSize: 13, color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" } },
-  previewBackdrop: {
-    position: "fixed",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 60,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    gap: 16,
-    backgroundColor: "rgba(0, 0, 0, 0.8)",
-  },
-  previewImage: { flexGrow: 1, flexShrink: 1, alignSelf: "stretch", minHeight: 0, objectFit: "contain" },
-  previewBar: { display: "flex", flexDirection: "row", gap: 12, paddingBottom: 24 },
-  previewButton: {
-    paddingInline: 16,
-    paddingBlock: 8,
-    borderRadius: 8,
-    borderWidth: 0,
-    fontSize: 15,
-    cursor: "pointer",
-    color: "#ffffff",
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
-  },
-  previewRemove: { color: "#ff6961" },
   galleryImage: { width: "100%", height: 120, objectFit: "contain", borderRadius: 6, marginBottom: 6 },
 
   /**
@@ -2191,28 +2163,6 @@ function AttachmentValue({ fileName }: { fileName: string }) {
   );
 }
 
-/** An attached image at the size of the window, and what can be done with it: replaced, taken out. */
-function AttachmentPreview({ url, name, onReplace, onRemove, onClose }: { url: string; name: string; onReplace: () => void; onRemove: () => void; onClose: () => void }) {
-  return (
-    <Portal>
-      <html.div style={styles.previewBackdrop} onClick={onClose}>
-        <AttachmentImage src={url} name={name} fit="contain" style={styles.previewImage} />
-        <html.div role="toolbar" style={styles.previewBar}>
-          <html.button style={styles.previewButton} onClick={onReplace}>
-            Replace…
-          </html.button>
-          <html.button style={[styles.previewButton, styles.previewRemove]} onClick={onRemove}>
-            Remove
-          </html.button>
-          <html.button style={styles.previewButton} onClick={onClose}>
-            Done
-          </html.button>
-        </html.div>
-      </html.div>
-    </Portal>
-  );
-}
-
 /** A gallery card's lead: the image itself when it's an attachment that resolves. */
 function GalleryHero({ field, value }: { field: Field | undefined; value: unknown }) {
   const url = useAttachmentUrl()(typeof value === "string" ? value : "");
@@ -2363,16 +2313,7 @@ function EditableCell({
   const kind = editorKind(field);
   const readOnly = kind === "readonly";
   const [editing, setEditing] = useState(false);
-  // An attached image, looked at large: from there it's replaced or taken out.
-  const [previewing, setPreviewing] = useState(false);
-  const attachmentUrl = useAttachmentUrl();
   const attachedName = typeof value === "string" ? value : "";
-  const attachedImage = attachedName !== "" && isImageFile(attachedName) ? attachmentUrl(attachedName) : undefined;
-  // What editing an attachment cell does: an image is shown large; anything else, or nothing yet, asks for a file.
-  const openAttachment = () => {
-    if (attachedImage) setPreviewing(true);
-    else onAttach?.();
-  };
   const [draft, setDraft] = useState<string>("");
   // Editing the cell's own formula (D52): its `=` is drawn before the box, not in it, and put back on saving.
   const [asFormula, setAsFormula] = useState(false);
@@ -2457,7 +2398,7 @@ function EditableCell({
   // table to select. Outside a table (no `selected`), a click edits.
   const clickToEdit = () => {
     if (selected === false) onSelect?.();
-    else if (kind === "attachment" && onAttach) openAttachment();
+    else if (kind === "attachment" && onAttach) onAttach();
     else startEdit();
   };
   // The idle value's own click, unless the cell around it takes them.
@@ -2500,7 +2441,7 @@ function EditableCell({
 
   useEffect(() => {
     if (editRequest && !readOnly) {
-      if (kind === "attachment" && onAttach) openAttachment();
+      if (kind === "attachment" && onAttach) onAttach();
       else startEdit(editRequest.text);
     }
     if (editRequest) onEditHeard?.();
@@ -2550,21 +2491,6 @@ function EditableCell({
             </html.span>
           )}
         </html.div>
-        {previewing && attachedImage ? (
-          <AttachmentPreview
-            url={attachedImage}
-            name={attachedName}
-            onReplace={() => {
-              setPreviewing(false);
-              onAttach();
-            }}
-            onRemove={() => {
-              setPreviewing(false);
-              onCommit(undefined);
-            }}
-            onClose={() => setPreviewing(false)}
-          />
-        ) : null}
       </>
     );
   }
@@ -4519,7 +4445,7 @@ export function TableView({
             selected={isSelected}
             onSelect={select}
             clicksFromCell={cellClicks}
-            onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name) : undefined}
+            onAttach={onAttachFile && field?.attachment ? () => onAttachFile(row.id, name, typeof shownValue === "string" && shownValue !== "" ? shownValue : undefined) : undefined}
             editRequest={request}
             onEditHeard={editHeard}
             onEditEnd={endEdit(row.id, name)}

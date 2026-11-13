@@ -1572,7 +1572,8 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
                           tableKey: tableNameOf(activeTablePath),
                           sheet,
                           onInsertRow: isSheet(view) && canInsertAt(view) ? callbacks.onInsertRow : undefined,
-                          onAttachFile: attachFile,
+                          // The file a cell already names is replaced the same way: asked for in the panel.
+                          onAttachFile: (rowId: string, fieldName: string) => void attachFile(rowId, fieldName),
                           newFieldRequest: newFieldAsk,
                           ...(table.indexed
                             ? {
