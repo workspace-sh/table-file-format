@@ -36,6 +36,7 @@ export * from "./embed.ts";
 export * from "./embedCases.ts";
 export * from "./heldFiles.ts";
 export * from "./tableFile.ts";
+export { attachedNames, droppedAttachments } from "./droppedAttachments.ts";
 
 export { createIndexHost, type ClosableDriver, type FileWriter, type IndexDatabase, type IndexHost, type IndexHostPlatform, type OpenedLarge } from "./indexHost.ts";
 export { INDEXED_FROM, storedTableRows, heldText, readHeldRows, withHeld, type HeldRows, buildIndexFromBytes, firstRowsInBytes, linesInBytes, rowsInBytes, rowsInChunks, rowsInAsyncChunks, addIndexedRow, canBeIndexed, indexedViewRows, makeIndexEdits, removeIndexedRow, setIndexedBody, setIndexedCell, viewQuery, type IndexEdit } from "./indexed.ts";
