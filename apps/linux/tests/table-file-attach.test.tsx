@@ -80,26 +80,6 @@ describe("a cell's file, in a .table opened as a document", () => {
     });
   });
 
-  it("an empty cell asks for a file, copies it in and names it", async () => {
-    const empty = (await logos()).findIndex((l) => !l);
-    expect(empty).toBeGreaterThanOrEqual(0);
-    await open(async () => svg("new-logo.svg"));
-    const named = (await logos()).filter(Boolean).length;
-    // An empty cell's button, by elimination: the one whose cell names no file.
-    const buttons = await screen.findAllByRole(Gtk.AccessibleRole.BUTTON, { name: "Choose File" });
-    expect(buttons.length).toBeGreaterThan(named);
-    for (const b of buttons) {
-      await userEvent.click(b);
-      if ((await logos()).includes("new-logo.svg")) break;
-      // A filled cell asked instead: left as it is.
-      const asked = screen.queryAllByRole(Gtk.AccessibleRole.ALERT_DIALOG).find((w) => w instanceof Adw.AlertDialog) as Adw.AlertDialog | undefined;
-      asked?.emit("response", "cancel");
-      await new Promise((r) => setTimeout(r, 200));
-    }
-    await waitFor(async () => expect((await logos()).filter((l) => l === "new-logo.svg")).toHaveLength(1));
-    expect(readFileSync(join(attachments(), "new-logo.svg"), "utf8")).toContain("<svg");
-  });
-
   it("a filled cell's file is replaced, and the old one removed once the table closes", async () => {
     const first = (await logos()).find((l): l is string => typeof l === "string" && l !== "")!;
     const { unmount } = await open(async () => svg("replacement.svg"));
@@ -114,17 +94,23 @@ describe("a cell's file, in a .table opened as a document", () => {
     expect(existsSync(join(attachments(), "replacement.svg"))).toBe(true);
   });
 
-  it("a filled cell's file is taken out, and Cancel leaves it", async () => {
+  it("a filled cell's file is taken out, Cancel leaves it, and an empty cell asks for a file", async () => {
     const first = (await logos()).find((l): l is string => typeof l === "string" && l !== "")!;
-    await open(async () => null);
-    await userEvent.click(await buttonFor(first));
+    await open(async () => svg("new-logo.svg"));
+    const button = await buttonFor(first);
+    await userEvent.click(button);
     (await question(first)).emit("response", "cancel");
     await new Promise((r) => setTimeout(r, 300));
     expect((await logos()).includes(first)).toBe(true);
 
-    await userEvent.click(await buttonFor(first));
+    await userEvent.click(button);
     (await question(first)).emit("response", "remove");
     await waitFor(async () => expect((await logos()).includes(first)).toBe(false));
+
+    // Empty now: the same button asks for a file, copied in and named.
+    await userEvent.click(button);
+    await waitFor(async () => expect((await logos()).filter((l) => l === "new-logo.svg")).toHaveLength(1));
+    expect(readFileSync(join(attachments(), "new-logo.svg"), "utf8")).toContain("<svg");
   });
 
   it("a file in a table to look at only can't be chosen", async () => {
