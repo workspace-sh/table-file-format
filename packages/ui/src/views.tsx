@@ -1551,8 +1551,7 @@ const styles = css.create({
     textDecorationColor: { default: "rgba(0,0,0,0.25)", "@media (prefers-color-scheme: dark)": "rgba(255,255,255,0.3)" },
     color: { default: "#1d4ed8", "@media (prefers-color-scheme: dark)": "#8ab4ff" },
   },
-  attachment: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6 },
-  attachmentThumb: { width: 20, height: 20, borderRadius: 4, objectFit: "cover" },
+  attachmentThumb: { width: 28, height: 28, borderRadius: 4, objectFit: "cover" },
   galleryImage: { width: "100%", height: 120, objectFit: "contain", borderRadius: 6, marginBottom: 6 },
 
   /**
@@ -2153,13 +2152,13 @@ function BoardColumnTitle({ field, value }: { field: Field | undefined; value: s
 function AttachmentValue({ fileName }: { fileName: string }) {
   const url = useAttachmentUrl()(fileName);
   if (!url) return <html.span>{fileName}</html.span>;
+  // An image is shown as itself, its filename only its label: the name is how the file is kept
+  // (SPEC section 6), not something to read. Any other file is its name, which opens it.
+  if (isImageFile(fileName)) return <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} />;
   return (
-    <html.span style={styles.attachment}>
-      {isImageFile(fileName) ? <AttachmentImage src={url} name={fileName} fit="cover" style={styles.attachmentThumb} /> : null}
-      <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
-        {fileName}
-      </CellLink>
-    </html.span>
+    <CellLink href={url} external label={`Open ${fileName}`} style={styles.link}>
+      {fileName}
+    </CellLink>
   );
 }
 
