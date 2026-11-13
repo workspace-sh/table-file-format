@@ -14,7 +14,7 @@ export { BodyEditor } from "./BodyEditor";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
 export type { DisplaySettings } from "./DisplaySettings";
 export { Hinted } from "./FieldHint";
-export { AttachmentsProvider, type AttachmentUrl } from "./Attachments";
+export { AttachmentsProvider, isImageFile, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
 export { screenBackground } from "./internal/screenBackground";
