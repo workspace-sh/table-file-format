@@ -4,6 +4,7 @@
 
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
+import { PLATFORM_OS } from "./internal/platformOS";
 
 export type AttachmentUrl = (fileName: string) => string | undefined;
 
@@ -17,7 +18,12 @@ export function useAttachmentUrl(): AttachmentUrl {
   return useContext(AttachmentsContext);
 }
 
-/** Files a browser can draw as an image. */
+/**
+ * Files drawn as an image: what a browser draws and, on iOS and macOS, HEIC
+ * (what an iPhone's camera keeps) and TIFF too, which their own image
+ * decoders read.
+ */
 export function isImageFile(fileName: string): boolean {
-  return /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(fileName);
+  if (/\.(png|jpe?g|gif|webp|svg|avif)$/i.test(fileName)) return true;
+  return (PLATFORM_OS === "ios" || PLATFORM_OS === "macos") && /\.(heic|heif|tiff?)$/i.test(fileName);
 }
