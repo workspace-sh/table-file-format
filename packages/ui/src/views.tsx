@@ -924,6 +924,29 @@ const styles = css.create({
     flexGrow: 0,
     boxSizing: "border-box",
   },
+  /** A gallery card: no line around it, a soft fill, its picture to its edges. */
+  galleryCardLook: {
+    display: "flex",
+    flexDirection: "column",
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: {
+      default: "#f2f2f7",
+      ":hover": { default: "#e9e9ef", "@media (prefers-color-scheme: dark)": "#27272b" },
+      "@media (prefers-color-scheme: dark)": "#1c1c1f",
+    },
+  },
+  galleryPictureButton: { display: "flex", padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
+  galleryPicture: { width: "100%", aspectRatio: "16 / 9", objectFit: "cover" },
+  galleryBody: { display: "flex", flexDirection: "column", gap: 3, paddingInline: 12, paddingTop: 10, paddingBottom: 12 },
+  galleryTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  galleryMeta: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 6, rowGap: 2 },
+  galleryMetaDot: { fontSize: 12, color: { default: "#5f5f64", "@media (prefers-color-scheme: dark)": "#a1a1a6" } },
+  galleryMetaValue: { fontSize: 12, opacity: 0.75 },
   galleryCardHero: {
     fontSize: 12,
     lineHeight: 1.4,
@@ -1553,7 +1576,6 @@ const styles = css.create({
   },
   attachmentThumb: { width: 28, height: 28, borderRadius: 4, objectFit: "cover" },
   attachmentAdd: { fontSize: 13, color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#6e6e73" } },
-  galleryImage: { width: "100%", height: 120, objectFit: "contain", borderRadius: 6, marginBottom: 6 },
 
   /**
    * Relation cell — looks like a link, opens the target row on click.
@@ -2161,15 +2183,6 @@ function AttachmentValue({ fileName }: { fileName: string }) {
       {fileName}
     </CellLink>
   );
-}
-
-/** A gallery card's lead: the image itself when it's an attachment that resolves. */
-function GalleryHero({ field, value }: { field: Field | undefined; value: unknown }) {
-  const url = useAttachmentUrl()(typeof value === "string" ? value : "");
-  if (field?.attachment && typeof value === "string" && url && isImageFile(value)) {
-    return <AttachmentImage src={url} name={value} fit="contain" style={styles.galleryImage} />;
-  }
-  return <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(value)}</html.span>;
 }
 
 function RelationCellValue({
@@ -5961,10 +5974,13 @@ export function GalleryView({
   onOpenBody,
   relatedTables,
   onOpenRelation,
+  onAttachFile,
 }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
+  const attachmentUrl = useAttachmentUrl();
   const galleryField = view.gallery_field;
   const fields = cardFields(view, schema, galleryField);
+  const [titleField, ...metaFields] = fields;
   const fieldMap = fieldsByName(schema);
 
   // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
@@ -6002,42 +6018,62 @@ export function GalleryView({
       {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
+        // The lead field's picture: an attached image whose file is found.
+        const lead = galleryField ? row[galleryField] : undefined;
+        const pictureName = typeof lead === "string" ? lead : "";
+        const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName) ? attachmentUrl(pictureName) : undefined;
         return (
           <html.div
             key={row.id}
             ref={cards.cardRef(row.id)}
             onClick={() => cards.setFocusId(row.id)}
             style={[
-              styles.card,
               styles.galleryCard,
+              styles.galleryCardLook,
               styles.cellWidth(cardWidth),
               tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
             ]}
           >
-            {galleryField && (
-              <GalleryHero field={fieldMap.get(galleryField)} value={row[galleryField]} />
-            )}
-            <CardBody
-              row={row}
-              fields={fields}
-              fieldMap={fieldMap}
-              relatedTables={relatedTables}
-              onOpenRelation={onOpenRelation}
-              hideTitle={!!galleryField}
-            />
-            {excerpt && (
-              hasBody && onOpenBody ? (
-                <html.button
-                  onClick={() => onOpenBody(row.id)}
-                  style={[styles.bodyExcerpt, styles.bodyExcerptButton]}
-                >
-                  {excerpt}
+            {picture ? (
+              // The picture fills the card's head. Where files can be attached it opens as the cell's does.
+              onAttachFile && galleryField ? (
+                <html.button aria-label={`Open ${pictureName}`} style={styles.galleryPictureButton} onClick={() => onAttachFile(row.id, galleryField, pictureName)}>
+                  <AttachmentImage src={picture} name={pictureName} fit="cover" style={styles.galleryPicture} />
                 </html.button>
               ) : (
-                <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>
+                <AttachmentImage src={picture} name={pictureName} fit="cover" style={styles.galleryPicture} />
               )
-            )}
+            ) : null}
+            <html.div style={styles.galleryBody}>
+              {galleryField && !picture ? <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(row[galleryField])}</html.span> : null}
+              {/* The first field is the card's heading; the rest sit under it on a quiet line, each as its cell shows it. */}
+              {titleField ? <html.span dir="auto" style={styles.galleryTitle}>{rowTitle(row, titleField)}</html.span> : null}
+              {metaFields.length > 0 ? (
+                <html.div style={styles.galleryMeta}>
+                  {metaFields.map((name, i) => (
+                    <Fragment key={name}>
+                      {i > 0 ? <html.span style={styles.galleryMetaDot}>·</html.span> : null}
+                      <html.div style={styles.galleryMetaValue}>
+                        <CellValue field={fieldMap.get(name)} value={row[name]} relatedTables={relatedTables} onOpenRelation={onOpenRelation} inColumn />
+                      </html.div>
+                    </Fragment>
+                  ))}
+                </html.div>
+              ) : null}
+              {excerpt && (
+                hasBody && onOpenBody ? (
+                  <html.button
+                    onClick={() => onOpenBody(row.id)}
+                    style={[styles.bodyExcerpt, styles.bodyExcerptButton]}
+                  >
+                    {excerpt}
+                  </html.button>
+                ) : (
+                  <html.span style={styles.bodyExcerpt}>{excerpt}</html.span>
+                )
+              )}
+            </html.div>
           </html.div>
         );
       })}
