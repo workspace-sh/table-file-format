@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
 import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
+import { joinPath } from "@workspace.sh/table-core/io";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -126,6 +127,13 @@ export interface TableFileViewProps {
   saveRowsWhen?: "written" | "flushed";
   /** Set by the view: saves what waits, then calls `files.written`. For the host to call. */
   flush?: { current: (() => Promise<void>) | null };
+  /**
+   * An attachment cell asks for a file (SPEC section 6). The host asks for one in its own way, copies
+   * it into `folder` (the table's attachments/, which may not be there yet) under a name nothing there
+   * has (attachmentName), and answers with that name, which the cell is set to; null when none was
+   * chosen. Absent, or in a file to look at only, an attachment's name is typed.
+   */
+  attach?: (folder: string) => Promise<string | null>;
 }
 
 /** How a large table in the file is read: through the platform's index host (createIndexHost). */
@@ -152,7 +160,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -219,6 +227,19 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = !!readOnly || fromArchive;
   const questions = ask ?? alertAsk;
+
+  // A file for an attachment cell: the host's to choose and copy in, the cell then set to its name.
+  const attachFile = (rowId: string, fieldName: string) => {
+    const folder = shown.library.paths[bundleOf(state.active)];
+    if (!attach || folder === undefined) return;
+    attach(joinPath(folder, "tables", tableNameOf(state.active), "attachments")).then(
+      (name) => {
+        if (name) callbacks.onUpdateRow?.(rowId, fieldName, name);
+      },
+      (error: unknown) =>
+        dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
+    );
+  };
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
@@ -328,6 +349,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
         // A large table's rows: from its index, or as many as are read so far while it's made.
         {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}
+        {...(attach && !lookOnly ? { onAttachFile: attachFile } : {})}
         onOpenRelation={followLink}
         restorePlace={select}
         newFieldRequest={newFieldAsk}
