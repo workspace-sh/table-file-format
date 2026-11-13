@@ -226,6 +226,8 @@ const ROW_ACTION: Record<RowAction["id"], string> = {
   "insert-above": "row.above",
   "insert-below": "row.below",
   "cell-note": "row.note",
+  // Never listed here: a cell's formula is typed in the cell, so no onCellFormula is passed.
+  "cell-formula": "row.formula",
   "merge-cells": "row.merge",
   "unmerge-cells": "row.unmerge",
   "hide-row": "row.hide",
