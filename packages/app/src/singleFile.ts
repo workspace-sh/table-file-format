@@ -42,10 +42,18 @@ const stampOf = (workDir: string) => `${workDir}.stamp`;
  * its index with it.
  */
 export async function unpackTableFile(fs: TableFs, bytes: Uint8Array, workDir: string, stamp: string): Promise<void> {
-  if ((await fs.readText(stampOf(workDir))) === stamp && (await fs.list(workDir)) !== null) return;
+  if (await unpackedFrom(fs, workDir, stamp)) return;
   await fs.remove(workDir);
   await unpackTableFileTo(fs, bytes, workDir);
   await fs.writeText(stampOf(workDir), stamp);
+}
+
+/**
+ * Whether the working folder was made from the file as it is now (`stamp`):
+ * then it's read as it is, and the file itself needn't be read at all.
+ */
+export async function unpackedFrom(fs: TableFs, workDir: string, stamp: string): Promise<boolean> {
+  return (await fs.readText(stampOf(workDir))) === stamp && (await fs.list(workDir)) !== null;
 }
 
 /**
