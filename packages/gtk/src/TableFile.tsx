@@ -15,7 +15,10 @@ import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
 import { addressedView, newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
+import { AttachmentsProvider } from "@workspace.sh/table-ui/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useCellFiles } from "./cellFiles.js";
 
 import { LayoutView } from "./LayoutView.js";
 import { StringList } from "./StringList.js";
@@ -53,6 +56,8 @@ export interface TableFileProps {
    * in this file is gone to here.
    */
   onOpenLink?: (address: string) => void;
+  /** Ask for a file for an attachment cell: a path, or null for none. The system's file chooser when absent. */
+  chooseFile?: () => Promise<string | null>;
 }
 
 function Opened({
@@ -63,6 +68,7 @@ function Opened({
   store,
   openIndex,
   onOpenLink,
+  chooseFile,
 }: {
   shown: EmbedShown;
   store: KeyValueStore | null;
@@ -71,6 +77,7 @@ function Opened({
   locale: string | undefined;
   at: TableFileProps["at"];
   onOpenLink: ((address: string) => void) | undefined;
+  chooseFile: TableFileProps["chooseFile"];
 }) {
   const kept = useMemo(() => (store ? storeFor(store, shown.library.paths[bundleOf(shown.key)] ?? shown.key) : null), [store, shown]);
   // A large table's rows are in its bundle's index: written back after the rest of the bundle is.
@@ -135,6 +142,18 @@ function Opened({
     else if (link) onOpenLink?.(link);
   };
 
+  // Cell files: drawn, chosen, replaced and taken out; those left unnamed removed as the file closes.
+  const box = useRef<Gtk.Box | null>(null);
+  const cellFiles = useCellFiles({
+    shown,
+    state,
+    lookOnly,
+    setCell: callbacks.onUpdateRow,
+    tell: (heading, body) => dispatch({ type: "tell", message: { heading, body } }),
+    parent: () => (box.current?.getRoot() as Gtk.Window | null | undefined) ?? null,
+    chooseFile,
+  });
+
   // The view's own settings: its layout and fields for everyone who opens the file; sorts, filters and
   // grouping this reader's own until saved for everyone.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -150,7 +169,8 @@ function Opened({
 
   return (
     <DisplaySettingsProvider value={display}>
-      <GtkBox name="table-file" orientation={Gtk.Orientation.VERTICAL} vexpand hexpand controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, mods) => undoKeys(keyval, mods)} />}>
+     <AttachmentsProvider value={cellFiles.urlOf}>
+      <GtkBox ref={box} name="table-file" orientation={Gtk.Orientation.VERTICAL} vexpand hexpand controllers={<GtkEventControllerKey onKeyPressed={(keyval, _code, mods) => undoKeys(keyval, mods)} />}>
         <GtkBox spacing={8} marginStart={12} marginEnd={12} marginTop={6} marginBottom={6}>
           {keys.length > 1 ? (
             <GtkDropDown
@@ -214,6 +234,7 @@ function Opened({
             tableKey={tableName}
             sheet={derived.shown.sheet}
             {...(lookOnly ? {} : callbacks)}
+            {...(cellFiles.onAttachFile ? { onAttachFile: cellFiles.onAttachFile } : {})}
             onOpenRelation={followLink}
             restorePlace={select}
           />
@@ -235,11 +256,13 @@ function Opened({
         />
       ) : null}
       <TableDialogs state={state} dispatch={dispatch} table={table} />
+      {cellFiles.dialog}
+     </AttachmentsProvider>
     </DisplaySettingsProvider>
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -251,7 +274,7 @@ export function TableFile({ path, readOnly = false, locale, at, store, openIndex
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>
