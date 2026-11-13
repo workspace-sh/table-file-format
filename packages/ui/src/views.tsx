@@ -208,11 +208,6 @@ const FROZEN_EDGE = 1;
 /** A board column's width: one width, whatever the board's, so a scroll comes to rest on one (with BOARD_GAP between). */
 const BOARD_COLUMN_WIDTH = 280;
 
-/** How long a gallery's cards take to ease to new rows (the Mac). */
-const GALLERY_EASE_MS = 250;
-/** A gallery card's body (title and one line under it), for where a card was before a row count changed. */
-const GALLERY_BODY_HEIGHT = 58;
-
 const styles = css.create({
   // Table
   tableWithAdd: {
@@ -925,12 +920,6 @@ const styles = css.create({
   // A card's share of its row: a percentage (galleryShareOf), less half a gap either side.
   galleryShare: { paddingInline: 6, boxSizing: "border-box", display: "flex", flexDirection: "column" },
   galleryShareOf: (width: string) => ({ width }),
-  // Where a card is drawn as the row count changes (the Mac): from its old
-  // place and size, then eased to its own. One shape of transform always,
-  // so the change between them is a transition.
-  galleryStill: { transform: "translateX(0px) translateY(0px) scale(1)" },
-  galleryFrom: (x: number, y: number, scale: number) => ({ transform: `translateX(${x}px) translateY(${y}px) scale(${scale})` }),
-  galleryEasing: { transitionProperty: "transform", transitionDuration: `${GALLERY_EASE_MS}ms`, transitionTimingFunction: "ease-in-out" },
   // Not yet measured, with no gallery's width to go by: not shown, rather than one card to a row.
   unmeasured: { opacity: 0 },
   /** A gallery card: no line around it, a soft fill, its picture to its edges. */
@@ -5974,6 +5963,19 @@ export function BoardView({
 }
 
 
+/**
+ * Asks for the system's layout animation as it's drawn, when `pending` says
+ * so: drawn after what's to ease, so the update the easing goes to is theirs.
+ */
+function EaseNextUpdate({ pending }: { pending: { current: boolean } }): null {
+  if (pending.current) {
+    pending.current = false;
+    animateNextLayout();
+  }
+  return null;
+}
+
+
 /** The width the last gallery was measured at: a new one starts there until it is measured itself. */
 let lastGalleryWidth = 0;
 
@@ -6004,52 +6006,24 @@ export function GalleryView({
   // half a gap either side of it. Until it's measured, the last gallery's
   // width is used, so it doesn't open one card to a row.
   const perRowOf = (w: number) => galleryLayout(w - GALLERY_GAP).perRow;
-  // When the number in a row changes, the cards ease to their new places.
-  // iOS and Android: the system's layout animation moves them, as a phone
-  // turns. The Mac's doesn't run as a window is resized, so there each card
-  // is drawn where it was, at its old size, and eases from there (`move`).
-  const [move, setMove] = useState<{ from: number; settle: boolean } | null>(null);
+  // When the number in a row changes, the cards ease to their new places:
+  // the system's layout animation, which eases whatever update comes next.
+  // The cards take a while to draw again (a tenth of a second for a hundred),
+  // and an update that lands in that time (a window being resized, another
+  // part of it drawn) would take the easing, the cards then jumping. So it's
+  // asked for as the cards' drawing ends (EaseNextUpdate, drawn after them),
+  // just before their own update.
+  const easeNext = useRef(false);
   const { measureProps, width: measured } = useContainerWidth(
     (from, to) => perRowOf(from) === perRowOf(to),
     (from, to) => {
       if (from <= 0 || perRowOf(from) === perRowOf(to)) return;
-      if (PLATFORM_OS === "macos") setMove({ from, settle: false });
-      else animateNextLayout();
+      easeNext.current = true;
     },
   );
   if (measured > 0) lastGalleryWidth = measured;
   const containerWidth = measured || lastGalleryWidth;
   const cardsPerRow = perRowOf(containerWidth);
-  // Drawn where they were, then let go to ease to where they are; then done.
-  useEffect(() => {
-    if (!move) return;
-    if (!move.settle) {
-      const frame = requestAnimationFrame(() => setMove({ ...move, settle: true }));
-      return () => cancelAnimationFrame(frame);
-    }
-    const done = setTimeout(() => setMove(null), GALLERY_EASE_MS + 50);
-    return () => clearTimeout(done);
-  }, [move]);
-  // A card's place and size at a width: its share of the row, and its rows
-  // above it, each a picture's height (when cards have one) and a body's.
-  const hasPictures = !!galleryField && !!fieldMap.get(galleryField)?.attachment;
-  const placeAt = (i: number, width: number) => {
-    const per = perRowOf(width);
-    const share = width / per;
-    const cardWidth = share - GALLERY_GAP;
-    const height = (hasPictures ? (cardWidth * 9) / 16 : 0) + GALLERY_BODY_HEIGHT;
-    return { x: (i % per) * share, y: Math.floor(i / per) * (height + GALLERY_GAP), width: cardWidth, height };
-  };
-  const moveOf = (i: number) => {
-    if (!move || move.settle) return styles.galleryStill;
-    const was = placeAt(i, move.from);
-    const now = placeAt(i, containerWidth);
-    const scale = was.width / now.width;
-    // Scaled about its middle: moved so its corner is where the old one's was.
-    const dx = was.x - now.x - (now.width * (1 - scale)) / 2;
-    const dy = was.y - now.y - (now.height * (1 - scale)) / 2;
-    return styles.galleryFrom(dx, dy, scale);
-  };
 
   // Cut (`cut`), only the first cards are drawn.
   const drawn = cut === undefined ? rows : rows.slice(0, cut);
@@ -6071,7 +6045,7 @@ export function GalleryView({
       }}
       style={[styles.gallery, containerWidth === 0 && styles.unmeasured]}
     >
-      {drawn.map((row, index) => {
+      {drawn.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         // The lead field's picture: an attached image whose file is found.
@@ -6079,7 +6053,7 @@ export function GalleryView({
         const pictureName = typeof lead === "string" ? lead : "";
         const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName) ? attachmentUrl(pictureName) : undefined;
         return (
-          <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`), move?.settle ? styles.galleryEasing : null, moveOf(index)]}>
+          <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`)]}>
           <html.div
             ref={cards.cardRef(row.id)}
             onClick={() => cards.setFocusId(row.id)}
@@ -6132,6 +6106,7 @@ export function GalleryView({
           </html.div>
         );
       })}
+      <EaseNextUpdate pending={easeNext} />
     </html.div>
   );
 }
