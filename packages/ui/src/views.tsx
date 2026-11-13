@@ -908,20 +908,15 @@ const styles = css.create({
   },
 
   // Gallery
-  gallery: {
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
+  galleryRows: { display: "flex", flexDirection: "column", gap: 12 },
+  galleryRow: { display: "flex", flexDirection: "row", gap: 12 },
+  // A row's share: every card in a row as wide as the others, the last row's
+  // too (its empty places take the shares no card has).
   galleryCard: {
-    // Width applied at use-site via `cellWidth(cardWidth)` — uniform
-    // across the grid regardless of how many cards land on the last
-    // row. The flex:1 + min/maxWidth pattern (Notion / Airtable
-    // default) lets last-row cards stretch wider than the rows above;
-    // explicit container-relative widths avoid that.
-    flexShrink: 0,
-    flexGrow: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
     boxSizing: "border-box",
   },
   /** A gallery card: no line around it, a soft fill, its picture to its edges. */
@@ -5983,21 +5978,20 @@ export function GalleryView({
   const [titleField, ...metaFields] = fields;
   const fieldMap = fieldsByName(schema);
 
-  // Container-relative uniform card widths. Standard flex:1 + min/maxWidth
-  // grid (Notion / Airtable default) lets last-row cards stretch wider
-  // than the rows above them; explicit calc avoids that.
-  //
-  //   cardsPerRow = floor((container + gap) / (minCard + gap))
-  //   cardWidth   = (container - (cardsPerRow - 1) * gap) / cardsPerRow
-  //
-  // The +gap / -gap dance accounts for the (N-1) gaps that sit BETWEEN
-  // cards (not trailing the last one in a row).
-  const { measureProps, width: containerWidth } = useContainerWidth();
-  const { perRow: cardsPerRow, cardWidth } = galleryLayout(containerWidth);
+  // As many cards to a row as fit (galleryLayout), each row's cards sharing
+  // its width by the layout (flex), the last row's padded with empty places
+  // so its cards are as wide as the rest. A window being resized is followed
+  // by the layout alone: the cards are drawn again only when the number in a
+  // row changes, not at each step of the drag.
+  const perRowOf = (w: number) => galleryLayout(w).perRow;
+  const { measureProps, width: containerWidth } = useContainerWidth((from, to) => perRowOf(from) === perRowOf(to));
+  const cardsPerRow = perRowOf(containerWidth);
 
   // Cut (`cut`), only the first cards are drawn.
   const drawn = cut === undefined ? rows : rows.slice(0, cut);
   const ids = drawn.map((r) => r.id);
+  const lines: Row[][] = [];
+  for (let i = 0; i < drawn.length; i += cardsPerRow) lines.push(drawn.slice(i, i + cardsPerRow));
   const cards = useCardKeys({
     move: (id, key) => moveInGrid(ids, cardsPerRow, id, key),
     firstId: ids[0],
@@ -6013,9 +6007,11 @@ export function GalleryView({
         cards.containerProps.ref(el);
         measureProps.ref?.(el);
       }}
-      style={styles.gallery}
+      style={styles.galleryRows}
     >
-      {drawn.map((row) => {
+      {lines.map((line, n) => (
+      <html.div key={n} style={styles.galleryRow}>
+      {line.map((row) => {
         const excerpt = bodyExcerpt(bodies?.[row.id]);
         const hasBody = !!bodies?.[row.id];
         // The lead field's picture: an attached image whose file is found.
@@ -6030,7 +6026,6 @@ export function GalleryView({
             style={[
               styles.galleryCard,
               styles.galleryCardLook,
-              styles.cellWidth(cardWidth),
               tintOf(colorsOf(row).row),
               cards.focusId === row.id && styles.cardFocused,
             ]}
@@ -6077,6 +6072,12 @@ export function GalleryView({
           </html.div>
         );
       })}
+      {/* The last row's empty places, so its cards are as wide as the rest. */}
+      {Array.from({ length: cardsPerRow - line.length }, (_, k) => (
+        <html.div key={`empty${k}`} style={styles.galleryCard} />
+      ))}
+      </html.div>
+      ))}
     </html.div>
   );
 }
