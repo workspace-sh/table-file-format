@@ -117,7 +117,7 @@ export function setSidebar({ tree, active, filesMode, files, shownFile }: Sideba
           open: false,
           note: f.note,
           selected: shownFile?.bundle === line.bundle && shownFile.path === f.path,
-          image: isImageFile(f.name),
+          image: isImageFile(f.name, "macos"),
         };
       }),
     }),
