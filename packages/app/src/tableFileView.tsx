@@ -129,12 +129,14 @@ export interface TableFileViewProps {
   /** Set by the view: saves what waits, then calls `files.written`. For the host to call. */
   flush?: { current: (() => Promise<void>) | null };
   /**
-   * An attachment cell asks for a file (SPEC section 6). The host asks for one in its own way, copies
-   * it into `folder` (the table's attachments/, which may not be there yet) under a name nothing there
-   * has (attachmentName), and answers with that name, which the cell is set to; null when none was
-   * chosen. Absent, or in a file to look at only, an attachment's name is typed.
+   * An attachment cell is edited (SPEC section 6), answered in the host's own way. With nothing in the
+   * cell, the host asks for a file, copies it into `folder` (the table's attachments/, which may not be
+   * there yet) under a name nothing there has (attachmentName), and answers with that name, which the
+   * cell is set to. With `current` (the file the cell names, in `folder`), it shows that file and
+   * offers to replace it or take it out: a new name as before, or "" to empty the cell. Null leaves
+   * the cell as it is. Absent, or in a file to look at only, an attachment's name is typed.
    */
-  attach?: (folder: string) => Promise<string | null>;
+  attach?: (folder: string, current?: string) => Promise<string | null>;
   /**
    * As the file is closed: the files in `folder` (a table's attachments/) that its rows named when it
    * was opened, or that were attached since, and that no row names any more (a cell's file taken out,
@@ -261,15 +263,16 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
   );
 
   // A file for an attachment cell: the host's to choose and copy in, the cell then set to its name.
-  const attachFile = (rowId: string, fieldName: string) => {
+  const attachFile = (rowId: string, fieldName: string, current?: string) => {
     const key = state.active;
     const folder = shown.library.paths[bundleOf(key)];
     if (!attach || folder === undefined) return;
-    attach(joinPath(folder, "tables", tableNameOf(key), "attachments")).then(
+    attach(joinPath(folder, "tables", tableNameOf(key), "attachments"), current).then(
       (name) => {
-        if (!name) return;
-        (attachedSince.current[key] ??= []).push(name);
-        callbacks.onUpdateRow?.(rowId, fieldName, name);
+        if (name === null) return;
+        // "": the file taken out, the cell emptied as Delete empties it.
+        if (name !== "") (attachedSince.current[key] ??= []).push(name);
+        callbacks.onUpdateRow?.(rowId, fieldName, name === "" ? undefined : name);
       },
       (error: unknown) =>
         dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
