@@ -22,8 +22,6 @@ public final class TableInspector: NSObject {
   static var send: ([String: Any]) -> Void = { _ in }
 
   private static weak var item: NSSplitViewItem?
-  /// The pane was opened for the formula being written, so closes when it ends.
-  private static var openedForFormula = false
   private static var watch: NSKeyValueObservation?
 
   /// The pane, closed, for the host's split view.
@@ -63,6 +61,30 @@ public final class TableInspector: NSObject {
     if data != nil, let item, item.isCollapsed {
       item.animator().isCollapsed = false
     }
+    if data == nil { closeIfEmpty() }
+    contentChanged()
+  }
+
+  /// Whether there's anything to show: a form, or a formula being written.
+  /// With nothing, the pane's button has nothing to open (the host's split
+  /// view says so when it validates `toggleInspector:`).
+  @objc public static var hasContent: Bool { form.data != nil || formula.data != nil }
+
+  /// What's in the pane ended (its Done or Cancel, a formula finished): with
+  /// nothing left in it, the pane closes, rather than staying open on "No
+  /// Selection". Looked at once what's under way has run, so a form that
+  /// takes another's place (one ends as the next begins) doesn't close it.
+  private static func closeIfEmpty() {
+    DispatchQueue.main.async {
+      guard !hasContent, let item, !item.isCollapsed else { return }
+      item.animator().isCollapsed = true
+    }
+  }
+
+  /// The window's toolbar told to look again at its buttons: the pane's has
+  /// something to open, or no longer has.
+  private static func contentChanged() {
+    item?.viewController.view.window?.toolbar?.validateVisibleItems()
   }
 
   /// Where what's done in the form goes: the module's event to React.
@@ -88,13 +110,10 @@ public final class TableInspector: NSObject {
     formula.data = data
     if data != nil, let item, item.isCollapsed {
       item.animator().isCollapsed = false
-      openedForFormula = true
     }
-    // Opened for it, the pane goes with the formula, unless a form has come in since.
-    if data == nil, openedForFormula {
-      openedForFormula = false
-      if form.data == nil, let item, !item.isCollapsed { item.animator().isCollapsed = true }
-    }
+    // The formula ended: the pane goes with it, unless a form has come in since.
+    if data == nil { closeIfEmpty() }
+    contentChanged()
     // The edit is over: the keyboard back to the window's content, not the
     // next field that takes it (the toolbar's search).
     if data == nil && hadKeyboard { window?.makeFirstResponder(window?.contentView) }
