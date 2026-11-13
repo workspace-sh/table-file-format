@@ -23,6 +23,7 @@ import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
 import type { Confirm } from "./confirm.ts";
 import { linkedRowAddress, type EmbeddedTableFiles, type EmbedRead, type EmbedShown } from "./embed.ts";
 import { rowTitleFor, sheetReaders } from "./edits.ts";
+import { attachedNames, droppedAttachments } from "./droppedAttachments.ts";
 import type { Library } from "./library.ts";
 import { LayoutView } from "./layoutView.tsx";
 import { useEmbeddedTable } from "./react.ts";
@@ -134,6 +135,13 @@ export interface TableFileViewProps {
    * chosen. Absent, or in a file to look at only, an attachment's name is typed.
    */
   attach?: (folder: string) => Promise<string | null>;
+  /**
+   * As the file is closed: the files in `folder` (a table's attachments/) that its rows named when it
+   * was opened, or that were attached since, and that no row names any more (a cell's file taken out,
+   * or replaced). The host removes them, and packs a single file again. They're kept until then, so
+   * undo brings a cell back with its file.
+   */
+  discardAttachments?: (folder: string, fileNames: string[]) => Promise<void>;
 }
 
 /** How a large table in the file is read: through the platform's index host (createIndexHost). */
@@ -160,7 +168,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -228,13 +236,40 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
   const lookOnly = !!readOnly || fromArchive;
   const questions = ask ?? alertAsk;
 
+  // The files each table's rows named when it was opened, and those attached since: what's
+  // no longer named as the file is closed is the host's to remove (discardAttachments).
+  const namedAtOpen = useRef<Record<string, Set<string> | null> | null>(null);
+  if (!namedAtOpen.current) namedAtOpen.current = Object.fromEntries(Object.entries(state.tables).map(([key, t]) => [key, attachedNames(t)]));
+  const attachedSince = useRef<Record<string, string[]>>({});
+  const closing = useRef({ tables: state.tables, discardAttachments, lookOnly });
+  closing.current = { tables: state.tables, discardAttachments, lookOnly };
+  useEffect(
+    () => () => {
+      const { tables: now, discardAttachments: discard, lookOnly: looking } = closing.current;
+      if (!discard || looking) return;
+      for (const [key, before] of Object.entries(namedAtOpen.current ?? {})) {
+        const folder = shown.library.paths[bundleOf(key)];
+        const table = now[key];
+        if (folder === undefined || !table) continue;
+        const dropped = droppedAttachments(before, attachedSince.current[key] ?? [], attachedNames(table));
+        if (dropped.length > 0) void discard(joinPath(folder, "tables", tableNameOf(key), "attachments"), dropped).catch(() => {});
+      }
+    },
+    // Once, as it goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
   // A file for an attachment cell: the host's to choose and copy in, the cell then set to its name.
   const attachFile = (rowId: string, fieldName: string) => {
-    const folder = shown.library.paths[bundleOf(state.active)];
+    const key = state.active;
+    const folder = shown.library.paths[bundleOf(key)];
     if (!attach || folder === undefined) return;
-    attach(joinPath(folder, "tables", tableNameOf(state.active), "attachments")).then(
+    attach(joinPath(folder, "tables", tableNameOf(key), "attachments")).then(
       (name) => {
-        if (name) callbacks.onUpdateRow?.(rowId, fieldName, name);
+        if (!name) return;
+        (attachedSince.current[key] ??= []).push(name);
+        callbacks.onUpdateRow?.(rowId, fieldName, name);
       },
       (error: unknown) =>
         dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
