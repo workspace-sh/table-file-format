@@ -213,7 +213,8 @@ export type AppAction =
   // Where you are
   | { type: "showTable"; key: string }
   | { type: "showView"; key: string; viewId: string }
-  | { type: "follow"; target: AddressTarget }
+  /** Go to an address. `start`: where the table was opened at, so its Back history starts there. */
+  | { type: "follow"; target: AddressTarget; start?: boolean }
   | { type: "back" }
   | { type: "forward" }
   | { type: "openPage"; rowId: string | null }
@@ -742,7 +743,8 @@ function step(state: AppState, action: AppAction): AppState {
       if (!state.tables[action.key]?.views.some((v) => v.id === action.viewId)) return state;
       return { ...state, active: action.key, viewIds: { ...state.viewIds, [action.key]: action.viewId }, openPage: null };
     case "follow":
-      return state.tables[action.target.key] ? follow(state, action.target) : state;
+      if (!state.tables[action.target.key]) return state;
+      return action.start ? { ...follow(state, action.target), history: NO_HISTORY } : follow(state, action.target);
     case "back":
       return moved(state, goBack(state.history, (a) => addressLive(a, state.tables, state.bundles), placeOf(state)));
     case "forward":

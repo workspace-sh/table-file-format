@@ -34,11 +34,14 @@ describe("a .table opened as a document", () => {
         <TableFile path={bundle} {...(at ? { at } : {})} onNavigation={(n) => (told = n)} />
       </GtkWindow>
     );
-    const { rerender, unmount } = await render(shown());
+    // The address it opens at is where its history starts.
+    const { rerender, unmount } = await render(shown({ address: view("puifj4tbwywzp"), n: 1 }));
     await waitFor(() => expect(told).toBeDefined());
+    await new Promise((r) => setTimeout(r, 300));
     expect(told!.canGoBack).toBe(false);
 
-    await rerender(shown({ address: view("puifj4tbwywzp"), n: 1 }));
+    // One asked for later is a step.
+    await rerender(shown({ address: view("hnmryzi51j6jz"), n: 2 }));
     await waitFor(() => expect(told?.canGoBack).toBe(true));
     expect(told!.canGoForward).toBe(false);
 

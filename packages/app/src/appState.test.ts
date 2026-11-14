@@ -194,6 +194,14 @@ test("history: a reset starts it again", () => {
   assert.deepEqual(s.history, { back: [], at: { address: viewAddress("projects/projects", "juycicwios88m") }, forward: [] });
 });
 
+test("history: the address a table is opened at starts it; one followed later is a step", () => {
+  const opened = run(start(), { type: "follow", target: { key: "crm/deals", openBody: null }, start: true });
+  assert.deepEqual(opened.history, { back: [], at: { address: viewAddress("crm/deals", "6dc54nqbzhf64") }, forward: [] });
+  assert.equal(derive(opened).canGoBack, false);
+  const later = run(opened, { type: "follow", target: { key: "projects/projects", openBody: null } });
+  assert.equal(derive(later).canGoBack, true);
+});
+
 // Rule 3: the file on screen unfolds
 
 test("file unfold: showing a table in a folded file unfolds it; folding it again is the viewer's", () => {

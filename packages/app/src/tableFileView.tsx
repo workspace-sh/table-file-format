@@ -283,7 +283,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
   // New Field, asked of the table's header by count.
   const [newFieldAsk, setNewFieldAsk] = useState(0);
-  const goTo = (address: string) => {
+  const goTo = (address: string, start = false) => {
     const parsed = parseAddress(address);
     if (!parsed) return;
     const key = parsed.tableName ? `${bundleOf(shown.key)}/${parsed.tableName}` : state.active;
@@ -291,11 +291,14 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
     const rowId = parsed.rowId;
     const hasPage = rowId !== undefined && state.tables[key]!.bodies?.[rowId] !== undefined;
     const viewId = parsed.viewId ? (addressedView(state.tables[key]!.views, parsed.viewId)?.id ?? parsed.viewId) : undefined;
-    dispatch({ type: "follow", target: { key, ...(viewId ? { viewId } : {}), openBody: hasPage ? rowId : null } });
+    dispatch({ type: "follow", target: { key, ...(viewId ? { viewId } : {}), openBody: hasPage ? rowId : null }, start });
     if (rowId) setSelect((was) => ({ place: { rowId }, n: (was?.n ?? 0) + 1 }));
   };
+  // The address it opened at starts its history; one asked for later is a step.
+  const opened = useRef(false);
   useEffect(() => {
-    if (at) goTo(at.address);
+    if (at) goTo(at.address, !opened.current);
+    opened.current = true;
     // Each request once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [at?.n]);
