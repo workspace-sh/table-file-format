@@ -58,6 +58,19 @@ export interface TableFileProps {
   onOpenLink?: (address: string) => void;
   /** Ask for a file for an attachment cell: a path, or null for none. The system's file chooser when absent. */
   chooseFile?: () => Promise<string | null>;
+  /**
+   * Where the table's own views can go Back and Forward, for an app with one pair of arrows for its window:
+   * told again as that changes, and told null as the file closes.
+   */
+  onNavigation?: (navigation: TableNavigation | null) => void;
+}
+
+/** The table's own Back and Forward: whether each can go, and going. */
+export interface TableNavigation {
+  canGoBack: boolean;
+  canGoForward: boolean;
+  goBack: () => void;
+  goForward: () => void;
 }
 
 function Opened({
@@ -69,6 +82,7 @@ function Opened({
   openIndex,
   onOpenLink,
   chooseFile,
+  onNavigation,
 }: {
   shown: EmbedShown;
   store: KeyValueStore | null;
@@ -78,6 +92,7 @@ function Opened({
   at: TableFileProps["at"];
   onOpenLink: ((address: string) => void) | undefined;
   chooseFile: TableFileProps["chooseFile"];
+  onNavigation: TableFileProps["onNavigation"];
 }) {
   const kept = useMemo(() => (store ? storeFor(store, shown.library.paths[bundleOf(shown.key)] ?? shown.key) : null), [store, shown]);
   // A large table's rows are in its bundle's index: written back after the rest of the bundle is.
@@ -104,6 +119,18 @@ function Opened({
   // The count says what the index has read, for a large table.
   const derived = indexed.source ? derive(state, { locale, newTableIn: "none", indexedShown: { count: indexed.source.count, inView: indexed.source.inView } }) : drawn;
   const { table, view } = derived;
+
+  const navigate = useRef(onNavigation);
+  navigate.current = onNavigation;
+  useEffect(() => {
+    navigate.current?.({
+      canGoBack: derived.canGoBack,
+      canGoForward: derived.canGoForward,
+      goBack: () => dispatch({ type: "back" }),
+      goForward: () => dispatch({ type: "forward" }),
+    });
+  }, [derived.canGoBack, derived.canGoForward, dispatch]);
+  useEffect(() => () => navigate.current?.(null), []);
   // Read into memory with nowhere to be written (no path): to look at.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
@@ -262,7 +289,7 @@ function Opened({
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile, onNavigation }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -274,7 +301,7 @@ export function TableFile({ path, readOnly = false, locale, at, store, openIndex
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} onNavigation={onNavigation} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>

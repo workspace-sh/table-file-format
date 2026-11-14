@@ -3,7 +3,7 @@
 // They read the file and write edits back, through table-app. Apart from the views (`.`), which hold nothing and touch no file.
 
 export { TableEmbed, EMBED_MAX_HEIGHT, type TableEmbedProps } from "./TableEmbed.js";
-export { TableFile, type TableFileProps } from "./TableFile.js";
+export { TableFile, type TableFileProps, type TableNavigation } from "./TableFile.js";
 export { readEmbed, readTableFile, type EmbedTarget } from "@workspace.sh/table-app/node";
 export type { EmbedProblem, EmbedRead, EmbedShown } from "@workspace.sh/table-app";
 // A table too large to hold in memory, read through its bundle's index (SPEC section 8) by an app on
