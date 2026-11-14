@@ -33,7 +33,7 @@
     "@workspace.sh/table-core": "file:../core"
   },
   "peerDependencies": {
-    "@expo/ui": ">=55.0.0",
+    "@expo/ui": ">=58.0.26",
     "expo-haptics": ">=55.0.0",
     "expo-symbols": ">=55.0.0",
     "react": ">=19.0.0",
