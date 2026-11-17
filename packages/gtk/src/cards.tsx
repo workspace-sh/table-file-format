@@ -384,7 +384,7 @@ export function GalleryView({ view, rows, schema, bodies, onOpenBody, relatedTab
           // every card is the same width and lines up with the one above.
           <GtkBox key={line[0]!.id} spacing={GALLERY_GAP} homogeneous>
             {line.map((row) => {
-              const excerpt = bodyExcerpt(bodies?.[row.id]);
+              const excerpt = bodyExcerpt(bodies?.[row.id], fields[0] ? rowTitle(row, fields[0]) : undefined);
               return (
                 <CardButton key={row.id} tint={tintClass(colorsOf(row).row, dark)} onActivate={onOpenBody ? () => onOpenBody(row.id) : undefined} cardRef={keys.cardRef(row.id)} onKey={keys.onKey(row.id)}>
                   <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={6}>
