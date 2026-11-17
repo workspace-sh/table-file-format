@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -297,4 +297,18 @@ test("what was kept as typed says so in its cell, rather than standing empty (D6
   // A formula that reads, and a value of its type, show as before.
   assert.notEqual(describeCell({ ...unreadable, computed: { expr: "(+ n 1)", dialect: "table-expr-v1" } }, undefined, plain).kind, "error");
   assert.notEqual(describeCell(count, 3, plain).kind, "error");
+});
+
+test("a card's excerpt leaves out a first heading that is the row's title", () => {
+  const page = "# Plugin SDK\n\nA third-party extension surface.";
+  assert.equal(bodyExcerpt(page, "Plugin SDK"), "A third-party extension surface.");
+  // Case and spacing aside, and a closing run of #s.
+  assert.equal(bodyExcerpt("  ## plugin  sdk ##\nMore.", "Plugin SDK"), "More.");
+  // A heading that isn't the title, or no title to go by, stays.
+  assert.equal(bodyExcerpt("# Goals\nShip it.", "Plugin SDK"), "Goals Ship it.");
+  assert.equal(bodyExcerpt(page), "Plugin SDK A third-party extension surface.");
+  // Only a heading: the title, then, and nothing else to show.
+  assert.equal(bodyExcerpt("# Plugin SDK\n", "Plugin SDK"), undefined);
+  // The title as a first line of plain text isn't a heading, and stays.
+  assert.equal(bodyExcerpt("Plugin SDK\nMore.", "Plugin SDK"), "Plugin SDK More.");
 });
