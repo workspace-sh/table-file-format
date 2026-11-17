@@ -18,6 +18,41 @@ const kept = new Map<string, Map<string, Uint8Array>>();
 /** Each kept attachment's object URL, by `bundle/table` key and file name. */
 const urls = new Map<string, Map<string, string>>();
 const listeners = new Set<() => void>();
+/**
+ * The files this browser touched, by bundle and path: attached to a cell
+ * here, or taken out of one or replaced. A download leaves out those no row
+ * names any more; one nobody touched is carried as it is. Kept in this
+ * browser's store, as the rows are.
+ */
+const TOUCHED_KEY = "table-web-touched-attachments";
+const added = new Map<string, Set<string>>(readTouched());
+
+function readTouched(): Array<[string, Set<string>]> {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TOUCHED_KEY) ?? "{}") as Record<string, string[]>;
+    return Object.entries(stored).map(([bundle, paths]) => [bundle, new Set(paths)]);
+  } catch {
+    return [];
+  }
+}
+
+function touch(bundle: string, path: string | undefined): void {
+  if (path === undefined) {
+    added.delete(bundle);
+  } else {
+    added.set(bundle, (added.get(bundle) ?? new Set()).add(path));
+  }
+  try {
+    localStorage.setItem(TOUCHED_KEY, JSON.stringify(Object.fromEntries([...added].map(([b, paths]) => [b, [...paths]]))));
+  } catch {
+    // No store: remembered while the page is open.
+  }
+}
+
+const pathOf = (tableKey: string, name: string) => {
+  const bundle = tableKey.slice(0, tableKey.indexOf("/"));
+  return { bundle, path: `tables/${tableKey.slice(bundle.length + 1)}/attachments/${name}` };
+};
 
 const recordKey = (bundle: string, path: string) => `${bundle}\u0000${path}`;
 
@@ -85,15 +120,22 @@ async function write(change: (store: IDBObjectStore) => void): Promise<void> {
   });
 }
 
+/** A file as IndexedDB keeps it. */
+interface Kept {
+  bundle: string;
+  path: string;
+  bytes: Uint8Array;
+}
+
 let loading: Promise<void> | null = null;
 /** What an earlier visit kept, read once. A file kept since the page opened isn't replaced by it. */
 function load(): Promise<void> {
   loading ??= (async () => {
     const db = await database();
     if (!db) return;
-    const records = await new Promise<Array<{ bundle: string; path: string; bytes: Uint8Array }>>((resolve) => {
+    const records = await new Promise<Kept[]>((resolve) => {
       const request = db.transaction(STORE, "readonly").objectStore(STORE).getAll();
-      request.onsuccess = () => resolve(request.result as Array<{ bundle: string; path: string; bytes: Uint8Array }>);
+      request.onsuccess = () => resolve(request.result as Kept[]);
       request.onerror = () => resolve([]);
     });
     if (records.length === 0) return;
@@ -120,22 +162,36 @@ export function keepFiles(bundle: string, files: Record<string, Uint8Array> | un
   for (const [path, bytes] of entries) setUrl(bundle, path, bytes);
   changed();
   void write((store) => {
-    for (const [path, bytes] of entries) store.put({ bundle, path, bytes }, recordKey(bundle, path));
+    for (const [path, bytes] of entries) store.put({ bundle, path, bytes } satisfies Kept, recordKey(bundle, path));
   });
 }
 
-/** Keep one more file in a bundle: an attachment added to a cell. */
-export function keepFile(bundle: string, path: string, bytes: Uint8Array): void {
+/**
+ * Keep a file attached to a cell: `attachments/<name>` in the table at
+ * `tableKey`. It stays while the file is open, named by a row or not, so
+ * undo brings a cell back with its file.
+ */
+export function keepAttached(tableKey: string, name: string, bytes: Uint8Array): void {
+  const { bundle, path } = pathOf(tableKey, name);
   const files = kept.get(bundle) ?? new Map<string, Uint8Array>();
   files.set(path, bytes);
   kept.set(bundle, files);
+  touch(bundle, path);
   setUrl(bundle, path, bytes);
   changed();
-  void write((store) => store.put({ bundle, path, bytes }, recordKey(bundle, path)));
+  const record: Kept = { bundle, path, bytes };
+  void write((store) => store.put(record, recordKey(bundle, path)));
+}
+
+/** A cell's file taken out or replaced: left out of a download while no row names it. */
+export function touchAttached(tableKey: string, name: string): void {
+  const { bundle, path } = pathOf(tableKey, name);
+  touch(bundle, path);
 }
 
 /** A closed bundle's files go with it. */
 export function forgetFiles(bundle: string): void {
+  if (added.has(bundle)) touch(bundle, undefined);
   const files = kept.get(bundle);
   if (!files) return;
   kept.delete(bundle);
@@ -148,7 +204,7 @@ export function forgetFiles(bundle: string): void {
 
 /** Every bundle's files go: Reset Demo Data. */
 export function forgetAllFiles(): void {
-  for (const bundle of [...kept.keys()]) forgetFiles(bundle);
+  for (const bundle of new Set([...kept.keys(), ...added.keys()])) forgetFiles(bundle);
   void write((store) => store.clear());
 }
 
@@ -165,19 +221,30 @@ export function attachmentsOf(tableKey: string): string[] {
 /**
  * A bundle's files for a single file to carry: those kept here, and the
  * examples' attachments, read from the page. A kept file wins over an
- * example's of the same path.
+ * example's of the same path. A file attached here that no row names any
+ * more (taken out, or replaced) is left out, as the Mac and iPhone remove
+ * it when the file is closed: `named` says which a table's rows name, null
+ * when that can't be told.
  */
-export async function filesForArchive(bundle: string): Promise<Record<string, Uint8Array>> {
+export async function filesForArchive(bundle: string, named: (tableKey: string) => Set<string> | null): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
+  const goes = (path: string) => {
+    const at = added.get(bundle)?.has(path) ? attachmentAt(bundle, path) : null;
+    return !at || named(at.tableKey)?.has(at.name) !== false;
+  };
   const prefix = `${bundle}/`;
   for (const [tableKey, byName] of Object.entries(attachmentUrls)) {
     if (!tableKey.startsWith(prefix)) continue;
     const table = tableKey.slice(prefix.length);
     for (const [name, url] of Object.entries(byName)) {
-      files[`tables/${table}/attachments/${name}`] = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      const path = `tables/${table}/attachments/${name}`;
+      if (goes(path)) files[path] = new Uint8Array(await (await fetch(url)).arrayBuffer());
     }
   }
-  for (const [path, bytes] of kept.get(bundle) ?? []) files[path] = bytes;
+  for (const [path, bytes] of kept.get(bundle) ?? []) {
+    if (goes(path)) files[path] = bytes;
+    else delete files[path];
+  }
   return files;
 }
 
