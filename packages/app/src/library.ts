@@ -115,18 +115,13 @@ export function attachmentName(wanted: string, taken: Iterable<string>): string 
 }
 
 /**
- * How an image is kept once attached (#825): PNG, JPEG and WebP, which
- * every platform's own decoder reads, as they are (null); a photo in
- * another format (HEIC, HEIF, TIFF) as JPEG; any other image (SVG, GIF,
- * AVIF, BMP) as PNG, a GIF's first frame. The name it's kept under is its
- * own with the new extension. Null too for a file that isn't an image,
- * which is attached as it is.
+ * How an image is kept once attached (#825): a photo in a format only
+ * some platforms draw (HEIC, HEIF, TIFF) as JPEG, under its own name with
+ * the new extension. Null for anything else, attached as it is: PNG, JPEG,
+ * WebP, GIF and SVG are drawn everywhere, and a file that isn't an image
+ * isn't drawn at all.
  */
-export function keptImageAs(name: string): { name: string; type: "image/jpeg" | "image/png" } | null {
-  const m = /^(.*)\.([^.]+)$/.exec(name);
-  if (!m) return null;
-  const ext = m[2]!.toLowerCase();
-  if (/^(heic|heif|tiff?)$/.test(ext)) return { name: `${m[1]}.jpg`, type: "image/jpeg" };
-  if (/^(svg|gif|avif|bmp)$/.test(ext)) return { name: `${m[1]}.png`, type: "image/png" };
-  return null;
+export function keptImageAs(name: string): { name: string; type: "image/jpeg" } | null {
+  const m = /^(.*)\.(heic|heif|tiff?)$/i.exec(name);
+  return m ? { name: `${m[1]}.jpg`, type: "image/jpeg" } : null;
 }

@@ -892,13 +892,13 @@ export function App() {
         input.remove();
         if (!file) return;
         try {
-          // An image is kept as PNG, JPEG or WebP (#825): one in another format is converted here.
+          // A HEIC, HEIF or TIFF photo is kept as JPEG (#825), converted here.
           const kept = await keptFile(file);
           const name = attachmentName(kept.name, attachmentsOf(tableKey));
           keepAttached(tableKey, name, kept.bytes);
           if (kept.unread) {
             const ext = file.name.split(".").pop()?.toUpperCase() ?? "";
-            tell(`This browser can't read ${ext} pictures`, `“${file.name}” is attached as it is, so it shows as its name here. Safari, and the Mac and iPhone apps, can show it.`);
+            tell(`“${file.name}” couldn't be read as a ${ext} picture`, "It's attached as it is, so it shows as its name here.");
           }
           if (replacing) touchAttached(tableKey, replacing);
           dispatch({ type: "updateRow", rowId, field, value: name });
