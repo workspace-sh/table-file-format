@@ -936,6 +936,8 @@ const styles = css.create({
   galleryCardLook: {
     display: "flex",
     flexDirection: "column",
+    // As tall as the row's tallest card, so a row's cards line up.
+    flexGrow: 1,
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: {
@@ -946,6 +948,22 @@ const styles = css.create({
   },
   galleryPictureButton: { display: "flex", padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   galleryPicture: { width: "100%", aspectRatio: "16 / 9", objectFit: "cover" },
+  // Where a card's picture would be when it has none: the same size, so every card's heading starts at one height.
+  galleryNoPicture: {
+    width: "100%",
+    aspectRatio: "16 / 9",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingInline: 12,
+    boxSizing: "border-box",
+    borderWidth: 0,
+    fontSize: 13,
+    overflow: "hidden",
+    color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8e8e93" },
+    backgroundColor: { default: "#e5e5ea", "@media (prefers-color-scheme: dark)": "#26262a" },
+  },
+  galleryAddPicture: { cursor: "pointer" },
   galleryBody: { display: "flex", flexDirection: "column", gap: 3, paddingInline: 12, paddingTop: 10, paddingBottom: 12 },
   galleryTitle: {
     fontSize: 14,
@@ -6105,12 +6123,14 @@ export function GalleryView({
       style={[styles.gallery, containerWidth === 0 && styles.unmeasured]}
     >
       {drawn.map((row) => {
-        const excerpt = bodyExcerpt(bodies?.[row.id]);
+        const excerpt = bodyExcerpt(bodies?.[row.id], titleField ? rowTitle(row, titleField) : undefined);
         const hasBody = !!bodies?.[row.id];
         // The lead field's picture: an attached image whose file is found.
         const lead = galleryField ? row[galleryField] : undefined;
         const pictureName = typeof lead === "string" ? lead : "";
-        const picture = galleryField && fieldMap.get(galleryField)?.attachment && pictureName !== "" && isImageFile(pictureName, PLATFORM_OS) ? attachmentUrl(pictureName) : undefined;
+        // A gallery led by a file field: every card keeps a place for its picture.
+        const pictureField = galleryField && fieldMap.get(galleryField)?.attachment ? galleryField : undefined;
+        const picture = pictureField && pictureName !== "" && isImageFile(pictureName, PLATFORM_OS) ? attachmentUrl(pictureName) : undefined;
         return (
           <html.div key={row.id} style={[styles.galleryShare, styles.galleryShareOf(`${100 / cardsPerRow}%`)]}>
           <html.div
@@ -6131,9 +6151,22 @@ export function GalleryView({
               ) : (
                 <AttachmentImage src={picture} name={pictureName} fit="cover" style={styles.galleryPicture} />
               )
+            ) : pictureField ? (
+              // No picture to draw: its place kept, holding the file's name when it isn't an image
+              // (or isn't found), or, empty where files can be attached, a way to add one.
+              onAttachFile ? (
+                <html.button
+                  style={[styles.galleryNoPicture, styles.galleryAddPicture]}
+                  onClick={() => onAttachFile(row.id, pictureField, pictureName || undefined)}
+                >
+                  {pictureName ? <html.span dir="auto">{pictureName}</html.span> : "+ Add picture"}
+                </html.button>
+              ) : (
+                <html.div style={styles.galleryNoPicture}>{pictureName ? <html.span dir="auto">{pictureName}</html.span> : null}</html.div>
+              )
             ) : null}
             <html.div style={styles.galleryBody}>
-              {galleryField && !picture ? <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(row[galleryField])}</html.span> : null}
+              {galleryField && !pictureField ? <html.span dir="auto" style={styles.galleryCardHero}>{formatValue(row[galleryField])}</html.span> : null}
               {/* The first field is the card's heading; the rest sit under it on a quiet line, each as its cell shows it. */}
               {titleField ? <html.span dir="auto" style={styles.galleryTitle}>{rowTitle(row, titleField)}</html.span> : null}
               {metaFields.length > 0 ? (

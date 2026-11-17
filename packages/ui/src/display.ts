@@ -108,14 +108,24 @@ export function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function bodyExcerpt(body: string | undefined, max = 160): string | undefined {
+export function bodyExcerpt(body: string | undefined, title?: string, max = 160): string | undefined {
   if (!body) return undefined;
+  // A page that starts with its row's title as a heading: the card already shows that title.
+  const lead = /^\s*#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/.exec(body);
+  if (lead && title !== undefined && sameWords(lead[1]!, title)) body = body.slice(lead[0].length);
   const stripped = body
     .replace(/^#+\s+/gm, "") // drop leading markdown heading hashes
     .replace(/\s+/g, " ")
     .trim();
+  if (stripped === "") return undefined;
   if (stripped.length <= max) return stripped;
   return stripped.slice(0, max).replace(/\s+\S*$/, "") + "…";
+}
+
+/** Two lines of text that say the same, case and spacing aside. */
+function sameWords(a: string, b: string): boolean {
+  const words = (t: string) => t.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  return words(a) === words(b);
 }
 
 /**
