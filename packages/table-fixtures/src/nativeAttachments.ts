@@ -2,7 +2,7 @@
 // each file bundled as a Metro asset, found with require.context as the web
 // finds them with Vite's import.meta.glob (apps/web/src/loadFixture.ts), and
 // resolved to the URL an image is drawn from. Keys end in
-// crm.table/tables/companies/attachments/co-atlas.svg.
+// crm.table/tables/companies/attachments/co-atlas.png.
 
 import { Image } from "react-native";
 

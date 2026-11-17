@@ -40,7 +40,7 @@ describe("attachments on Linux", () => {
         <GalleryView view={shown.view} rows={shown.rows} schema={companies.schema} />
       </DisplaySettingsProvider>,
     );
-    expect(await screen.findByText("co-atlas.svg")).toBeDefined();
+    expect(await screen.findByText("co-atlas.png")).toBeDefined();
   });
 
   it("a missing file, or one that isn't an image, is shown by name, not drawn", async () => {

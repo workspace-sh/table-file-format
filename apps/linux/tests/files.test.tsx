@@ -81,10 +81,10 @@ describe("the Files side on Linux", () => {
   it("opens attachments/ and shows an attachment as its picture", async () => {
     await openFiles();
     await userEvent.click(await screen.findByText("attachments/"));
-    await userEvent.click(await screen.findByText("co-atlas.svg"));
+    await userEvent.click(await screen.findByText("co-atlas.png"));
     await waitFor(async () => {
       const pictures = (await screen.findAllByRole(Gtk.AccessibleRole.IMG)).filter((w) => w instanceof Gtk.Picture) as Gtk.Picture[];
-      expect(pictures.some((p) => p.getAlternativeText() === "co-atlas.svg" && p.getPaintable() !== null)).toBe(true);
+      expect(pictures.some((p) => p.getAlternativeText() === "co-atlas.png" && p.getPaintable() !== null)).toBe(true);
     });
   });
 });

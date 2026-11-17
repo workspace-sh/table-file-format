@@ -193,7 +193,7 @@ export const crmBundle: ParsedBundle = {
           "customer": true,
           "employees": 240,
           "growth": 0.12,
-          "logo": "co-northwind.svg",
+          "logo": "co-northwind.png",
           "tags": [
             "wholesale",
             "emea"
@@ -208,7 +208,7 @@ export const crmBundle: ParsedBundle = {
           "customer": false,
           "employees": 85,
           "growth": 0.31,
-          "logo": "co-lumen.svg",
+          "logo": "co-lumen.png",
           "tags": [
             "clinics"
           ]
@@ -222,7 +222,7 @@ export const crmBundle: ParsedBundle = {
           "customer": true,
           "employees": 1200,
           "growth": 0.04,
-          "logo": "co-atlas.svg",
+          "logo": "co-atlas.png",
           "tags": [
             "enterprise",
             "emea",
@@ -238,7 +238,7 @@ export const crmBundle: ParsedBundle = {
           "customer": false,
           "employees": 18,
           "growth": 0.55,
-          "logo": "co-quill.svg",
+          "logo": "co-quill.png",
           "tags": [
             "startup"
           ]
@@ -252,7 +252,7 @@ export const crmBundle: ParsedBundle = {
           "customer": true,
           "employees": 430,
           "growth": 0.08,
-          "logo": "co-tidal.svg",
+          "logo": "co-tidal.png",
           "tags": [
             "enterprise",
             "renewables"
@@ -267,7 +267,7 @@ export const crmBundle: ParsedBundle = {
           "customer": false,
           "employees": 9,
           "growth": 0.67,
-          "logo": "co-fern.svg",
+          "logo": "co-fern.png",
           "tags": [
             "startup",
             "agency"
