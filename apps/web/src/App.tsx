@@ -19,7 +19,8 @@ import {
   canInsertAt,
 } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
-import { attachmentUrls, bundles as initialBundles, tables as initialTables } from "./loadFixture";
+import { bundles as initialBundles, tables as initialTables } from "./loadFixture";
+import { attachmentUrl, attachmentsOf, filesForArchive, forgetAllFiles, forgetFiles, keepFiles, useBundleFiles } from "./bundleFiles";
 import {
   addressTarget,
   singleFileName,
@@ -88,10 +89,6 @@ const SAVE_AFTER_MS = 400;
 const INITIAL_SCHEMA_VERSIONS = schemaVersions(initialTables);
 /** The examples as the demo ships them: what's saved is what differs from them (savedFrom). */
 const EXAMPLES = { tables: initialTables, bundles: initialBundles };
-
-// What the Files side of the sidebar lists and opens: each bundle's files
-// as saving writes them, and fixture tables' attachments.
-const attachmentsOf = (key: string) => Object.keys(attachmentUrls[key] ?? {}).sort();
 
 const NO_ROWS: Row[] = [];
 
@@ -520,7 +517,11 @@ export function App() {
         save(browserStore(), savedFrom(tables, bundles, closed, EXAMPLES));
         // A file closed: its history kept here goes. (Its index stays in the browser's storage,
         // as after Reset Demo Data, and is made again if a file of the same name is opened.)
-        for (const bundle of closedIn(edited, bundles)) forgetStoredHistories(browserStore(), bundle);
+        // Its attachments go too.
+        for (const bundle of closedIn(edited, bundles)) {
+          forgetStoredHistories(browserStore(), bundle);
+          forgetFiles(bundle);
+        }
         await saveIndexed.current(tables);
       },
       // What was edited, added to the table's history in this browser; nowhere to keep it, kept to write.
@@ -534,6 +535,8 @@ export function App() {
     browserLocale,
   );
   const { tables, bundles, active: activeTablePath, display, sidebar: sidebarPrefs } = state;
+  // Drawn again as a file's attachments arrive: those an earlier visit kept come after the first draw.
+  useBundleFiles();
   const tell = useCallback((heading: string, body?: string) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }), [dispatch]);
   // Tables held in the index (large ones): read, edited and saved there, in a worker.
   // The view follows the search a step behind what's typed (useSearchBehind).
@@ -581,6 +584,7 @@ export function App() {
     if (ok && asking.on.type === "reset") {
       clearSaved(browserStore());
       clearStoredHistory(browserStore());
+      forgetAllFiles();
     }
     dispatch({ type: "answer", response: ok ? asking.confirm.responses.at(-1)!.id : "cancel" });
   }, [state.asking]);
@@ -612,7 +616,8 @@ export function App() {
       await flush();
       const store = browserStore();
       const going = await withHistories(whole, (key) => (store ? storedHistory(store, key) || undefined : undefined));
-      bytes = await bundleToArchive(bundle, toBundle(going, bundles, bundle));
+      // Its attachments too, and any file no reader knows that it came with (SPEC section 13).
+      bytes = await bundleToArchive(bundle, { ...toBundle(going, bundles, bundle), files: await filesForArchive(bundle) });
     } catch (error) {
       dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       return;
@@ -667,6 +672,7 @@ export function App() {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const opened = isSpreadsheetFile(file.name) ? openSpreadsheet(spreadsheetText(bytes), file.name, Object.keys(bundles)) : await openAnyArchive(bytes);
         const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        keepFiles(opened.key, opened.bundle.files);
         dispatch({ type: "opened", library, skipped: opened.skipped });
       } catch (error) {
         dispatch({ type: "tell", message: { heading: openFailedText(file.name, error) } });
@@ -694,6 +700,7 @@ export function App() {
         const opened = await openAnyArchive(bytes);
         const t2 = performance.now();
         const library = { tables: keepArrivedHistories(browserStore(), fromBundle(opened.key, opened.bundle)), bundles: { [opened.key]: opened.bundle.meta }, paths: {}, problems: {} };
+        keepFiles(opened.key, opened.bundle.files);
         flushSync(() => dispatch({ type: "opened", library, skipped: opened.skipped }));
         const t3 = performance.now();
         return { key: opened.key, fetch: Math.round(t1 - t0), read: Math.round(t2 - t1), show: Math.round(t3 - t2) };
@@ -870,7 +877,7 @@ export function App() {
   // Null when the file's no longer there (its table was deleted): the view shows again, as on macOS.
   const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } | null => {
     const attachment = attachmentAt(file.bundle, file.path);
-    if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrls[attachment.tableKey]?.[attachment.name]) };
+    if (attachment) return { attachment: attachmentShown(attachment.name, attachmentUrl(attachment.tableKey, attachment.name)) };
     const content = fileText(tables, bundles, file.bundle, file.path, historyText);
     return content === undefined ? null : { content };
   };
@@ -964,7 +971,7 @@ export function App() {
 
   return (
     <DisplaySettingsProvider value={shownDisplay}>
-    <AttachmentsProvider value={(file) => attachmentUrls[activeTablePath]?.[file]}>
+    <AttachmentsProvider value={(file) => attachmentUrl(activeTablePath, file)}>
     <html.div style={styles.root}>
       {/* At phone width the view's controls are along the foot of the screen,
           where a thumb reaches: the tables and views, search, Undo, and More
