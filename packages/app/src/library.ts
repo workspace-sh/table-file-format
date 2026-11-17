@@ -113,3 +113,15 @@ export function attachmentName(wanted: string, taken: Iterable<string>): string 
     if (!used.has(next)) return next;
   }
 }
+
+/**
+ * How an image is kept once attached (#825): a photo in a format only
+ * some platforms draw (HEIC, HEIF, TIFF) as JPEG, under its own name with
+ * the new extension. Null for anything else, attached as it is: PNG, JPEG,
+ * WebP, GIF and SVG are drawn everywhere, and a file that isn't an image
+ * isn't drawn at all.
+ */
+export function keptImageAs(name: string): { name: string; type: "image/jpeg" } | null {
+  const m = /^(.*)\.(heic|heif|tiff?)$/i.exec(name);
+  return m ? { name: `${m[1]}.jpg`, type: "image/jpeg" } : null;
+}

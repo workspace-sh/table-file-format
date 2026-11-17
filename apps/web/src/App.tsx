@@ -23,6 +23,7 @@ import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { bundles as initialBundles, tables as initialTables } from "./loadFixture";
 import { attachmentUrl, attachmentsOf, filesForArchive, forgetAllFiles, forgetFiles, keepAttached, keepFiles, touchAttached, useBundleFiles } from "./bundleFiles";
 import { AttachmentViewer } from "./AttachmentViewer";
+import { keptFile } from "./keptImage";
 import {
   addressTarget,
   singleFileName,
@@ -891,8 +892,14 @@ export function App() {
         input.remove();
         if (!file) return;
         try {
-          const name = attachmentName(file.name, attachmentsOf(tableKey));
-          keepAttached(tableKey, name, new Uint8Array(await file.arrayBuffer()));
+          // A HEIC, HEIF or TIFF photo is kept as JPEG (#825), converted here.
+          const kept = await keptFile(file);
+          const name = attachmentName(kept.name, attachmentsOf(tableKey));
+          keepAttached(tableKey, name, kept.bytes);
+          if (kept.unread) {
+            const ext = file.name.split(".").pop()?.toUpperCase() ?? "";
+            tell(`“${file.name}” couldn't be read as a ${ext} picture`, "It's attached as it is, so it shows as its name here.");
+          }
           if (replacing) touchAttached(tableKey, replacing);
           dispatch({ type: "updateRow", rowId, field, value: name });
         } catch (error) {
