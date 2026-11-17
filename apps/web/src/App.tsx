@@ -17,14 +17,18 @@ import {
   ListView,
   TableView,
   canInsertAt,
+  isImageFile,
 } from "@workspace.sh/table-ui";
 import type { PlaceMeasure } from "@workspace.sh/table-ui/shared";
 import { bundles as initialBundles, tables as initialTables } from "./loadFixture";
-import { attachmentUrl, attachmentsOf, filesForArchive, forgetAllFiles, forgetFiles, keepFiles, useBundleFiles } from "./bundleFiles";
+import { attachmentUrl, attachmentsOf, filesForArchive, forgetAllFiles, forgetFiles, keepAttached, keepFiles, touchAttached, useBundleFiles } from "./bundleFiles";
+import { AttachmentViewer } from "./AttachmentViewer";
 import {
   addressTarget,
   singleFileName,
+  attachedNames,
   attachmentAt,
+  attachmentName,
   attachmentShown,
   browserStore,
   bundleOf,
@@ -617,7 +621,7 @@ export function App() {
       const store = browserStore();
       const going = await withHistories(whole, (key) => (store ? storedHistory(store, key) || undefined : undefined));
       // Its attachments too, and any file no reader knows that it came with (SPEC section 13).
-      bytes = await bundleToArchive(bundle, { ...toBundle(going, bundles, bundle), files: await filesForArchive(bundle) });
+      bytes = await bundleToArchive(bundle, { ...toBundle(going, bundles, bundle), files: await filesForArchive(bundle, (key) => (whole[key] ? attachedNames(whole[key]) : null)) });
     } catch (error) {
       dispatch({ type: "tell", message: { heading: exportFailedText(singleFileName(bundle), error) } });
       return;
@@ -873,6 +877,42 @@ export function App() {
 
   // A file of a .table, opened from the Files side of the sidebar, shown
   // in place of the view while that side is.
+  // A cell's file (SPEC section 6), the web's way: an empty cell asks for one in the browser's
+  // file chooser, kept here (bundleFiles) under a name nothing in the table's attachments/ has;
+  // one that names a file opens it (AttachmentViewer), to replace or take out.
+  const [viewing, setViewing] = useState<{ tableKey: string; rowId: string; field: string; name: string } | null>(null);
+  const chooseAttachment = useCallback(
+    (tableKey: string, rowId: string, field: string, replacing?: string) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.style.display = "none";
+      input.addEventListener("change", async () => {
+        const file = input.files?.[0];
+        input.remove();
+        if (!file) return;
+        try {
+          const name = attachmentName(file.name, attachmentsOf(tableKey));
+          keepAttached(tableKey, name, new Uint8Array(await file.arrayBuffer()));
+          if (replacing) touchAttached(tableKey, replacing);
+          dispatch({ type: "updateRow", rowId, field, value: name });
+        } catch (error) {
+          tell("Couldn't attach the file", error instanceof Error ? error.message : String(error));
+        }
+      });
+      document.body.appendChild(input);
+      input.click();
+    },
+    [dispatch, tell],
+  );
+  const onAttachFile = useCallback(
+    (rowId: string, field: string, current?: string) => {
+      if (current) setViewing({ tableKey: activeTablePath, rowId, field, name: current });
+      else chooseAttachment(activeTablePath, rowId, field);
+    },
+    [activeTablePath, chooseAttachment],
+  );
+  const viewingShown = viewing ? attachmentShown(viewing.name, attachmentUrl(viewing.tableKey, viewing.name), (name) => isImageFile(name, "web")) : null;
+
   const shownFile = sidebarPrefs.files ? state.shownFile : null;
   // Null when the file's no longer there (its table was deleted): the view shows again, as on macOS.
   const shownFileContent = (file: ShownFile): { content?: string; attachment?: AttachmentShown } | null => {
@@ -1185,6 +1225,7 @@ export function App() {
                   }
                 : {
                     ...callbacks,
+                    onAttachFile,
                     // The bundle's tables by name, so lookups and rollups reach the ones
                     // they name (D36), within this bundle (D37).
                     relatedTables: relatedTables(tables, bundleOf(activeTablePath)),
@@ -1211,6 +1252,23 @@ export function App() {
         </>
         )}
       </html.div>
+      {viewing && viewingShown && (
+        <AttachmentViewer
+          name={viewing.name}
+          {...("image" in viewingShown ? { image: viewingShown.image } : { note: viewingShown.note })}
+          onReplace={() => {
+            setViewing(null);
+            chooseAttachment(viewing.tableKey, viewing.rowId, viewing.field, viewing.name);
+          }}
+          onRemove={() => {
+            setViewing(null);
+            touchAttached(viewing.tableKey, viewing.name);
+            // Emptied as Delete empties a cell; the file stays while the table is open, so undo brings it back.
+            dispatch({ type: "updateRow", rowId: viewing.rowId, field: viewing.field, value: undefined });
+          }}
+          onClose={() => setViewing(null)}
+        />
+      )}
       {state.openPage && (
         <BodyEditor
           key={`${state.active}/${state.openPage}`}
@@ -1247,6 +1305,7 @@ interface ViewCallbacks {
   onDeleteRow?: (rowId: string) => void;
   onOpenBody?: (rowId: string) => void;
   onUpdateView?: (patch: Partial<View>) => void;
+  onAttachFile?: (rowId: string, fieldName: string, current?: string) => void;
   relatedTables: Record<string, ParsedTable>;
   onOpenRelation: (address: string) => void;
   /** Every row of the table, for formulas that read another row (D34). */
@@ -1296,6 +1355,7 @@ function renderView(
           schema={schema}
           bodies={bodies}
           onOpenBody={cb.onOpenBody}
+          onAttachFile={cb.onAttachFile}
           {...common}
         />
       );
@@ -1332,6 +1392,7 @@ function renderView(
           schema={schema}
           bodies={bodies}
           onUpdateRow={cb.onUpdateRow}
+          onAttachFile={cb.onAttachFile}
           cells={cb.cells}
           onSetCellFormula={cb.onSetCellFormula}
           onSetIteration={cb.onSetIteration}
