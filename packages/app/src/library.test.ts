@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { memoryFs, writeBundleTo } from "@workspace.sh/table-core/io";
 import { tables } from "@workspace.sh/table-fixtures";
-import { attachmentName, attachmentPath, bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
+import { attachmentName, attachmentPath, keptImageAs, bundleKey, openLibrary, writeLibraryBundle } from "./library.ts";
 import { withCell } from "./edits.ts";
 
 test("a library opens over any file system, keys bundles by folder, and saves back", async () => {
@@ -67,4 +67,14 @@ test("a line of a table's rows that couldn't be read is said when the file opens
   const after = (await fs.readText(rowsPath))!;
   assert.ok(after.includes('{"id":"t9","title":"Broken because of a typo"'), "the damaged line is kept");
   assert.ok(after.includes('"title":"Saved"'), "and the edit is saved");
+});
+
+test("an attached image is kept as PNG, JPEG or WebP (#825)", () => {
+  for (const name of ["a.png", "a.jpg", "a.JPEG", "a.webp", "report.pdf", "README"]) assert.equal(keptImageAs(name), null, name);
+  assert.deepEqual(keptImageAs("IMG_0001.HEIC"), { name: "IMG_0001.jpg", type: "image/jpeg" });
+  assert.deepEqual(keptImageAs("scan.tif"), { name: "scan.jpg", type: "image/jpeg" });
+  assert.deepEqual(keptImageAs("photo.heif"), { name: "photo.jpg", type: "image/jpeg" });
+  assert.deepEqual(keptImageAs("logo.svg"), { name: "logo.png", type: "image/png" });
+  assert.deepEqual(keptImageAs("party.gif"), { name: "party.png", type: "image/png" });
+  assert.deepEqual(keptImageAs("my.photo.avif"), { name: "my.photo.png", type: "image/png" });
 });
