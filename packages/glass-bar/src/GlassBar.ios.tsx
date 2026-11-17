@@ -605,11 +605,17 @@ function Capsule(props: Part) {
   const tall = !!expansion?.on;
   // contentShape: the whole capsule takes the tap, not only its text.
   // Expanded, its glass is frosted more heavily, to keep a page of text legible over the table.
+  // So is a search's field, and its results at rest: a query and its count sat over the
+  // document's text, which showed through them.
+  const frost = dark ? "#1C1C1EB8" : "#FFFFFFB8";
+  const searchShown = state.kind === "searching" || (state.kind === "rest" && !!state.query);
   const shape = [
     frame({ maxWidth: Infinity, minHeight: SIZE, alignment: "leading" }),
     tall
-      ? glassEffect({ glass: { variant: "regular", interactive: false, tint: dark ? "#1C1C1EB8" : "#FFFFFFB8" }, shape: "roundedRectangle", cornerRadius: 30 })
-      : glass("roundedRectangle"),
+      ? glassEffect({ glass: { variant: "regular", interactive: false, tint: frost }, shape: "roundedRectangle", cornerRadius: 30 })
+      : searchShown
+        ? glassEffect({ glass: { variant: "regular", interactive: true, tint: frost }, shape: "roundedRectangle", cornerRadius: SIZE / 2 })
+        : glass("roundedRectangle"),
     glassEffectId("capsule", ns),
     contentShape(shapes.roundedRectangle({ cornerRadius: SIZE / 2 })),
   ];
