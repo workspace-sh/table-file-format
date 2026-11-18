@@ -73,8 +73,12 @@ Only `schema.json` and `rows/` are required. A row is a line:
 and a field is an entry in the schema:
 
 ```json
-{ "name": "budget", "type": "number", "format": "currency:USD" }
+{ "name": "budget", "type": "number", "display": "currency:USD" }
 ```
+
+`format` is Table Schema's (`email`, `uri` and so on), so a table's
+`schema.json` beside its CSV export reads as a Table Schema; how a value
+is shown is `display`, and a field's choices are `categories` (D68).
 
 The whole format is in [docs/SPEC.md](docs/SPEC.md), and the reasons
 behind it in [docs/DECISIONS.md](docs/DECISIONS.md).
