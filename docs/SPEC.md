@@ -366,6 +366,20 @@ number. Converting is a formula over a rate kept as data:
 honoured by the body editor), `url`, `email`, `phone`. The last three
 are link-rendering hints; the stored value is the raw target.
 
+**Phone numbers** (`format: "phone"`). A writer SHOULD store a number in
+international form, `+` and digits only (E.164: `+442079460000`), with
+an extension after `;ext=` as a `tel:` URI writes it (RFC 3966:
+`+442079460000;ext=204`). An app helps the person typing rather than
+asking them to know this: it formats the number as they type, for the
+region they're in; adds that region's country code to a number typed
+without one; and accepts digits, spaces, `+`, `(`, `)`, `-` and an
+extension (`ext.`, `x`, `#`), but not letters. It shows a stored
+number spaced for the reader's region (`+44 20 7946 0000 ext. 204`)
+and calls it as `tel:+442079460000;ext=204`. A number that can't be
+made international, such as a short code (`999`, `111`), is stored as
+typed, digits only. A value written by another tool that doesn't fit
+is shown as it is, as plain text, and kept.
+
 ### Computed fields
 
 A field MAY carry a `computed` declaration for a formula whose result
