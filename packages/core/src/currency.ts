@@ -11,10 +11,11 @@
 import { formulaFields } from "./formula.js";
 import { parseExpr } from "./expr.js";
 import type { Field, TableSchema } from "./types.js";
+import { displayOf } from "./fieldForm.js";
 
 /** The ISO 4217 code a field's own format names, if it names one. */
-export function currencyOf(field: Pick<Field, "format"> | undefined): string | undefined {
-  const f = field?.format;
+export function currencyOf(field: Pick<Field, "format" | "display"> | undefined): string | undefined {
+  const f = displayOf(field);
   // `currency:USD:parens` is still dollars: `:parens` says only how a negative looks (D53).
   return f?.startsWith("currency:") ? f.slice("currency:".length).split(":")[0]!.toUpperCase() : undefined;
 }
@@ -34,7 +35,7 @@ export function inputCurrency(field: Field, schema: TableSchema, seen: Set<strin
   for (const name of formulaFields(parsed.expr)) {
     const input = schema.fields.find((f) => f.name === name);
     if (!input) continue;
-    const code = currencyOf(input) ?? (input.computed && !input.format ? inputCurrency(input, schema, seen) : undefined);
+    const code = currencyOf(input) ?? (input.computed && !displayOf(input) ? inputCurrency(input, schema, seen) : undefined);
     if (code) codes.add(code);
   }
   if (codes.size === 0) return undefined;
@@ -47,7 +48,8 @@ export function inputCurrency(field: Field, schema: TableSchema, seen: Set<strin
  * share one, so a formula over dollars is shown in dollars.
  */
 export function effectiveFormat(field: Field, schema: TableSchema): string | undefined {
-  if (field.format || !field.computed) return field.format;
+  const own = displayOf(field);
+  if (own || !field.computed) return own;
   const code = inputCurrency(field, schema);
   return code && code !== "mixed" ? `currency:${code}` : undefined;
 }

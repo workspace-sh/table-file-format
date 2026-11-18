@@ -8,6 +8,7 @@ import type { BundleMeta, CellFormula, ParsedBundle, ParsedTable, Row, TableMeta
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
 import { withFieldIds } from "./fieldIds.js";
+import { canonicalSchema } from "./fieldForm.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
 import { BundleEntry, TableEntry, bodyFileName, rowIdOfBodyFile, rowTitleIn, tablePath } from "./layout.js";
@@ -195,7 +196,7 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const schemaRaw = await fs.readText(schemaPath);
   if (schemaRaw === null) throw new Error(`${schemaPath}: no ${TableEntry.schema}, so this isn't a table`);
   // Every field has its id (D62): one written without takes the id its name derives.
-  const schema = withFieldIds(JSON.parse(schemaRaw) as TableSchema);
+  const schema = canonicalSchema(withFieldIds(JSON.parse(schemaRaw) as TableSchema));
 
   const later = options.rows === "later";
   const elsewhere = !later && (await options.rowsElsewhere?.(dir)) === true;
@@ -406,7 +407,7 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   };
 
   try {
-    await stage(joinPath(dir, TableEntry.schema), pretty(withFieldIds(input.schema)));
+    await stage(joinPath(dir, TableEntry.schema), pretty(canonicalSchema(withFieldIds(input.schema))));
     // Rows held in the index aren't here to write: whoever holds them saves them.
     // Rows not read yet (`loading`) aren't here to write either.
     if (!("indexed" in input && input.indexed) && !("loading" in input && input.loading)) {

@@ -2,6 +2,7 @@ export * from "./types.js";
 export { sourceOf } from "./source.js";
 export { newId, newFieldId, idNumber, ID_ALPHABET, ID_LENGTH, FIELD_ID_LENGTH, newViewId, VIEW_ID_LENGTH } from "./id.js";
 export { withFieldIds, addressedField, derivedFieldId } from "./fieldIds.js";
+export { canonicalField, canonicalSchema, categoriesPatch, displayOf, displayPatch, hasChoices, rawChoices } from "./fieldForm.js";
 export { renameField, renameProblem } from "./renameField.js";
 export { newTable, newBundle } from "./new-table.js";
 export { isTableName, tableOrder, orderedTables } from "./bundle.js";
