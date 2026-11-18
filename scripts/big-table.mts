@@ -53,23 +53,21 @@ const schema: TableSchema = {
     {
       name: "stage",
       type: "string",
-      constraints: {
-        enum: [
-          { value: "lead", color: "gray" },
-          { value: "qualified", color: "blue" },
-          { value: "proposal", color: "purple" },
-          { value: "negotiation", color: "orange" },
-          { value: "won", color: "green" },
-          { value: "lost", color: "red" },
-        ],
-      },
+      categories: [
+        { value: "lead", color: "gray" },
+        { value: "qualified", color: "blue" },
+        { value: "proposal", color: "purple" },
+        { value: "negotiation", color: "orange" },
+        { value: "won", color: "green" },
+        { value: "lost", color: "red" },
+      ],
     },
-    { name: "amount", type: "number", format: "currency" },
+    { name: "amount", type: "number", display: "currency" },
     { name: "probability", type: "number" },
     { name: "owner", type: "string" },
     { name: "close_date", type: "date" },
     { name: "note", type: "string" },
-    { name: "weighted", type: "number", format: "currency", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
+    { name: "weighted", type: "number", display: "currency", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
   ],
 };
 

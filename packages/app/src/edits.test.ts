@@ -74,11 +74,11 @@ test("a choice is added once, whether the schema writes it as a string or an obj
   const deals = tables["deals"]!;
   assert.equal(withChoice(deals, "stage", "won"), deals);
   const status = tasks.schema.fields.find((f) => f.name === "status")!;
-  const first = status.constraints!.enum![0]!;
+  const first = (status.categories ?? status.constraints!.enum!)[0]!;
   const existing = typeof first === "string" ? first : first.value;
   assert.equal(withChoice(tasks, "status", existing), tasks);
   const added = withChoice(tasks, "status", "blocked");
-  assert.equal(added.schema.fields.find((f) => f.name === "status")!.constraints!.enum!.length, status.constraints!.enum!.length + 1);
+  assert.equal(added.schema.fields.find((f) => f.name === "status")!.categories!.length, (status.categories ?? status.constraints!.enum!).length + 1);
   assert.equal(version(added), version(tasks) + 1);
 });
 
@@ -172,7 +172,7 @@ test("removing a choice takes it from the field and from every row that held it"
   assert.ok(held > 0);
   assert.ok(removingChoice(companies, "industry", "Design"));
   const without = withoutChoice(companies, "industry", "Design");
-  const values = (without.schema.fields.find((f) => f.name === "industry")!.constraints!.enum ?? []).map((o) => (typeof o === "string" ? o : o.value));
+  const values = (without.schema.fields.find((f) => f.name === "industry")!.categories ?? []).map((o) => (typeof o === "string" ? o : o.value));
   assert.ok(!values.includes("Design"));
   assert.equal(rowsHolding(without, "industry", "Design"), 0);
   assert.ok(version(without) > version(companies));

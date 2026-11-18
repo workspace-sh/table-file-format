@@ -32,14 +32,12 @@ export const projectsBundle: ParsedBundle = {
             "id": "ct5d6ndk38c8d",
             "name": "status",
             "type": "string",
-            "constraints": {
-              "enum": [
-                "planning",
-                "active",
-                "on-hold",
-                "done"
-              ]
-            }
+            "categories": [
+              "planning",
+              "active",
+              "on-hold",
+              "done"
+            ]
           },
           {
             "id": "yr8ozrtbxgqew",
@@ -50,7 +48,7 @@ export const projectsBundle: ParsedBundle = {
             "id": "pio7bjir814ui",
             "name": "budget",
             "type": "number",
-            "format": "currency:USD"
+            "display": "currency:USD"
           },
           {
             "id": "eh7e4khtyxy3q",
@@ -61,7 +59,7 @@ export const projectsBundle: ParsedBundle = {
             "id": "ej3mhf9y1u1bq",
             "name": "summary",
             "type": "string",
-            "format": "markdown"
+            "display": "markdown"
           },
           {
             "id": "q7pgmobychcd7",
@@ -407,13 +405,11 @@ export const projectsBundle: ParsedBundle = {
             "id": "ct5d6ndk38c8d",
             "name": "status",
             "type": "string",
-            "constraints": {
-              "enum": [
-                "todo",
-                "doing",
-                "done"
-              ]
-            }
+            "categories": [
+              "todo",
+              "doing",
+              "done"
+            ]
           },
           {
             "id": "nqhx3hc8c9a4i",

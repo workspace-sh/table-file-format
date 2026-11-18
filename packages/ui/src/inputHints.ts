@@ -5,6 +5,7 @@
 // friends on the web, React Native's keyboard types, GTK's input purpose.
 // Free of any renderer, as shared.ts.
 
+import { displayOf } from "@workspace.sh/table-core";
 import type { Field } from "@workspace.sh/table-core";
 
 export type InputHintKind =
@@ -50,9 +51,9 @@ function hintKind(field: Field | undefined): InputHintKind {
     case "time":
       return "time";
     case "string":
-      if (field.format === "email") return "email";
-      if (field.format === "url") return "url";
-      if (field.format === "phone") return "phone";
+      if (displayOf(field) === "email") return "email";
+      if (displayOf(field) === "url") return "url";
+      if (displayOf(field) === "phone") return "phone";
       return "text";
     default:
       return "text";

@@ -4,6 +4,12 @@
 // the same thing, and bumps the schema version the same way, everywhere.
 
 import type { Field, ParsedTable, Row, TableSchema, View } from "@workspace.sh/table-core";
+import { categoriesPatch, rawChoices } from "@workspace.sh/table-core";
+
+/** A field with its `undefined` keys removed, as a written patch leaves it. */
+function withoutUndefined(field: Field): Field {
+  return Object.fromEntries(Object.entries(field).filter(([, v]) => v !== undefined)) as Field;
+}
 import { isSheet, newFieldId, renameProblem, renamesInIndex } from "@workspace.sh/table-core";
 import { insertRowAt, sheetDependents } from "@workspace.sh/table-ui/shared";
 
@@ -121,11 +127,9 @@ export function withFieldPatch(table: ParsedTable, name: string, patch: Partial<
 /** A new choice for a field. Unchanged when it already has it. */
 export function withChoice(table: ParsedTable, name: string, value: string): ParsedTable {
   const field = table.schema.fields.find((f) => f.name === name);
-  const existing = field?.constraints?.enum ?? [];
+  const existing = rawChoices(field) ?? [];
   if (!field || existing.some((o) => (typeof o === "string" ? o : o.value) === value)) return table;
-  const fields = table.schema.fields.map((f) =>
-    f.name === name ? { ...f, constraints: { ...(f.constraints ?? {}), enum: [...existing, value] } } : f,
-  );
+  const fields = table.schema.fields.map((f) => (f.name === name ? withoutUndefined({ ...f, ...categoriesPatch(f, [...existing, value]) }) : f));
   return { ...table, schema: bumpSchemaVersion({ ...table.schema, fields }) };
 }
 
@@ -135,10 +139,10 @@ export function withChoice(table: ParsedTable, name: string, value: string): Par
  */
 export function withoutChoice(table: ParsedTable, name: string, value: string): ParsedTable {
   const field = table.schema.fields.find((f) => f.name === name);
-  const existing = field?.constraints?.enum ?? [];
+  const existing = rawChoices(field) ?? [];
   const kept = existing.filter((o) => (typeof o === "string" ? o : o.value) !== value);
   if (!field || kept.length === existing.length) return table;
-  const fields = table.schema.fields.map((f) => (f.name === name ? { ...f, constraints: { ...(f.constraints ?? {}), enum: kept } } : f));
+  const fields = table.schema.fields.map((f) => (f.name === name ? withoutUndefined({ ...f, ...categoriesPatch(f, kept) }) : f));
   const rows = table.rows.map((r) => {
     const held = r[name];
     if (held === value) return withoutKey(r, name);
@@ -238,7 +242,7 @@ function withoutKey<T extends Record<string, unknown>>(obj: T, key: string): T {
 }
 
 function enumLabel(field: Field | undefined, value: string): string {
-  const o = (field?.constraints?.enum ?? []).find((e) => (typeof e === "string" ? e : e.value) === value);
+  const o = (rawChoices(field) ?? []).find((e) => (typeof e === "string" ? e : e.value) === value);
   return typeof o === "object" && o?.label ? o.label : value;
 }
 
