@@ -62,8 +62,7 @@ tables is valid and empty.
 **Table names.** The directory name is the table's **name**. Relations
 (section 2), addresses (section 10) and the manifest's `tables` list
 (section 5) all use it. A name MUST be non-empty, MUST NOT contain
-`/` or `\`, and MUST NOT start with `.` or `workspace:` (reserved for
-tables an app provides; see `relation`, section 2). Names SHOULD be lowercase
+`/` or `\`, and MUST NOT start with `.`. Names SHOULD be lowercase
 words joined by `-` or `_` (`companies`, `household-budget`). A
 table's display name is its own `meta.json` `title`, which can change
 freely; the name stays, as a field's `name` does (section 2, "Schema
@@ -328,14 +327,6 @@ labels apply to each item.
   workspace's other folders) only after this. Only the file beside it
   is read for this: that file's own relations to further files are
   resolved from that file, when it is open in its own right (D3, D47).
-  A name starting `workspace:` is not a table in any file: it names a
-  table the hosting app provides. `workspace:members` is a workspace's
-  members, one row per person, whose `id` is the person's `did:key`
-  (workspace-protocol, `docs/permissions/roles-and-sharing.md`). A
-  reader without that app keeps such values and shows them as
-  unresolved, as for any relation it can't resolve. No table may be
-  named with that prefix (section 1), so these names never meet a real
-  table.
 - `deprecated: true` — the field is kept for backwards compatibility
   but should not be shown in new UIs.
 - `computed: { expr, dialect }` — a formula; see "Computed fields".
