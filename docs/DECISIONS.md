@@ -1598,3 +1598,22 @@ one exists for every format worth naming. The same idea as a TextBundle's
 `sourceURL` in its `info.json`, so a document and a table copied from the
 web carry their origin the same way.
 
+## D67: borrowed from Data Package, under its names
+
+Where Frictionless Data Package v2 and its Table Schema already name
+something a table needs, `.table` takes it under the same name and
+meaning: the `yearmonth` type, the `exclusiveMinimum` and
+`exclusiveMaximum` constraints, `uniqueKeys`, `missingValues`, a
+field's `example` and `rdfType`, and the bundle's `licenses`,
+`contributors`, `keywords` and `version`.
+
+**Why:** D9 still holds; `.table` is not a Frictionless superset and
+keeps its own `format`, `enum` and `relation`. But where a standard
+already has the word, inventing another only makes the formats
+further apart for nothing. Each of these is something a table needs
+anyway (a combination that must be unique, a licence, a column's
+meaning in a shared vocabulary), and taking Table Schema's names keeps
+a converter to and from Data Package close to a copy.
+
+**Status:** specified; table-core and the apps don't read or check
+them yet (#836).

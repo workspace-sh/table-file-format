@@ -26,7 +26,30 @@
       },
       "required": ["max", "change"]
     },
-    "source": { "$ref": "#/$defs/source" }
+    "source": { "$ref": "#/$defs/source" },
+    "licenses": {
+      "type": "array",
+      "description": "Data Package's licenses (DECISIONS D67). name: an SPDX identifier, as CC-BY-4.0.",
+      "items": {
+        "type": "object",
+        "properties": { "name": { "type": "string" }, "path": { "type": "string" }, "title": { "type": "string" } }
+      }
+    },
+    "contributors": {
+      "type": "array",
+      "description": "Data Package's contributors (DECISIONS D67).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "email": { "type": "string" },
+          "path": { "type": "string" },
+          "roles": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "keywords": { "type": "array", "items": { "type": "string" }, "description": "Data Package's keywords (DECISIONS D67)." },
+    "version": { "type": "string", "description": "Data Package's version (DECISIONS D67)." }
   },
   "$defs": {
     "timestamp": {
