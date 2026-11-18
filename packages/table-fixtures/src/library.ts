@@ -35,18 +35,16 @@ export const libraryBundle: ParsedBundle = {
             "id": "pkhqf1sx4nwz8",
             "name": "genre",
             "type": "string",
-            "constraints": {
-              "enum": [
-                "fiction",
-                "history",
-                "science",
-                "poetry",
-                "biography",
-                "philosophy",
-                "travel",
-                "design"
-              ]
-            }
+            "categories": [
+              "fiction",
+              "history",
+              "science",
+              "poetry",
+              "biography",
+              "philosophy",
+              "travel",
+              "design"
+            ]
           },
           {
             "id": "yhazecfsxqunw",
@@ -69,7 +67,7 @@ export const libraryBundle: ParsedBundle = {
             "id": "xiyakxmw7ii5m",
             "name": "price",
             "type": "number",
-            "format": "currency:GBP"
+            "display": "currency:GBP"
           },
           {
             "id": "86pc86xy4iexg",

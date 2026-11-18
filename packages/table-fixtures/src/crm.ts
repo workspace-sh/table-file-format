@@ -46,7 +46,7 @@ export const crmBundle: ParsedBundle = {
             "name": "website",
             "type": "string",
             "title": "Website",
-            "format": "url"
+            "format": "uri"
           },
           {
             "id": "cbs3num9xuqbe",
@@ -54,34 +54,32 @@ export const crmBundle: ParsedBundle = {
             "type": "string",
             "title": "Industry",
             "icon": "🏷️",
-            "constraints": {
-              "enum": [
-                {
-                  "value": "Retail",
-                  "color": "orange"
-                },
-                {
-                  "value": "Healthcare",
-                  "color": "green"
-                },
-                {
-                  "value": "Logistics",
-                  "color": "blue"
-                },
-                {
-                  "value": "Media",
-                  "color": "purple"
-                },
-                {
-                  "value": "Energy",
-                  "color": "yellow"
-                },
-                {
-                  "value": "Design",
-                  "color": "pink"
-                }
-              ]
-            }
+            "categories": [
+              {
+                "value": "Retail",
+                "color": "orange"
+              },
+              {
+                "value": "Healthcare",
+                "color": "green"
+              },
+              {
+                "value": "Logistics",
+                "color": "blue"
+              },
+              {
+                "value": "Media",
+                "color": "purple"
+              },
+              {
+                "value": "Energy",
+                "color": "yellow"
+              },
+              {
+                "value": "Design",
+                "color": "pink"
+              }
+            ]
           },
           {
             "id": "8kggyzjcrbp75",
@@ -104,8 +102,8 @@ export const crmBundle: ParsedBundle = {
             "name": "growth",
             "type": "number",
             "title": "Growth",
-            "format": "percent",
-            "description": "Headcount growth over the last year."
+            "description": "Headcount growth over the last year.",
+            "display": "percent"
           },
           {
             "id": "pmiidt4zkgr5y",
@@ -120,54 +118,52 @@ export const crmBundle: ParsedBundle = {
             "type": "array",
             "title": "Tags",
             "description": "A multi-select: any number of these tags (D35).",
-            "constraints": {
-              "enum": [
-                {
-                  "value": "enterprise",
-                  "color": "blue"
-                },
-                {
-                  "value": "startup",
-                  "color": "green"
-                },
-                {
-                  "value": "agency",
-                  "color": "pink"
-                },
-                {
-                  "value": "emea",
-                  "color": "purple"
-                },
-                {
-                  "value": "priority",
-                  "color": "red"
-                },
-                {
-                  "value": "wholesale",
-                  "color": "orange"
-                },
-                {
-                  "value": "clinics",
-                  "color": "yellow"
-                },
-                {
-                  "value": "renewables",
-                  "color": "gray"
-                }
-              ]
-            }
+            "categories": [
+              {
+                "value": "enterprise",
+                "color": "blue"
+              },
+              {
+                "value": "startup",
+                "color": "green"
+              },
+              {
+                "value": "agency",
+                "color": "pink"
+              },
+              {
+                "value": "emea",
+                "color": "purple"
+              },
+              {
+                "value": "priority",
+                "color": "red"
+              },
+              {
+                "value": "wholesale",
+                "color": "orange"
+              },
+              {
+                "value": "clinics",
+                "color": "yellow"
+              },
+              {
+                "value": "renewables",
+                "color": "gray"
+              }
+            ]
           },
           {
             "id": "c84gaouo69mpf",
             "name": "open_pipeline",
             "type": "number",
             "title": "Open pipeline",
-            "format": "currency:USD",
             "description": "The sum of this company's open deals: a rollup over the deals that link here (D36).",
             "computed": {
               "expr": "(sum (linked \"deals\" \"company\" \"open_value\"))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:USD"
           },
           {
             "id": "jx6u8xw3y4u1a",
@@ -396,8 +392,8 @@ export const crmBundle: ParsedBundle = {
             "name": "phone",
             "type": "string",
             "title": "Phone",
-            "format": "phone",
-            "description": "Stored as text: a phone number is not a number."
+            "description": "Stored as text: a phone number is not a number.",
+            "display": "phone"
           },
           {
             "id": "8hq1hqqttndpp",
@@ -410,7 +406,7 @@ export const crmBundle: ParsedBundle = {
             "name": "last_contacted",
             "type": "datetime",
             "title": "Last contacted",
-            "format": "relative"
+            "display": "relative"
           }
         ],
         "schema-version": 1
@@ -579,39 +575,39 @@ export const crmBundle: ParsedBundle = {
             "name": "stage",
             "type": "string",
             "title": "Stage",
+            "categories": [
+              {
+                "value": "lead",
+                "label": "Lead",
+                "color": "gray"
+              },
+              {
+                "value": "qualified",
+                "label": "Qualified",
+                "color": "blue"
+              },
+              {
+                "value": "proposal",
+                "label": "Proposal",
+                "color": "purple"
+              },
+              {
+                "value": "negotiation",
+                "label": "Negotiation",
+                "color": "orange"
+              },
+              {
+                "value": "won",
+                "label": "Won",
+                "color": "green"
+              },
+              {
+                "value": "lost",
+                "label": "Lost",
+                "color": "red"
+              }
+            ],
             "constraints": {
-              "enum": [
-                {
-                  "value": "lead",
-                  "label": "Lead",
-                  "color": "gray"
-                },
-                {
-                  "value": "qualified",
-                  "label": "Qualified",
-                  "color": "blue"
-                },
-                {
-                  "value": "proposal",
-                  "label": "Proposal",
-                  "color": "purple"
-                },
-                {
-                  "value": "negotiation",
-                  "label": "Negotiation",
-                  "color": "orange"
-                },
-                {
-                  "value": "won",
-                  "label": "Won",
-                  "color": "green"
-                },
-                {
-                  "value": "lost",
-                  "label": "Lost",
-                  "color": "red"
-                }
-              ],
               "required": true
             }
           },
@@ -620,19 +616,19 @@ export const crmBundle: ParsedBundle = {
             "name": "value",
             "type": "number",
             "title": "Value",
-            "format": "currency:USD",
-            "align": "end"
+            "align": "end",
+            "display": "currency:USD"
           },
           {
             "id": "gqhzunramagty",
             "name": "probability",
             "type": "number",
             "title": "Probability",
-            "format": "percent",
             "constraints": {
               "minimum": 0,
               "maximum": 1
-            }
+            },
+            "display": "percent"
           },
           {
             "id": "x638q3pmppoye",
@@ -685,11 +681,11 @@ export const crmBundle: ParsedBundle = {
             "type": "number",
             "title": "Company pipeline",
             "description": "The company's whole open pipeline: its rollup of every open deal, this one included (#123).",
-            "format": "currency:USD",
             "computed": {
               "expr": "(related \"company\" \"open_pipeline\")",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:USD"
           }
         ],
         "schema-version": 1

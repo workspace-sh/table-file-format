@@ -1,4 +1,5 @@
 import type { Field } from "./types.js";
+import { displayOf } from "./fieldForm.js";
 
 /**
  * Display formatting for a field value from the closed `format`
@@ -35,7 +36,7 @@ export interface DisplayOptions {
 export function formatValue(field: Field | undefined, value: unknown, options: DisplayOptions = {}): string {
   if (value === undefined || value === null || value === "") return "";
   const isDate = field?.type === "date" || field?.type === "datetime";
-  const format = field?.format ?? (isDate ? options.dateFormat : undefined);
+  const format = displayOf(field) ?? (isDate ? options.dateFormat : undefined);
   if (!format) return String(value);
 
   switch (field!.type) {
@@ -61,12 +62,13 @@ export function stringFormatKind(
   field: Field | undefined,
 ): "plain" | "markdown" | "url" | "email" | "phone" {
   if (field?.type !== "string") return "plain";
-  switch (field.format) {
+  const shown = displayOf(field);
+  switch (shown) {
     case "markdown":
     case "url":
     case "email":
     case "phone":
-      return field.format;
+      return shown;
     default:
       return "plain";
   }

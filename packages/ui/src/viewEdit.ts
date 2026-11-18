@@ -3,6 +3,7 @@
 // use, how a typed filter value becomes a stored one, and which field a
 // layout starts from. Views are SPEC section 4.
 
+import { hasChoices } from "@workspace.sh/table-core";
 import { enumOptions, type EnumColor, type Field, type FieldType, type FilterOperator, type TableSchema, type View, type ViewColorRule, type ViewFilter, type ViewLayout, type ViewSort } from "@workspace.sh/table-core";
 
 export const OPERATOR_LABELS: Record<FilterOperator, string> = {
@@ -36,7 +37,7 @@ export function operatorsFor(field: Field | undefined): FilterOperator[] {
   if (NUMERIC.includes(type) || DATES.includes(type)) {
     return ["eq", "neq", "gt", "gte", "lt", "lte", "empty", "not_empty", "in", "not_in"];
   }
-  if (field?.constraints?.enum) return ["eq", "neq", "in", "not_in", "empty", "not_empty"];
+  if (hasChoices(field)) return ["eq", "neq", "in", "not_in", "empty", "not_empty"];
   return ["eq", "neq", "contains", "not_contains", "starts_with", "ends_with", "empty", "not_empty", "in", "not_in"];
 }
 
@@ -89,7 +90,7 @@ export function filterValueText(value: unknown): string {
 export function layoutFieldFor(layout: ViewLayout, schema: TableSchema): string | null {
   const live = schema.fields.filter((f) => !f.deprecated);
   if (layout === "board") {
-    return (live.find((f) => f.constraints?.enum) ?? live.find((f) => f.type === "string"))?.name ?? null;
+    return (live.find((f) => hasChoices(f)) ?? live.find((f) => f.type === "string"))?.name ?? null;
   }
   if (layout === "calendar") return live.find((f) => f.type === "date" || f.type === "datetime")?.name ?? null;
   return null;

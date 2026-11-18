@@ -88,14 +88,26 @@ export interface Field {
   /** Hover-help / accessibility text. Display-only, passthrough. */
   description?: string;
   /**
-   * Display-semantic hint from a closed vocabulary (SPEC "Field
-   * format"). Interpretation depends on `type`: number
-   * (`decimal:2`, `percent`, `currency:USD`, …), date (`short`,
-   * `long`, `relative`, …), string (`markdown`, `url`, `email`, …).
-   * Stored values stay raw; `format` only declares the semantic.
-   * Render with `formatValue()`; unknown formats fall back to plain.
+   * How the stored value is written, as Table Schema means it (D68):
+   * `email`, `uri`, `uuid` or `binary` for a string, `default` otherwise.
+   * A file written before D68 may hold a display token here; read a
+   * field's display with `displayOf()`, never this.
    */
   format?: string;
+  /**
+   * How the value is shown, from a closed vocabulary (SPEC "Field
+   * display", D68): number (`decimal:2`, `percent`, `currency:USD`, …),
+   * date (`short`, `long`, `relative`, …), string (`markdown`, `phone`).
+   * Stored values stay raw. Read with `displayOf()`, render with
+   * `formatValue()`; unknown tokens fall back to plain.
+   */
+  display?: string;
+  /**
+   * The choices the field offers (D68): bare values or `EnumOption`s with
+   * a label and colour. A file written before D68 keeps them in
+   * `constraints.enum`; read either with `enumOptions()`.
+   */
+  categories?: (string | EnumOption)[];
   /**
    * Emoji or symbolic name (`"calendar"`, `"money"`) shown beside the
    * field title. Display-only; consumers MAY ignore.
@@ -142,7 +154,7 @@ export interface Field {
  * should go through so both on-disk forms behave identically.
  */
 export function enumOptions(field: Field | undefined): EnumOption[] {
-  const raw = field?.constraints?.enum;
+  const raw = Array.isArray(field?.categories) ? field.categories : field?.constraints?.enum;
   if (!raw) return [];
   return raw.map((e) => (typeof e === "string" ? { value: e } : e));
 }

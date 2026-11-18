@@ -40,31 +40,32 @@ test("a number's format picker: currency keeps its code, decimal its places", ()
   assert.equal(value.family, "number");
   assert.equal(value.kind, "currency");
   assert.equal(value.code, "USD");
-  assert.deepEqual(value.choose("decimal"), { format: "decimal:2" });
-  assert.deepEqual(value.choose("currency"), { format: "currency:USD" });
-  assert.deepEqual(value.choose(""), { format: undefined });
+  assert.deepEqual(value.choose("decimal"), { display: "decimal:2" });
+  // Already currency in dollars: nothing to change.
+  assert.deepEqual(value.choose("currency"), {});
+  assert.deepEqual(value.choose(""), { display: undefined });
   assert.equal(value.notes.length, 1);
   assert.equal(value.notes[0]!.kind, "note");
 });
 
 test("scientific keeps its places, and negatives in brackets go with decimal and currency only (D53)", () => {
-  const n = (format?: string): Field => ({ name: "n", type: "number", ...(format ? { format } : {}) });
+  const n = (display?: string): Field => ({ name: "n", type: "number", ...(display ? { display } : {}) });
   const sci = formatState(n("scientific:3"), [n("scientific:3")], {})!;
   assert.equal(sci.kind, "scientific");
   assert.equal(sci.digits, 3);
   assert.equal(sci.takesParens, false);
-  assert.deepEqual(sci.choose("decimal"), { format: "decimal:3" });
+  assert.deepEqual(sci.choose("decimal"), { display: "decimal:3" });
   const money = formatState(n("currency:EUR:parens"), [n("currency:EUR:parens")], {})!;
   assert.equal(money.kind, "currency");
   assert.equal(money.code, "EUR");
   assert.equal(money.parens, true);
-  assert.deepEqual(money.currency("GBP"), { format: "currency:GBP:parens" });
-  assert.deepEqual(money.choose("decimal"), { format: "decimal:2:parens" });
+  assert.deepEqual(money.currency("GBP"), { display: "currency:GBP:parens" });
+  assert.deepEqual(money.choose("decimal"), { display: "decimal:2:parens" });
   // A kind that can't show brackets drops them.
-  assert.deepEqual(money.choose("fraction"), { format: "fraction" });
-  assert.deepEqual(money.setParens(false), { format: "currency:EUR" });
+  assert.deepEqual(money.choose("fraction"), { display: "fraction" });
+  assert.deepEqual(money.setParens(false), { display: "currency:EUR" });
   const places = formatState(n("decimal:1"), [n("decimal:1")], {})!;
-  assert.deepEqual(places.setParens(true), { format: "decimal:1:parens" });
+  assert.deepEqual(places.setParens(true), { display: "decimal:1:parens" });
   assert.ok(places.choices.some((c) => c.value === "fraction"));
 });
 
@@ -72,9 +73,9 @@ test("a formula shows its inputs' currency, and warns when shown in another", ()
   const quarter = formatState(f(budget, "quarter"), budget, {})!;
   assert.equal(quarter.choices[0]!.label, "Same as inputs (GBP)");
   // Switched to currency, a formula takes its inputs' (yen here), not the reader's.
-  const yen: Field[] = [{ name: "a", type: "number", format: "currency:JPY" }, { name: "b", type: "number", computed: { expr: "(* a 2)" } } as Field];
-  assert.deepEqual(formatState(yen[1]!, yen, {})!.choose("currency"), { format: "currency:JPY" });
-  const inDollars = formatState({ ...f(budget, "quarter"), format: "currency:USD" }, budget, {})!;
+  const yen: Field[] = [{ name: "a", type: "number", display: "currency:JPY" }, { name: "b", type: "number", computed: { expr: "(* a 2)" } } as Field];
+  assert.deepEqual(formatState(yen[1]!, yen, {})!.choose("currency"), { display: "currency:JPY" });
+  const inDollars = formatState({ ...f(budget, "quarter"), display: "currency:USD" }, budget, {})!;
   assert.equal(inDollars.notes[0]!.kind, "warn");
   assert.match(inDollars.notes[0]!.text, /worked out from values in GBP/);
 });
@@ -128,7 +129,7 @@ describe("a field's choices, as Field settings changes them", () => {
   const field: Field = { name: "status", type: "string", constraints: { enum: ["todo", { value: "doing", color: "blue" }, "done"] } };
 
   it("are written back bare when a choice has no label or colour, and as an object when it has either", () => {
-    assert.deepEqual(choicesPatch(field, [{ value: "todo", label: "To do" }, { value: "doing" }, { value: "done", color: "green" }]).constraints?.enum, [
+    assert.deepEqual(choicesPatch(field, [{ value: "todo", label: "To do" }, { value: "doing" }, { value: "done", color: "green" }]).categories, [
       { value: "todo", label: "To do" },
       "doing",
       { value: "done", color: "green" },

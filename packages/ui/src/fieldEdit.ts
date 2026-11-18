@@ -4,6 +4,7 @@
 // stores, and the field a name and type become. The web field editor and
 // table-gtk's both run these.
 
+import { categoriesPatch, displayOf, displayPatch, hasChoices } from "@workspace.sh/table-core";
 import {
   compileFormula,
   currencyOf,
@@ -194,7 +195,7 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
         : o,
     )
     .map((o) => (family === "date" ? { ...o, label: `${o.label} (${example(o.value)})` } : o));
-  const whole = field.format ?? "";
+  const whole = displayOf(field) ?? "";
   // `:parens` (D53) says only how a negative looks: decimal:2:parens is decimal places, 2.
   const takes = (f: string) => f.startsWith("decimal:") || f.startsWith("currency:");
   const parens = whole.endsWith(":parens") && takes(whole);
@@ -203,7 +204,7 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
   const digits = current.startsWith("decimal:") ? Number(current.slice("decimal:".length)) || 0 : current.startsWith("scientific:") ? Number(current.slice("scientific:".length)) || 0 : 2;
   const code = current.startsWith("currency:") ? current.slice("currency:".length).toUpperCase() : "";
   // A choice keeps the brackets when it can take them.
-  const set = (format: string): Partial<Field> => ({ format: format ? (parens && takes(format) ? `${format}:parens` : format) : undefined });
+  const set = (format: string): Partial<Field> => displayPatch(field, format ? (parens && takes(format) ? `${format}:parens` : format) : "");
   const notes: FormatState["notes"] = [];
   if (own && inherited && inherited !== "mixed" && own !== inherited) {
     notes.push({ kind: "warn", text: `${title} is worked out from values in ${inherited}. Showing it in ${own} relabels the numbers; it doesn't convert them.` });
@@ -231,7 +232,7 @@ export function formatState(field: Field, fields: Field[], display: DisplayOptio
     decimal: (d) => set(`decimal:${d}`),
     currency: (c) => set(`currency:${c}`),
     scientific: (d) => set(`scientific:${d}`),
-    setParens: (on) => ({ format: takes(current) ? (on ? `${current}:parens` : current) : whole || undefined }),
+    setParens: (on) => displayPatch(field, takes(current) ? (on ? `${current}:parens` : current) : whole),
   };
 }
 
@@ -247,7 +248,7 @@ export function requiredPatch(field: Field, required: boolean): Partial<Field> {
 
 /** Whether a field takes a list of choices: a choice field, or a plain list. */
 export function takesChoices(field: Field): boolean {
-  return Array.isArray(field.constraints?.enum) || (field.type === "array" && !field.relation);
+  return hasChoices(field) || (field.type === "array" && !field.relation);
 }
 
 /** A typed choice, trimmed, if it's new to the field; null when empty or already there. */
@@ -269,7 +270,7 @@ export const CHOICE_COLOURS: { value: "none" | EnumColor; label: string }[] = [
 
 /** A field's choices written back, each as `{ value, label?, color? }`, or the bare value when it has neither (SPEC "enum"). */
 export function choicesPatch(field: Field, next: EnumOption[]): Partial<Field> {
-  return { constraints: { ...(field.constraints ?? {}), enum: next.map((o) => (o.label || o.color ? o : o.value)) } };
+  return categoriesPatch(field, next.map((o) => (o.label || o.color ? o : o.value)));
 }
 
 /** A choice's label as typed: none when it's empty or the value itself. */

@@ -1,3 +1,4 @@
+import { categoriesPatch, displayOf, rawChoices } from "@workspace.sh/table-core";
 import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { KeyboardOnShow } from "./keyboardOnShow";
@@ -2746,7 +2747,7 @@ function EditableCell({
   // Long text: the cell shows its value as it stands, and the writing is
   // done in a box over it. Enter is a new line, as in a row's page;
   // ⌘/Ctrl+Enter saves and moves down; Escape cancels; clicking away saves.
-  if (field?.format === "markdown" && kind === "text") {
+  if (field && displayOf(field) === "markdown" && kind === "text") {
     return (
       <>
         <html.span
@@ -4763,7 +4764,7 @@ export function TableView({
       if (kind === "text" && !dated) setBarDraft({ rowId, name, text: initial });
       session = {
         key, rowId, name, label, rowLabel, initial,
-        mode: field.format === "markdown" ? "text" : "line",
+        mode: displayOf(field) === "markdown" ? "text" : "line",
         // The keyboard the field wants, as a cell's own input has (inputHints); on Android a cell's own formula is typed as a formula.
         keyboard: asFormula && PLATFORM_OS === "android" ? "default" : (BAR_KEYBOARD[hints.kind] ?? "default"),
         suggestions: asFormula && PLATFORM_OS === "android" ? false : hints.autocorrect,
@@ -4787,7 +4788,7 @@ export function TableView({
                       if (!value) return;
                       if (!enumOptions(field).some((o) => o.value === value)) onAddEnumValue(name, value);
                       if (many) {
-                        current = listToggled({ ...field, constraints: { ...field.constraints, enum: [...(field.constraints?.enum ?? []), value] } }, current, value);
+                        current = listToggled({ ...field, ...categoriesPatch(field, [...(rawChoices(field) ?? []), value]) }, current, value);
                         onUpdateRow!(rowId, name, current);
                       } else onUpdateRow!(rowId, name, value);
                     },

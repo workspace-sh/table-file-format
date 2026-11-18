@@ -1617,3 +1617,27 @@ a converter to and from Data Package close to a copy.
 
 **Status:** specified; table-core and the apps don't read or check
 them yet (#836).
+
+## D68: `format` as Table Schema means it; `display` and `categories`
+
+A field's `format` says how its stored value is written, as Table
+Schema's does: `email`, `uri`, `uuid` or `binary` for a string,
+`default` otherwise. How a value is shown, which `format` held until
+now, is `display` (`currency:GBP`, `percent`, `long`, `relative`,
+`phone`, `markdown`). A link is `format: "uri"` (it was `"url"`). A
+field's choices, with their labels and colours, are `categories`, as
+Table Schema's are; `constraints.enum` keeps its plain meaning.
+
+**Why:** a table's `schema.json` beside its CSV export is then a Table
+Schema that Frictionless tools read as intended. Before, a date column
+with `"format": "long"` read there as a date pattern that matched
+nothing. Nothing a table could say is lost: every display token and
+every choice's label and colour has a place. D9 still holds: `.table`
+is its own format, and `relation` stays on the field (D10).
+
+**Reading older files:** readers take the old form for good (a display
+token in `format`, `url`, choices in `constraints.enum`), and every
+write puts a schema in the new form, so a file is converted the next
+time it is saved. `scripts/migrate-d68.mts` converts every table under
+a folder at once (#839).
+
