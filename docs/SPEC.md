@@ -146,7 +146,7 @@ gives the second the id its name derives.
 ### Field types
 
 `string`, `number`, `integer`, `boolean`, `date`, `datetime`, `time`,
-`year`, `array`, `object`, `duration`, `geopoint`, `geojson`, `any`.
+`year`, `yearmonth`, `array`, `object`, `duration`, `geopoint`, `geojson`, `any`.
 
 Field type names follow standard conventions used across text-first
 data formats. `.table/` is not aligned with any specific format —
@@ -168,6 +168,7 @@ of the format, not a reader's choice (DECISIONS D30).
 | `datetime` | string, RFC 3339 `date-time`; offset RECOMMENDED | `"2026-04-01T09:30:00Z"` |
 | `time` | string, RFC 3339 `partial-time` (`HH:MM:SS`, optional fraction); no offset | `"09:30:00"` |
 | `year` | integer | `2026` |
+| `yearmonth` | string, `YYYY-MM` | `"2026-11"` |
 | `duration` | string, ISO 8601 duration | `"PT1H30M"`, `"P3D"` |
 | `array` | array of any JSON values | `["a", 1]` |
 | `object` | object | `{"k": "v"}` |
@@ -243,8 +244,14 @@ not yet provided by the format. Until it is, store amounts as an
 
 ### Field constraints
 
-`required`, `unique`, `enum`, `minimum`, `maximum`, `minLength`,
-`maxLength`, `pattern`.
+`required`, `unique`, `enum`, `minimum`, `maximum`, `exclusiveMinimum`,
+`exclusiveMaximum`, `minLength`, `maxLength`, `pattern`.
+
+`minimum` and `maximum` include the bound; `exclusiveMinimum` and
+`exclusiveMaximum` don't (`"exclusiveMinimum": 0` is "more than 0").
+All four apply to numbers, dates, times, durations, years and
+year-months. These are Table Schema's constraints, under its names
+(D67).
 
 `unique`: no two rows hold the same value in the field. Empty values
 (absent, `null`, `""`) don't count, so a field that isn't `required`
@@ -310,6 +317,12 @@ labels apply to each item.
 - `icon: "<emoji-or-name>"` — an emoji (`"💰"`) or symbolic name
   (`"calendar"`) shown beside the field title. Display-only;
   consumers MAY ignore.
+- `example: <value>` — a typical value, shown as a placeholder where a
+  value is typed. Display-only, round-trips (D67).
+- `rdfType: "<URI>"` — what the values are, as a class in a shared
+  vocabulary (`"https://schema.org/telephone"`,
+  `"https://schema.org/Person"`), for tools and agents that understand
+  that vocabulary. Display-only, round-trips (D67).
 - `description: "<text>"` — hover-help / accessibility text.
   Display-only, round-trips.
 - `attachment: true` — the value is a filename inside `attachments/`.
@@ -818,6 +831,17 @@ distinctions from other ids in the table. (DECISIONS D23.)
 `primaryKey` (if present) is a separate domain-level uniqueness
 constraint over user-facing fields, not row identity.
 
+`uniqueKeys` (optional, in `schema.json`) lists combinations of fields
+that no two rows may share, as `primaryKey` does for one combination:
+`"uniqueKeys": [["person", "week"]]` is one timesheet row per person
+per week. Unlike `primaryKey`, a row with any of those fields empty is
+not checked (D67).
+
+`missingValues` (optional, in `schema.json`) lists the strings that
+mean "empty" when values are read from text, as a CSV is imported:
+`"missingValues": ["", "n/a", "-"]`. Absent, only `""` does. It never
+changes stored values, which are already JSON (D67).
+
 ### Row ordering
 
 Row order across the rows files (in their name order, then line
@@ -1116,6 +1140,12 @@ use them to validate that a directory is a `.table/`.
 tabs. Tables not listed follow the listed ones, in name order. A name
 listed with no directory under `tables/` is ignored by readers and
 dropped by writers.
+
+The bundle's `meta.json` MAY also say who made it and how it may be
+used, with Data Package's names for these (D67): `licenses` (a list of
+`{ "name", "path", "title" }`, `name` an SPDX identifier such as
+`"CC-BY-4.0"`), `contributors` (a list of `{ "title", "email", "path",
+"roles" }`), `keywords` (a list of strings) and `version` (a string).
 
 **Each table's `meta.json`**, in `tables/<name>/`, carries that
 table's own `title`, `description`, `created_at` and `modified_at`.
@@ -1469,7 +1499,8 @@ A `.table/` is **valid** when:
    A cell with its own formula is checked as a computed field's is
    (section 3, "A cell's own formula").
 3. If `primaryKey` is declared, no two rows share the same composite
-   key.
+   key; for each of `uniqueKeys`, no two rows with none of its fields
+   empty share it.
 4. Every body file in `bodies/` has a matching row.
    (A repeated `id` read as section 3 says is one row; its later lines
    are lines the reader couldn't read, which don't make a table
@@ -1677,6 +1708,12 @@ CSV is the **only** format-specific converter that lives in core, via
   filename, bodies aren't represented. `csvExportWarnings(table)`
   returns the human-readable list of what a given export will drop, so
   the loss is surfaced rather than silent.
+
+**Profiles** (an idea, not specified). Data Package lets a community
+publish a profile: the tables, fields, choices and links a kind of
+data must have (Camtrap DP, for camera-trap data, is one). A `.table`
+could declare a profile it follows, so an app can create one in that
+shape, check one against it, and offer its newer versions.
 
 Other format converters (Frictionless, CSVW, Grist, Obsidian Bases)
 belong in separate optional packages (`@workspace.sh/table-frictionless`,
