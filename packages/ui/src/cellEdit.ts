@@ -3,6 +3,7 @@
 // web views and table-gtk both run these, so a value is refused, asked
 // about or saved the same way on every platform.
 
+import { displayOf } from "@workspace.sh/table-core";
 import { CELL_NOTES, compileFormula, enumOptions, OWN_FORMULAS, printFormula, type CellFormula, type Field, type Grid, type ParsedTable } from "@workspace.sh/table-core";
 
 import { checkEntry, type CellCheck } from "./cellCheck";
@@ -56,7 +57,7 @@ export function draftOf(value: unknown): string {
  * ISO 4217 code or a field without a currency format.
  */
 export function currencySymbolOf(field: Field | undefined, locale?: string): string | null {
-  const format = field?.format;
+  const format = displayOf(field);
   if (!format?.startsWith("currency:")) return null;
   try {
     const nf = new Intl.NumberFormat(locale, { style: "currency", currency: format.slice("currency:".length) });

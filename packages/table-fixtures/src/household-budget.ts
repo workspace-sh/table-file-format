@@ -34,55 +34,53 @@ export const householdBudgetBundle: ParsedBundle = {
             "name": "category",
             "type": "string",
             "title": "Category",
-            "constraints": {
-              "enum": [
-                {
-                  "value": "Housing",
-                  "color": "blue"
-                },
-                {
-                  "value": "Food",
-                  "color": "green"
-                },
-                {
-                  "value": "Transport",
-                  "color": "orange"
-                },
-                {
-                  "value": "Fun",
-                  "color": "pink"
-                },
-                {
-                  "value": "Savings",
-                  "color": "purple"
-                },
-                {
-                  "value": "Income",
-                  "color": "gray"
-                }
-              ]
-            }
+            "categories": [
+              {
+                "value": "Housing",
+                "color": "blue"
+              },
+              {
+                "value": "Food",
+                "color": "green"
+              },
+              {
+                "value": "Transport",
+                "color": "orange"
+              },
+              {
+                "value": "Fun",
+                "color": "pink"
+              },
+              {
+                "value": "Savings",
+                "color": "purple"
+              },
+              {
+                "value": "Income",
+                "color": "gray"
+              }
+            ]
           },
           {
             "id": "earkzrfi77x7y",
             "name": "jan",
             "type": "number",
             "title": "Jan",
-            "format": "currency:GBP"
+            "display": "currency:GBP"
           },
           {
             "id": "dbyyda85ram1b",
             "name": "feb",
             "type": "number",
             "title": "Feb",
-            "format": "currency:GBP"
+            "display": "currency:GBP"
           },
           {
             "id": "g3t3wtejisupo",
             "name": "mar",
             "type": "number",
             "title": "Mar",
-            "format": "currency:GBP"
+            "display": "currency:GBP"
           },
           {
             "id": "87hkfpyh4bnhx",
@@ -100,36 +98,36 @@ export const householdBudgetBundle: ParsedBundle = {
             "name": "share",
             "type": "number",
             "title": "Share",
-            "format": "percent",
             "description": "This row's Q1 as a share of the Income row's. In the sheet, typed in row 1 as =F1/$F$7: $F$7 pins the Income row by its id, so sorting never breaks it.",
             "computed": {
               "expr": "(/ quarter (field \"quarter\" \"d7obaaj5dfw5bexxt8xmgrwbra\"))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "percent"
           },
           {
             "id": "mkt8w7zz1ayy7",
             "name": "spend",
             "type": "number",
             "title": "Spend",
-            "format": "currency:GBP",
             "description": "Q1 for spending lines; nothing for income.",
             "computed": {
               "expr": "(if (= category \"Income\") 0 quarter)",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           },
           {
             "id": "f47epm8m9qd95",
             "name": "of_spending",
             "type": "number",
             "title": "Of spending",
-            "format": "percent",
             "description": "This line's share of the quarter's total spending: its Q1 over the whole Spend column (D36).",
             "computed": {
               "expr": "(if (<> category \"Income\") (/ quarter (sum (values \"spend\"))))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "percent"
           }
         ],
         "schema-version": 1
@@ -304,20 +302,20 @@ export const householdBudgetBundle: ParsedBundle = {
             "name": "amount",
             "type": "number",
             "title": "Amount",
-            "format": "currency:GBP",
-            "description": "Money in is positive, money out negative."
+            "description": "Money in is positive, money out negative.",
+            "display": "currency:GBP"
           },
           {
             "id": "xygoknprkk9ku",
             "name": "balance",
             "type": "number",
             "title": "Balance",
-            "format": "currency:GBP",
             "description": "The running balance down the By date sheet: the balance in the row above plus this row's amount. Typed in row 2 of that sheet as =sum(D1, C2), and read by place, so it follows the dates however the rows were entered. sum treats the empty cell above row 1 as nothing.",
             "computed": {
               "expr": "(sum (at \"balance\" -1 \"87jkeekgwbfgr\") amount)",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           }
         ]
       },

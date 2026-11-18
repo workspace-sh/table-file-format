@@ -3,6 +3,7 @@
 // (fieldHintText). Everything is in the schema already (SPEC section 2:
 // `description` is the field's hover-help); this only gathers it.
 
+import { hasChoices } from "@workspace.sh/table-core";
 import { effectiveFormat, printFormula } from "@workspace.sh/table-core";
 import type { Field, TableSchema } from "@workspace.sh/table-core";
 
@@ -60,7 +61,7 @@ export function fieldHint(options: {
   const format = field ? effectiveFormat(field, schema) : undefined;
   const facts: string[] = [kind];
   if (field?.constraints?.required) facts.push("Required");
-  if (field?.constraints?.enum) facts.push("Choice list");
+  if (hasChoices(field)) facts.push("Choice list");
   if (field?.relation) facts.push(`Links to ${field.relation.table}`);
   if (format) facts.push(formatWords(format));
   if (field?.deprecated) facts.push("Deprecated");
