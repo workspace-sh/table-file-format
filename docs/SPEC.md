@@ -112,13 +112,13 @@ Defines the fields of every row, their types, and any constraints.
       "id": "7n1wsgc4hedra",
       "name": "status",
       "type": "string",
-      "constraints": { "enum": ["planning", "active", "done"] }
+      "categories": ["planning", "active", "done"]
     },
     {
       "id": "za5jto9mx6cbi",
       "name": "summary",
       "type": "string",
-      "format": "markdown"
+      "display": "markdown"
     }
   ],
   "primaryKey": ["title"],
@@ -209,10 +209,10 @@ Notes:
 - **`geojson`** earlier reference readers accepted only a string
   holding the GeoJSON text. Readers SHOULD still accept that form and
   parse it; writers MUST write the object.
-- **`duration`** vs `format: "duration:seconds"`: the `duration` type is
+- **`duration`** vs `display: "duration:seconds"`: the `duration` type is
   a calendar-aware ISO 8601 string (`P1M` is a month, not 30 days). A
   plain count of seconds is a `number` or `integer` field with
-  `format: "duration:seconds"`.
+  `display: "duration:seconds"`.
 
 #### Empty values
 
@@ -235,7 +235,7 @@ Consequences a writer MUST respect:
   languages silently round. An identifier that can exceed it (a
   64-bit database key, a card number, a phone number) is a `string`.
 - JSON has no `NaN` or `Infinity`; neither can be stored.
-- `format: "decimal:N"` and `format: "currency:…"` round **for
+- `display: "decimal:N"` and `display: "currency:…"` round **for
   display only**; the stored value is unchanged.
 
 Exact decimal arithmetic (money that must reconcile to the cent) is
@@ -257,25 +257,24 @@ year-months. These are Table Schema's constraints, under its names
 (absent, `null`, `""`) don't count, so a field that isn't `required`
 can be empty in any number of rows. Values compare as their JSON.
 
-#### Enum entries — string or object
+#### Choices: `categories`
 
-Each `enum` entry is **either** a bare string **or** an object
-carrying display metadata:
+A field that offers a list of choices lists them in `categories`, as
+Table Schema does (D68). Each entry is **either** a bare value **or**
+an object carrying how it is shown:
 
 ```json
 {
-  "constraints": {
-    "enum": [
-      { "value": "planning", "color": "gray",   "label": "Planning" },
-      { "value": "active",   "color": "green",  "label": "Active"   },
-      "done"
-    ]
-  }
+  "categories": [
+    { "value": "planning", "color": "gray",   "label": "Planning" },
+    { "value": "active",   "color": "green",  "label": "Active"   },
+    "done"
+  ]
 }
 ```
 
 - `value` (required) — the stored data value. This is the only part
-  that participates in validation and enum-ordered sort/group.
+  that participates in validation and choice-ordered sort/group.
 - `color` (optional): a symbolic name, one of: `gray`, `brown`, `red`,
   `orange`, `yellow`, `lime`, `green`, `mint`, `teal`, `cyan`, `blue`,
   `indigo`, `purple`, `pink`. Consumers map the name onto their own
@@ -283,17 +282,26 @@ carrying display metadata:
   name it doesn't know (or no colour) as `gray`, and MUST show the
   choice's label whatever its colour, since colour is never the only
   carrier of meaning. The reference light and dark pairs, and the
-  contrast rule they meet, are in DECISIONS D43.
+  contrast rule they meet, are in DECISIONS D43. `color` is this
+  format's own key; Table Schema readers skip it.
 - `label` (optional) — display-only text; defaults to `value`.
 
-Bare strings and objects may be mixed in one array. Readers MUST
-coerce a bare string `"x"` into `{ "value": "x" }` (reference:
+Bare values and objects may be mixed in one array. Readers MUST
+coerce a bare value `"x"` into `{ "value": "x" }` (reference:
 `enumOptions()` in `@workspace.sh/table-core`). Writers MAY emit
-either form — objects when color/label is set, strings otherwise.
+either form — objects when color/label is set, values otherwise. A
+value outside the choices is invalid.
+
+`constraints.enum` keeps Table Schema's meaning: a plain list of the
+values allowed, with no labels. A field with `enum` and no
+`categories` is read as offering those values as its choices. Files
+written before D68 kept their choices, objects included, in
+`constraints.enum`; readers MUST read them as `categories`, and
+writers write `categories`.
 
 #### Multi-select
 
-An `enum` on an `array` field constrains each item: the value is a
+`categories` on an `array` field constrain each item: the value is a
 list of choices, as a Notion or Airtable multi-select is (DECISIONS
 D35). `["emea", "priority"]` is valid when both are choices; an empty
 array is valid, and `required` still rejects it as empty. Colours and
@@ -311,8 +319,11 @@ labels apply to each item.
   Defaults by type: `end` for `number`, `integer` and `year`; `center`
   for `boolean`; `start` otherwise (reference: `effectiveAlign()`).
   Display-only.
-- `format: "<token>"` — display-semantic hint from a closed
-  vocabulary (see "Field format" below). Renderer hint; no validator
+- `format: "<token>"` — how the stored value is written, as Table
+  Schema means it (D68): for a `string`, `email`, `uri`, `uuid` or
+  `binary`; otherwise `default`. Absent is `default`.
+- `display: "<token>"` — how the value is shown, from a closed
+  vocabulary (see "Field display" below). Renderer hint; no validator
   effect. Stored values stay raw.
 - `icon: "<emoji-or-name>"` — an emoji (`"💰"`) or symbolic name
   (`"calendar"`) shown beside the field title. Display-only;
@@ -344,10 +355,10 @@ labels apply to each item.
   but should not be shown in new UIs.
 - `computed: { expr, dialect }` — a formula; see "Computed fields".
 
-### Field format
+### Field display
 
-`format` declares a display *semantic* from a closed vocabulary — a
-portable enum, not an arbitrary printf string. Stored values remain
+`display` declares how a value is shown, from a closed vocabulary — a
+portable list, not an arbitrary printf string. Stored values remain
 raw (ISO dates, decimal numbers, plain text); locale-aware rendering
 is the consumer's job (`Intl.NumberFormat` / `Intl.DateTimeFormat`).
 Reference renderer: `formatValue()` in `@workspace.sh/table-core`.
@@ -366,7 +377,7 @@ shows −1200 as `($1,200.00)`). D53.
 what the stored number is in, not only how it looks, so changing it
 relabels every value and converts none. A `.table/` holds no exchange
 rates and a reader never fetches one. A computed field with no
-`format` of its own is shown in the currency of the fields it reads
+`display` of its own is shown in the currency of the fields it reads
 when they all share one, so a formula over dollars is shown in
 dollars; when they are in different currencies it is shown as a plain
 number. Converting is a formula over a rate kept as data:
@@ -376,10 +387,17 @@ number. Converting is a formula over a rate kept as data:
 `weekday`, `relative`.
 
 **String** (`string`): `plain` (default), `markdown` (already
-honoured by the body editor), `url`, `email`, `phone`. The last three
-are link-rendering hints; the stored value is the raw target.
+honoured by the body editor), `phone`. A link is a string whose
+`format` is `uri`, and an address one whose `format` is `email`: both
+are shown as links, with no `display` needed. `phone` is a link too;
+the stored value is the raw target.
 
-**Phone numbers** (`format: "phone"`). A writer SHOULD store a number in
+**Before D68** a file kept the display token in `format` (`"format":
+"currency:USD"`, `"format": "long"`), and wrote a link as `"format":
+"url"`. Readers MUST read such a `format` as the field's `display`
+(and `url` as `format: "uri"`); writers write the form above.
+
+**Phone numbers** (`display: "phone"`). A writer SHOULD store a number in
 international form, `+` and digits only (E.164: `+442079460000`), with
 an extension after `;ext=` as a `tel:` URI writes it (RFC 3966:
 `+442079460000;ext=204`). An app helps the person typing rather than
@@ -1245,7 +1263,7 @@ for the **canonical long-form content** of a row — the Notion
 *every-row-is-also-a-page* pattern.
 
 For shorter inline markdown content (a description, a one-paragraph
-summary), use a string field with `format: "markdown"` instead.
+summary), use a string field with `display: "markdown"` instead.
 
 Rules:
 - A body file MUST have a corresponding row in the table. Orphan

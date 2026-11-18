@@ -53,42 +53,40 @@ export const shopBundle: ParsedBundle = {
             "name": "status",
             "type": "string",
             "title": "Status",
-            "constraints": {
-              "enum": [
-                {
-                  "value": "pending",
-                  "label": "Pending",
-                  "color": "gray"
-                },
-                {
-                  "value": "paid",
-                  "label": "Paid",
-                  "color": "blue"
-                },
-                {
-                  "value": "shipped",
-                  "label": "Shipped",
-                  "color": "orange"
-                },
-                {
-                  "value": "delivered",
-                  "label": "Delivered",
-                  "color": "green"
-                },
-                {
-                  "value": "refunded",
-                  "label": "Refunded",
-                  "color": "red"
-                }
-              ]
-            }
+            "categories": [
+              {
+                "value": "pending",
+                "label": "Pending",
+                "color": "gray"
+              },
+              {
+                "value": "paid",
+                "label": "Paid",
+                "color": "blue"
+              },
+              {
+                "value": "shipped",
+                "label": "Shipped",
+                "color": "orange"
+              },
+              {
+                "value": "delivered",
+                "label": "Delivered",
+                "color": "green"
+              },
+              {
+                "value": "refunded",
+                "label": "Refunded",
+                "color": "red"
+              }
+            ]
           },
           {
             "id": "nm9efu6zgd3zo",
             "name": "shipping",
             "type": "number",
             "title": "Shipping",
-            "format": "currency:GBP"
+            "display": "currency:GBP"
           },
           {
             "id": "nqjnkkiyyier1",
@@ -106,24 +104,24 @@ export const shopBundle: ParsedBundle = {
             "name": "subtotal",
             "type": "number",
             "title": "Subtotal",
-            "format": "currency:GBP",
             "description": "The sum of the order's lines (D36).",
             "computed": {
               "expr": "(sum (linked \"lines\" \"order\" \"line_total\"))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           },
           {
             "id": "y9cxdk3dhxqur",
             "name": "total",
             "type": "number",
             "title": "Total",
-            "format": "currency:GBP",
             "description": "Subtotal plus shipping.",
             "computed": {
               "expr": "(+ subtotal shipping)",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           },
           {
             "id": "q7es69q4j14e6",
@@ -406,12 +404,12 @@ export const shopBundle: ParsedBundle = {
             "name": "lifetime_value",
             "type": "number",
             "title": "Lifetime value",
-            "format": "currency:GBP",
             "description": "The total of this customer's orders. Each order's total is itself the sum of its lines, so this reads two tables deep (D36).",
             "computed": {
               "expr": "(sum (linked \"orders\" \"customer\" \"total\"))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           }
         ],
         "schema-version": 1
@@ -564,40 +562,38 @@ export const shopBundle: ParsedBundle = {
             "name": "category",
             "type": "string",
             "title": "Category",
-            "constraints": {
-              "enum": [
-                {
-                  "value": "coffee",
-                  "label": "Coffee",
-                  "color": "orange"
-                },
-                {
-                  "value": "tea",
-                  "label": "Tea",
-                  "color": "green"
-                },
-                {
-                  "value": "equipment",
-                  "label": "Equipment",
-                  "color": "gray"
-                },
-                {
-                  "value": "merch",
-                  "label": "Merch",
-                  "color": "purple"
-                }
-              ]
-            }
+            "categories": [
+              {
+                "value": "coffee",
+                "label": "Coffee",
+                "color": "orange"
+              },
+              {
+                "value": "tea",
+                "label": "Tea",
+                "color": "green"
+              },
+              {
+                "value": "equipment",
+                "label": "Equipment",
+                "color": "gray"
+              },
+              {
+                "value": "merch",
+                "label": "Merch",
+                "color": "purple"
+              }
+            ]
           },
           {
             "id": "xiyakxmw7ii5m",
             "name": "price",
             "type": "number",
             "title": "Price",
-            "format": "currency:GBP",
             "constraints": {
               "minimum": 0
-            }
+            },
+            "display": "currency:GBP"
           },
           {
             "id": "mwducew9zqd66",
@@ -624,12 +620,12 @@ export const shopBundle: ParsedBundle = {
             "name": "revenue",
             "type": "number",
             "title": "Revenue",
-            "format": "currency:GBP",
             "description": "The total of every order line for this product.",
             "computed": {
               "expr": "(sum (linked \"lines\" \"product\" \"line_total\"))",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           }
         ],
         "schema-version": 1
@@ -822,24 +818,24 @@ export const shopBundle: ParsedBundle = {
             "name": "unit_price",
             "type": "number",
             "title": "Unit price",
-            "format": "currency:GBP",
             "description": "Looked up from the product (D36).",
             "computed": {
               "expr": "(related \"product\" \"price\")",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           },
           {
             "id": "8nj5bdwnbdxp4",
             "name": "line_total",
             "type": "number",
             "title": "Line total",
-            "format": "currency:GBP",
             "description": "Quantity times unit price.",
             "computed": {
               "expr": "(* quantity unit_price)",
               "dialect": "table-expr-v1"
-            }
+            },
+            "display": "currency:GBP"
           }
         ],
         "schema-version": 1

@@ -1,6 +1,7 @@
 // What every renderer of a view shows, whatever draws it: the web and
 // native views here, and table-gtk on Linux. No platform code.
 
+import { displayOf, hasChoices } from "@workspace.sh/table-core";
 import {
   applyGroup,
   effectiveFormat,
@@ -39,8 +40,8 @@ export function linesFor(rowHeight: number): number {
 export function fieldsByName(schema: TableSchema): Map<string, Field> {
   return new Map(
     schema.fields.map((f) => {
-      const format = effectiveFormat(f, schema);
-      return [f.name, format === f.format ? f : { ...f, format }];
+      const shown = effectiveFormat(f, schema);
+      return [f.name, shown === displayOf(f) ? f : { ...f, display: shown }];
     }),
   );
 }
@@ -366,7 +367,7 @@ export function describeCell(
     if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
   }
-  const isEnum = field?.constraints?.enum != null;
+  const isEnum = hasChoices(field);
   if (isEnum && value !== undefined && value !== null && value !== "") {
     return { kind: "pills", pills: [pillFor(field, value)] };
   }
@@ -390,7 +391,7 @@ export function describeCell(
   // format of its own takes the app's default, in the app's locale.
   const isDate = field?.type === "date" || field?.type === "datetime";
   const oneToken = isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
-  if ((field?.format || isDate) && value !== undefined && value !== null && value !== "") {
+  if ((displayOf(field) || isDate) && value !== undefined && value !== null && value !== "") {
     return { kind: "text", text: formatWithFieldFormat(field, value, display), oneToken };
   }
   return { kind: "text", text: formatValue(value), oneToken };
