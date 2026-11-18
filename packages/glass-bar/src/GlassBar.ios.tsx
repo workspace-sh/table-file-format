@@ -289,7 +289,29 @@ type EditorHandle = GlassBarHandle & { value: () => string };
 type Expansion = { can: boolean; on: boolean; height: number; toggle: () => void; settling?: boolean };
 type Part = GlassBarProps & { ns: string; editor?: RefObject<EditorHandle | null>; expansion?: Expansion };
 
-function Lead({ state, ns, onFilter, restLead, restNotice, onDeselect, onCancel, expansion }: Part) {
+/**
+ * A find's search (one with `onSearchStep`, a document's or a canvas's), as
+ * Notes lays it out: close at the lead, the field with its count and clear,
+ * and previous and next in a capsule of their own, so neither is pressed for
+ * the other. Searching, and at rest with a query.
+ */
+function finding({ state, onSearchStep }: Part): boolean {
+  return !!onSearchStep && (state.kind === "searching" || (state.kind === "rest" && !!state.query));
+}
+
+function Lead(props: Part) {
+  const { state, ns, onFilter, restLead, restNotice, onDeselect, onCancel, expansion } = props;
+  if (finding(props)) {
+    const searching = state.kind === "searching";
+    return (
+      <Image
+        systemName="xmark"
+        size={17}
+        onPress={searching ? props.onSearchEnd : props.onClearQuery}
+        modifiers={[frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("lead", ns), contentShape(shapes.circle()), accessibilityLabel(searching ? "Close search" : "Clear search")]}
+      />
+    );
+  }
   if (state.kind === "searching") return null; // absorbed into the search field
   if (state.kind === "rest" && restNotice) return <LeadWithNotice state={state} ns={ns} onFilter={onFilter} restLead={restLead} restNotice={restNotice} />;
   // Expanded, ✕ is inside the capsule. This circle stays, shrunk to nothing
@@ -364,8 +386,10 @@ function LeadWithNotice({ ns, onFilter, restLead, restNotice }: Pick<Part, "stat
   );
 }
 
-function Trail({ state, ns, onMore, onSearchEnd, moreActions, details, onDetailsClose }: Part) {
+function Trail(props: Part) {
+  const { state, ns, onMore, onSearchEnd, moreActions, details, onDetailsClose } = props;
   if (state.kind === "editing" || state.kind === "choosing" || state.kind === "dating") return null; // merged into the capsule
+  if (finding(props)) return <Steps {...props} />;
   const searching = state.kind === "searching";
   if (!searching && moreActions?.length) {
     // More is the system's menu, its button the same glass circle. SwiftUI
@@ -638,10 +662,8 @@ function Capsule(props: Part) {
           <Text modifiers={[font({ size: 17 }), ...(state.query ? [] : [secondary]), lineLimit(1)]}>{state.query || (props.searchLabel ?? "Search")}</Text>
           <Spacer />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
-          {/* The keyboard away, a document's matches can still be stepped
-              through. Clear then waits in the open field (a tap away), so the
-              query and its count keep their room. */}
-          {state.query ? <Steps {...props} /> : null}
+          {/* The keyboard away, a document's matches are stepped through
+              beside the field (Trail); clear waits in the open field. */}
           {state.query && !props.onSearchStep ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -660,7 +682,6 @@ function Capsule(props: Part) {
             modifiers={[onSubmitModifier(() => props.onSearchEnd?.())]}
           />
           {state.query && props.searchResult ? <Text modifiers={[font({ size: 15 }), secondary, lineLimit(1), fixedSize({ horizontal: true, vertical: false })]}>{props.searchResult}</Text> : null}
-          {state.query ? <Steps {...props} /> : null}
           {state.query ? <Image systemName="xmark.circle.fill" size={18} color={systemColor("tertiaryLabel")} onPress={props.onClearQuery} modifiers={[accessibilityLabel("Clear")]} /> : null}
         </HStack>
       );
@@ -711,14 +732,22 @@ function Capsule(props: Part) {
   }
 }
 
-/** Previous and next match: a document's or a canvas's find, not a table's (its rows are filtered). */
-function Steps(props: Part) {
-  if (!props.onSearchStep) return null;
+/**
+ * Previous and next match, in a capsule of their own beside the field: a
+ * document's or a canvas's find, not a table's (its rows are filtered).
+ * Dimmed until there's a query to step through.
+ */
+function Steps({ state, ns, onSearchStep }: Part) {
+  if (!onSearchStep) return null;
+  const none = !("query" in state) || !state.query;
   return (
-    <>
-      <Image systemName="chevron.up" size={17} onPress={() => props.onSearchStep?.(-1)} modifiers={[accessibilityLabel("Previous")]} />
-      <Image systemName="chevron.down" size={17} onPress={() => props.onSearchStep?.(1)} modifiers={[accessibilityLabel("Next")]} />
-    </>
+    <HStack
+      spacing={0}
+      modifiers={[glass("roundedRectangle"), glassEffectId("trail", ns), ...(none ? [disabled(true)] : [])]}
+    >
+      <Image systemName="chevron.up" size={17} onPress={() => onSearchStep(-1)} modifiers={[frame({ width: SIZE, height: SIZE }), opacity(none ? 0.3 : 1), contentShape(shapes.rectangle()), accessibilityLabel("Previous")]} />
+      <Image systemName="chevron.down" size={17} onPress={() => onSearchStep(1)} modifiers={[frame({ width: SIZE, height: SIZE }), opacity(none ? 0.3 : 1), contentShape(shapes.rectangle()), accessibilityLabel("Next")]} />
+    </HStack>
   );
 }
 
