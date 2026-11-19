@@ -14,7 +14,7 @@ import { derive, initialAppState, tableApp, viewCallbacks, type AppAction, type 
 import { bundleOf, relatedTables, tableNameOf } from "./bundles.ts";
 import type { EmbeddedTableFiles, EmbedShown } from "./embed.ts";
 import { heldFile, noteWriting, tellHeld } from "./heldFiles.ts";
-import { displayFor, saveDisplay, viewerLocale } from "./displaySettings.ts";
+import { displayFor, saveDisplay, viewerLocale, withViewerLocale } from "./displaySettings.ts";
 import type { KeyValueStore } from "./savedTables.ts";
 import { saveSidebarPrefs } from "./sidebarPrefs.ts";
 
@@ -282,7 +282,7 @@ export function storeFor(store: KeyValueStore, path: string): KeyValueStore {
 
 export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, locale?: string, store: KeyValueStore | null = null): EmbeddedTable {
   const { library } = shown;
-  const { state, dispatch, display, flush } = useTableApp(
+  const { state, dispatch, display: own, flush } = useTableApp(
     () =>
       initialAppState({
         tables: library.tables,
@@ -354,6 +354,8 @@ export function useEmbeddedTable(shown: EmbedShown, files: EmbeddedTableFiles, l
   }, [state.tables]);
 
   const derived = derive(useSearchBehind(state), { locale, newTableIn: "none" });
+  // The reader's language, as the document's app gives it, formats the cells' dates and numbers too (#830).
+  const display = useMemo(() => withViewerLocale(own, locale), [own, locale]);
   const related = useMemo(() => relatedTables(state.tables, bundleOf(state.active)), [state.tables, state.active]);
   const { onOpenRelation: _follow, ...callbacks } = viewCallbacks(state, dispatch, newId);
   return { state, dispatch, derived, display, tableName: tableNameOf(state.active), related, callbacks };

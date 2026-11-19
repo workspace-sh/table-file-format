@@ -3463,7 +3463,7 @@ export function TableView({
               const ids = Array.isArray(row[sel.name]) ? listItems(row[sel.name]) : row[sel.name] ? [String(row[sel.name])] : [];
               return ids.map((id) => names.get(id) ?? id).join(", ");
             })()
-          : formatCellValue(field, row[sel.name]),
+          : formatCellValue(field, row[sel.name], display),
       formula: own === undefined && field.computed !== undefined,
       ...(field.description ? { description: field.description } : {}),
       // What the web's header hover says, for a platform with no hover.
@@ -4694,20 +4694,20 @@ export function TableView({
             const open = (t.match(/\(/g) ?? []).length - (t.match(/\)/g) ?? []).length;
             return { error: { message: ex.status.message, fix: open > 0 ? ")" : undefined } };
           }
-          return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name]) };
+          return { result: formatCellValue(field, ex.preview ? ex.preview.value : row[name], display) };
         },
         // The web panel's working, as text: each input as its cell shows it.
         details: (t) => {
           const ex = explain(t);
           const shown = (i: { field: string; value: unknown }) => {
             const f = fieldMap.get(i.field);
-            return f ? formatCellValue(f, i.value) : i.value == null ? "" : String(i.value);
+            return f ? formatCellValue(f, i.value, display) : i.value == null ? "" : String(i.value);
           };
           return {
             thisRow: ex.thisRow.map((i) => ({ label: i.label, shown: shown(i) })),
             otherRows: ex.otherRows.map((i) => ({ label: i.label, shown: shown(i) })),
-            result: formatCellValue(field, row[name]),
-            ...(ex.changed && ex.preview ? { after: formatCellValue(field, ex.preview.value) } : {}),
+            result: formatCellValue(field, row[name], display),
+            ...(ex.changed && ex.preview ? { after: formatCellValue(field, ex.preview.value, display) } : {}),
           };
         },
         save: (t) => {
@@ -4825,7 +4825,7 @@ export function TableView({
               date: {
                 value: dateOfDraft(draftOf(row[name]), hints.kind),
                 components: hints.kind === "date" ? ["date" as const] : hints.kind === "time" ? ["hourAndMinute" as const] : ["date" as const, "hourAndMinute" as const],
-                shown: formatCellValue(field, row[name]),
+                shown: formatCellValue(field, row[name], display),
                 pick: (d: Date) => {
                   const r = commitDraft(field, current, draftOfDate(d, hints.kind), "key", null);
                   if (r.kind === "problem") return { ok: false as const, error: { message: r.check.message } };
@@ -4833,7 +4833,7 @@ export function TableView({
                     current = r.value;
                     onUpdateRow!(rowId, name, r.value);
                   }
-                  return { ok: true as const, shown: formatCellValue(field, current) };
+                  return { ok: true as const, shown: formatCellValue(field, current, display) };
                 },
               },
             }
