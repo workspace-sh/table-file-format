@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, displayFor, withDisplayChoice, LOCALES, viewerLocale, viewerOrder } from "./displaySettings.ts";
+import { DISPLAY_KEY, loadDisplay, saveDisplay, displayChoices, displayFor, withDisplayChoice, LOCALES, viewerLocale, viewerOrder, withViewerLocale } from "./displaySettings.ts";
+import { formatValue } from "@workspace.sh/table-core";
 import type { KeyValueStore } from "./savedTables.ts";
 import type { DisplaySettings } from "@workspace.sh/table-ui/shared";
 
@@ -106,4 +107,16 @@ test("the viewer's own sorts put numbers in number order and follow their langua
   assert.deepEqual(sorted("en", ["item 10", "item 9", "item 1"]), ["item 1", "item 9", "item 10"]);
   assert.deepEqual(sorted("sv", ["ö", "z", "a"]), ["a", "z", "ö"]);
   assert.deepEqual(sorted("de", ["ö", "z", "a"]), ["a", "ö", "z"]);
+});
+
+test("a table drawn in a document takes the document app's language for its dates and numbers (#830)", () => {
+  const shown = withViewerLocale({ formulaSyntax: "excel" } as DisplaySettings, "de-DE");
+  assert.equal(shown.locale, "de-DE");
+  assert.equal(shown.formulaSyntax, "excel");
+  assert.equal(formatValue({ name: "due", type: "date", display: "long" }, "2026-10-30", shown), "30. Oktober 2026");
+  assert.equal(formatValue({ name: "amount", type: "number", display: "decimal:2" }, 1234.5, shown), "1.234,50");
+  // The viewer's own choice still wins; with no language anywhere, nothing is added.
+  assert.equal(withViewerLocale({ locale: "fr-FR" }, "de-DE").locale, "fr-FR");
+  const none: DisplaySettings = {};
+  assert.equal(withViewerLocale(none, undefined), none);
 });
