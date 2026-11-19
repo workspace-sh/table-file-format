@@ -42,11 +42,14 @@ const SelectView = forwardRef<SelectHandle, SelectProps>(function Select({ value
   if (trigger) {
     // UIKit's menu, opened by a tap on the trigger (a table cell), which
     // keeps its own size and takes the whole tap: a SwiftUI host would size
-    // it to its text. The chosen one is ticked.
+    // it to its text. The chosen one is ticked. The button fills the space
+    // it's given, both ways: in a row (a total's slot) it had no width of its
+    // own, so the cell inside it was only its padding wide and its value cut
+    // away.
     return (
       <ContextMenuButton
         isMenuPrimaryAction
-        style={{ alignSelf: "stretch", flexDirection: "row" }}
+        style={{ alignSelf: "stretch", flexDirection: "row", flexGrow: 1, flexShrink: 1, minWidth: 0 }}
         menuConfig={{
           menuTitle: label ?? "",
           menuItems: options.map((o) => ({
