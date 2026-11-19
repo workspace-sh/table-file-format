@@ -144,6 +144,16 @@ export function viewerLocale(display: DisplaySettings, platformLocale: string | 
 }
 
 /**
+ * `display` with the viewer's language in it (`viewerLocale`), for a table
+ * drawn inside a document whose app gives the language: the cells' dates
+ * and numbers are formatted in it, not only sorted (#830).
+ */
+export function withViewerLocale<T extends DisplaySettings>(display: T, platformLocale: string | undefined): T {
+  const locale = viewerLocale(display, platformLocale);
+  return locale && display.locale !== locale ? { ...display, locale } : display;
+}
+
+/**
  * How the viewer's own sorts order text: their language's collation, with
  * numbers in number order (D41: saved sorts use the fixed saved text order
  * instead, the same on every device).
