@@ -74,10 +74,13 @@ function storedRow(row: Row, computed: ReadonlySet<string>): Row {
   return out;
 }
 
-/** The line that applies for each cell: the last, as a writer keeps them in order. */
+/** The line that applies for each cell: the first, when a merge has left two (D54). */
 function cellLines(cells: readonly CellFormula[] | undefined): Map<string, CellFormula> {
   const out = new Map<string, CellFormula>();
-  for (const line of cells ?? []) out.set(`${line.id}\u0000${line.field}`, line);
+  for (const line of cells ?? []) {
+    const key = `${line.id}\u0000${line.field}`;
+    if (!out.has(key)) out.set(key, line);
+  }
   return out;
 }
 

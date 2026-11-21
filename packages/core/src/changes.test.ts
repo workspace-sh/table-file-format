@@ -112,6 +112,13 @@ test("an insert whose neighbour has gone goes at the end", () => {
   const add = diffBundle(b, edit(b, t => void t.rows.splice(2, 0, row("x", "X"))));
   assert.deepEqual(rowsOf(applyChanges(b, [...del, ...add])).map(r => r.id), ["a", "c", "x"]);
 });
+test("a cell with two lines is read by its first, as the format says", () => {
+  const b = bundle([row("a", "A")], { cells: [{ id: "a", field: "status", note: "first" }, { id: "a", field: "status", note: "second" }] });
+  const dropSecond = edit(b, t => void t.cells!.pop());
+  assert.deepEqual(diffBundle(b, dropSecond), []);
+  const changed = edit(b, t => void (t.cells = [{ id: "a", field: "status", note: "new" }]));
+  assert.deepEqual(applyChanges(b, diffBundle(b, changed)).tables.tasks!.cells, [{ id: "a", field: "status", note: "new" }]);
+});
 test("computed values aren't carried", () => {
   const b = bundle([{ id: "a", title: "A", status: "todo", total: 1 }]);
   b.tables.tasks!.schema.fields.push({ name: "total", type: "number", computed: { kind: "formula", expr: "1" } } as never);
