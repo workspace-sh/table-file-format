@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { mapShapeText, objectText, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -311,4 +311,21 @@ test("a card's excerpt leaves out a first heading that is the row's title", () =
   assert.equal(bodyExcerpt("# Plugin SDK\n", "Plugin SDK"), undefined);
   // The title as a first line of plain text isn't a heading, and stays.
   assert.equal(bodyExcerpt("Plugin SDK\nMore.", "Plugin SDK"), "Plugin SDK More.");
+});
+
+test("a map shape reads in words", () => {
+  const f = { name: "area", type: "geojson" } as const;
+  assert.deepEqual(describeCell(f, { type: "Point", coordinates: [2.35, 48.85] }, {}), { kind: "text", text: "2.35, 48.85", oneToken: false });
+  assert.equal(mapShapeText({ type: "LineString", coordinates: [[0, 0], [1, 1], [2, 2]] }), "Line · 3 points");
+  assert.equal(mapShapeText({ type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }), "Polygon · 4 points");
+  assert.equal(mapShapeText({ type: "MultiPolygon", coordinates: [[[[0, 0], [1, 0], [0, 0]]], [[[2, 2], [3, 2], [2, 2]]]] }), "2 polygons · 6 points");
+  assert.equal(mapShapeText({ type: "Feature", geometry: { type: "Point", coordinates: [1, 2] } }), "1, 2");
+  assert.equal(mapShapeText({ type: "FeatureCollection", features: [{}, {}] }), "2 features");
+  assert.equal(mapShapeText({ city: "not a shape" }), null);
+});
+test("an object reads a part at a time", () => {
+  const f = { name: "details", type: "object" } as const;
+  assert.deepEqual(describeCell(f, { city: "Paris", priority: 3, nested: { ok: true } }, {}), { kind: "text", text: "city: Paris · priority: 3 · nested: 1 item", oneToken: false });
+  assert.equal(objectText({ list: [1, 2], none: null }), "list: 2 items · none: —");
+  assert.equal(objectText({}), "—");
 });

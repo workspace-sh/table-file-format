@@ -4,6 +4,7 @@ import { focusInput } from "./focusInput";
 import { KeyboardOnShow } from "./keyboardOnShow";
 import type { ReactNode } from "react";
 import { html, css } from "react-strict-dom";
+import { Tooltip } from "./internal/Tooltip";
 import { Portal } from "./internal/Portal";
 import {
   bodyExcerpt,
@@ -1585,7 +1586,10 @@ const styles = css.create({
   tintPink: { backgroundColor: { default: "#fce1f0", "@media (prefers-color-scheme: dark)": "#4a1f36" } },
   pillList: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 4 },
   // A cell with a note (D57): a small triangle in its top end corner, as spreadsheets mark one.
+  noteCorner: { position: "absolute", top: 0, insetInlineEnd: 0, width: 28, height: 28 },
+  noteCornerButton: { width: 28, height: 28, padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   noted: {
+    position: "relative",
     backgroundImage: {
       default: "linear-gradient(225deg, #e8a33d 9px, transparent 9px)",
       "@media (prefers-color-scheme: dark)": "linear-gradient(225deg, #f5b94f 9px, transparent 9px)",
@@ -3133,6 +3137,27 @@ function DragGhost({
   );
 }
 
+/**
+ * The corner of a cell with a note (D57): hover shows the note where there's
+ * a pointer, and a click or tap opens it, as a touch screen has no hover.
+ */
+function NoteCorner({ note, onOpen }: { note: string; onOpen?: () => void }) {
+  return (
+    <html.div style={styles.noteCorner}>
+      <Tooltip text={note}>
+        <html.button
+          aria-label={`Note: ${note}`}
+          style={styles.noteCornerButton}
+          onClick={(event: { stopPropagation?: () => void }) => {
+            event?.stopPropagation?.();
+            onOpen?.();
+          }}
+        />
+      </Tooltip>
+    </html.div>
+  );
+}
+
 function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle?: boolean }) {
   // A mark (the platform's or the host's: PlatformControls.PageMark) alone, with no chip around it; else the word.
   const { PageMark } = usePlatformControls();
@@ -4548,6 +4573,9 @@ export function TableView({
         </CellWidth.Provider>
         {name === titleField && bodies?.[row.id] ? (
           <BodyBadge onClick={onOpenBody ? () => onOpenBody(row.id) : undefined} />
+        ) : null}
+        {note !== undefined ? (
+          <NoteCorner note={note} onOpen={onAskCellNote ? () => onAskCellNote(row.id, name, note) : undefined} />
         ) : null}
       </html.div>
     );
