@@ -3141,6 +3141,9 @@ function DragGhost({
  * The corner of a cell with a note (D57): hover shows the note where there's
  * a pointer, and a click or tap opens it, as a touch screen has no hover.
  */
+/** A touch held this long reads the cell rather than opening it for typing. */
+const LONG_PRESS_MS = 400;
+
 function NoteCorner({ note, onOpen }: { note: string; onOpen?: () => void }) {
   return (
     <html.div style={styles.noteCorner}>
@@ -3384,6 +3387,14 @@ export function TableView({
   const settingsApart = !!SheetControl.presentsSettings;
   // Each row as last drawn, by id: what a key or a menu on a selected cell reads its note from (D57).
   const drawnRows = useRef(new Map<string, Row>());
+  // When a touch on a cell began, to tell a long press from a tap. Cleared as
+  // it's read, so a later click from a mouse is never taken for a long press.
+  const pressedAt = useRef(0);
+  const wasHeld = () => {
+    const at = pressedAt.current;
+    pressedAt.current = 0;
+    return at !== 0 && Date.now() - at >= LONG_PRESS_MS;
+  };
   const noteFor = (rowId: string, name: string) => ownNote(cells, rowId, name, drawnRows.current.get(rowId));
   const actionsFor = (rowId: string) =>
     rowActions(rowId, {
@@ -4491,11 +4502,14 @@ export function TableView({
         ref={(el: any) => {
           cellRefs.current[cellKey] = el;
         }}
+        onTouchStart={() => {
+          pressedAt.current = Date.now();
+        }}
         onClick={
           isFormula && editor
             ? () => {
                 // With an outside editor the formula opens there, on a second tap.
-                if (isSelected && !barFormula) beginBar(row.id, name);
+                if (isSelected && !barFormula && !wasHeld()) beginBar(row.id, name);
                 else select();
               }
             : isFormula
@@ -4511,8 +4525,9 @@ export function TableView({
               }
             : cellClicks
             ? () => {
-                // Selected, a click edits it, as a key does (openCell).
-                if (isSelected) void openCell(row.id, name);
+                // Selected, a click edits it, as a key does (openCell). A long
+                // press is for reading it (its note, its value in the bar).
+                if (isSelected && !wasHeld()) void openCell(row.id, name);
                 else select();
               }
             : select

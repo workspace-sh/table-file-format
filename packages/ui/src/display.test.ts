@@ -329,3 +329,17 @@ test("an object reads a part at a time", () => {
   assert.equal(objectText({ list: [1, 2], none: null }), "list: 2 items · none: —");
   assert.equal(objectText({}), "—");
 });
+
+test("an empty list of links reads as empty", () => {
+  const f = { name: "reviewers", type: "array", relation: { table: "people", field: "id", cardinality: "many" } } as const;
+  assert.deepEqual(describeCell(f, [], {}), { kind: "text", text: "—", oneToken: false });
+});
+test("a date and time with no format reads as one, and a chosen format still stands", () => {
+  const f = { name: "updated", type: "datetime" } as const;
+  const raw = "2026-11-01T09:30:00Z";
+  const shown = describeCell(f, raw, { locale: "en-GB" });
+  assert.equal(shown.kind, "text");
+  assert.notEqual((shown as { text: string }).text, raw);
+  assert.match((shown as { text: string }).text, /01\/11\/26|1\/11\/26/);
+  assert.match((describeCell(f, raw, { dateFormat: "iso" }) as { text: string }).text, /^2026-11-01 /);
+});
