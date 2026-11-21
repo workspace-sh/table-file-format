@@ -6,6 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
+import { applyChanges, type BundleChange, type ParsedBundle } from "@workspace.sh/table-core";
 import { coordinateOf, isSheet, mergeOfRange, mergeOver, renameField, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
 import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
@@ -283,6 +284,13 @@ export type AppAction =
    * it now is.
    */
   | { type: "replaced"; library: Library }
+  /**
+   * Changes made somewhere else (`diffBundle`), applied to what's on screen:
+   * only what they reach is drawn again. What's being edited here stays, and
+   * is still to write. Undo for those tables starts again, as it holds whole
+   * tables and would take the other side's edit back with it.
+   */
+  | { type: "changesApplied"; bundle: string; changes: BundleChange[] }
   /**
    * Close a file: asks first, then it leaves what's held and is marked to
    * write (closing.ts). `fromFolder` is for an app that knows better than
@@ -1024,6 +1032,28 @@ function step(state: AppState, action: AppAction): AppState {
       return { ...state, telling: action.message };
     case "told":
       return state.telling ? { ...state, telling: null } : state;
+    case "changesApplied": {
+      const prefix = `${action.bundle}/`;
+      const keys = Object.keys(state.tables).filter((k) => bundleOf(k) === action.bundle);
+      if (keys.length === 0 || action.changes.length === 0) return state;
+      const held = Object.fromEntries(keys.map((k) => [k.slice(prefix.length), state.tables[k]!]));
+      let next: ParsedBundle;
+      try {
+        next = applyChanges({ path: action.bundle, meta: state.bundles[action.bundle] ?? {}, tables: held }, action.changes);
+      } catch {
+        // Its rows aren't in memory (a large table's index): the host reads it again.
+        return state;
+      }
+      const tables = { ...state.tables };
+      const changed: string[] = [];
+      for (const k of keys) {
+        const table = next.tables[k.slice(prefix.length)];
+        if (table === undefined || table === tables[k]) continue;
+        tables[k] = table;
+        changed.push(k);
+      }
+      return { ...state, tables, bundles: { ...state.bundles, [action.bundle]: next.meta }, undo: without(state.undo, changed) };
+    }
     case "written": {
       // A bundle edited again while it was being written stays to write.
       const since = action.tables;

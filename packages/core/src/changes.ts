@@ -280,29 +280,55 @@ function setProp(target: Record<string, unknown>, key: string, to: unknown): voi
 /** The bundle with these changes applied, in this order. The bundle given isn't changed. */
 export function applyChanges(bundle: ParsedBundle, changes: readonly BundleChange[]): ParsedBundle {
   const out: ParsedBundle = { ...bundle, meta: { ...bundle.meta } as BundleMeta, tables: {} };
+  // Only what the changes reach is new: a table, row or view they don't touch
+  // stays the same object, so a view showing it has nothing to draw again.
+  const opsOn = new Map<string, Set<BundleChange["op"]>>();
+  for (const c of changes) {
+    if (c.table === null) continue;
+    if (!opsOn.has(c.table)) opsOn.set(c.table, new Set());
+    opsOn.get(c.table)!.add(c.op);
+  }
   for (const [name, table] of Object.entries(bundle.tables)) {
-    if (changes.some(c => c.table === name)) assertLoaded(name, table);
+    const ops = opsOn.get(name);
+    if (!ops) {
+      out.tables[name] = table;
+      continue;
+    }
+    assertLoaded(name, table);
+    const touchesSchema = ops.has("field") || ops.has("field-order") || ops.has("schema");
+    const touchesViews = ops.has("view") || ops.has("view-order");
     out.tables[name] = {
       ...table,
-      schema: copy(table.schema),
-      rows: table.rows.map(r => ({ ...r })),
-      views: copy(table.views),
-      meta: { ...table.meta },
+      schema: touchesSchema ? copy(table.schema) : table.schema,
+      rows: [...table.rows],
+      views: touchesViews ? copy(table.views) : table.views,
+      meta: ops.has("meta") ? { ...table.meta } : table.meta,
       ...(table.bodies ? { bodies: { ...table.bodies } } : {}),
       ...(table.cells ? { cells: [...table.cells] } : {}),
     };
   }
+  // Rows copied so far: a row is copied once, the first time a change writes to it.
+  const owned = new WeakSet<Row>();
+  const writable = (table: ParsedTable, at: number): Row => {
+    const row = table.rows[at]!;
+    if (owned.has(row)) return row;
+    const mine = { ...row };
+    owned.add(mine);
+    table.rows[at] = mine;
+    return mine;
+  };
   // Rows deleted so far, so an edit made without seeing the delete can bring one back.
   const removed = new Map<string, { values: Row; page?: string; cells?: CellFormula[] }>();
   const removedKey = (table: string, row: string) => `${table}\u0000${row}`;
 
   const rowFor = (table: ParsedTable, tableName: string, id: string): Row | undefined => {
-    const found = table.rows.find(r => r.id === id);
-    if (found) return found;
+    const at = table.rows.findIndex(r => r.id === id);
+    if (at !== -1) return writable(table, at);
     const gone = removed.get(removedKey(tableName, id));
     if (!gone) return undefined;
     removed.delete(removedKey(tableName, id));
     const back = copy(gone.values);
+    owned.add(back);
     table.rows.push(back);
     if (gone.page !== undefined) (table.bodies ??= {})[id] = gone.page;
     if (gone.cells?.length) table.cells = [...(table.cells ?? []), ...copy(gone.cells)];
