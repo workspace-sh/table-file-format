@@ -66,6 +66,18 @@ test("the bundle given isn't changed", () => {
   applyChanges(before, diffBundle(before, edit(before, t => void (t.rows[0]!.title = "Z"))));
   assert.deepEqual(clone(before), snapshot);
 });
+test("what the changes don't reach stays the same object", () => {
+  const b = base();
+  b.tables.other = { ...b.tables.tasks!, rows: [row("z", "Z")] };
+  const applied = applyChanges(b, diffBundle(b, edit(b, t => void (t.rows[1]!.title = "B2"))));
+  const t = applied.tables.tasks!;
+  assert.equal(t.rows[0], b.tables.tasks!.rows[0]);
+  assert.notEqual(t.rows[1], b.tables.tasks!.rows[1]);
+  assert.equal(t.rows[2], b.tables.tasks!.rows[2]);
+  assert.equal(t.schema, b.tables.tasks!.schema);
+  assert.equal(t.views, b.tables.tasks!.views);
+  assert.equal(applied.tables.other, b.tables.other);
+});
 test("two sides editing different cells of one row both survive, in either order", () => {
   const b = base();
   const one = diffBundle(b, edit(b, t => void (t.rows[0]!.title = "mine")));
