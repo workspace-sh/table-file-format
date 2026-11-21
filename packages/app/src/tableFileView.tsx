@@ -11,6 +11,7 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
+import type { BundleChange } from "@workspace.sh/table-core";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
@@ -87,6 +88,11 @@ export interface TableFileChrome {
 }
 
 export interface TableFileViewProps {
+  /**
+   * Changes to this file made somewhere else (`diffBundle`), applied to what's
+   * on screen without reading it again. Each new `n` applies once.
+   */
+  incoming?: { changes: BundleChange[]; n: number };
   /** The file, read over the host's files (readTableFileWith, readTableArchiveFile); null while it's read. */
   read: EmbedRead | null;
   /** How the host writes the file back (embedFilesWith over its files). */
@@ -170,7 +176,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -204,6 +210,14 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
     tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
     openIndexDatabase: index?.openIndexDatabase ?? noIndex,
   });
+  const appliedIncoming = useRef(incoming?.n);
+  useEffect(() => {
+    if (!incoming || incoming.n === appliedIncoming.current) return;
+    appliedIncoming.current = incoming.n;
+    dispatch({ type: "changesApplied", bundle: bundleOf(state.active), changes: incoming.changes });
+    // Each set of changes once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.n]);
   saveIndexed.current = indexed.save;
   flushIndexed.current = indexed.flush;
   useEffect(() => {
