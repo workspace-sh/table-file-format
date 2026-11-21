@@ -109,6 +109,58 @@ export function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** How many positions a GeoJSON geometry's coordinates hold, however deeply nested. */
+function positionsIn(coordinates: unknown): number {
+  if (!Array.isArray(coordinates)) return 0;
+  if (typeof coordinates[0] === "number") return 1;
+  return coordinates.reduce((sum: number, part) => sum + positionsIn(part), 0);
+}
+
+/** A map shape in words: `2.35, 48.85`, `Line · 4 points`, `Polygon · 5 points`. Null if it isn't GeoJSON. */
+export function mapShapeText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const shape = value as { type?: unknown; coordinates?: unknown; geometry?: unknown; features?: unknown; geometries?: unknown };
+  const points = () => plural(positionsIn(shape.coordinates), "point");
+  const parts = () => (Array.isArray(shape.coordinates) ? shape.coordinates.length : 0);
+  switch (shape.type) {
+    case "Point":
+      return Array.isArray(shape.coordinates) && shape.coordinates.length >= 2 ? shape.coordinates.slice(0, 2).join(", ") : null;
+    case "MultiPoint":
+      return points();
+    case "LineString":
+      return `Line · ${points()}`;
+    case "MultiLineString":
+      return `${plural(parts(), "line")} · ${points()}`;
+    case "Polygon":
+      return `Polygon · ${points()}`;
+    case "MultiPolygon":
+      return `${plural(parts(), "polygon")} · ${points()}`;
+    case "GeometryCollection":
+      return Array.isArray(shape.geometries) ? plural(shape.geometries.length, "shape") : null;
+    case "Feature":
+      return shape.geometry === null ? "No shape" : mapShapeText(shape.geometry);
+    case "FeatureCollection":
+      return Array.isArray(shape.features) ? plural(shape.features.length, "feature") : null;
+    default:
+      return null;
+  }
+}
+
+function partText(value: unknown): string {
+  if (value === null || value === undefined || value === "") return EMPTY_TEXT;
+  if (Array.isArray(value)) return plural(value.length, "item");
+  if (typeof value === "object") return plural(Object.keys(value).length, "item");
+  return String(value);
+}
+
+/** An object in words, a part at a time: `city: Paris · priority: 3 · nested: 1 item`. */
+export function objectText(value: Record<string, unknown>): string {
+  const parts = Object.entries(value).map(([key, part]) => `${key}: ${partText(part)}`);
+  return parts.length ? parts.join(" · ") : EMPTY_TEXT;
+}
+
 export function bodyExcerpt(body: string | undefined, title?: string, max = 160): string | undefined {
   if (!body) return undefined;
   // A page that starts with its row's title as a heading: the card already shows that title.
@@ -366,6 +418,11 @@ export function describeCell(
   if (Array.isArray(value) && !field?.relation) {
     if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
+  }
+  // A map shape or an object, in words. Its full form is what opening the cell shows.
+  if (typeof value === "object" && value !== null) {
+    const shape = field?.type === "geojson" ? mapShapeText(value) : null;
+    return { kind: "text", text: shape ?? objectText(value as Record<string, unknown>), oneToken: false };
   }
   const isEnum = hasChoices(field);
   if (isEnum && value !== undefined && value !== null && value !== "") {
