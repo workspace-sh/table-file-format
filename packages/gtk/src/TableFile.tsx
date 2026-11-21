@@ -15,7 +15,7 @@ import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-a
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
-import { addressedView, newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type BundleChange, type ParsedTable } from "@workspace.sh/table-core";
 import { AttachmentsProvider } from "@workspace.sh/table-ui/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -64,6 +64,11 @@ export interface TableFileProps {
    * told again as that changes, and told null as the file closes.
    */
   onNavigation?: (navigation: TableNavigation | null) => void;
+  /**
+   * Changes made to this file elsewhere (another device, another app), applied to the table on screen in place:
+   * each new `n` is applied once, keeping the view, scroll and selection.
+   */
+  incoming?: { changes: BundleChange[]; n: number };
 }
 
 /** The table's own Back and Forward: whether each can go, and going. */
@@ -84,8 +89,10 @@ function Opened({
   onOpenLink,
   chooseFile,
   onNavigation,
+  incoming,
 }: {
   shown: EmbedShown;
+  incoming?: TableFileProps["incoming"];
   store: KeyValueStore | null;
   openIndex: (bundleDir: string) => IndexHost;
   readOnly: boolean;
@@ -106,6 +113,14 @@ function Opened({
     },
   };
   const { state, dispatch, derived: drawn, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale, kept);
+  const appliedIncoming = useRef(incoming?.n);
+  useEffect(() => {
+    if (!incoming || incoming.n === appliedIncoming.current) return;
+    appliedIncoming.current = incoming.n;
+    dispatch({ type: "changesApplied", bundle: bundleOf(state.active), changes: incoming.changes });
+    // Each set of changes once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.n]);
   // One index per folder, shared with any other view of this file (an embed of it).
   const sharedOpen = useMemo(() => sharedIndexHosts(openIndex), [openIndex]);
   const indexed = useIndexedTables({
@@ -299,7 +314,7 @@ function Opened({
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile, onNavigation }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile, onNavigation, incoming }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -311,7 +326,7 @@ export function TableFile({ path, readOnly = false, locale, at, store, openIndex
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} onNavigation={onNavigation} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} onNavigation={onNavigation} incoming={incoming} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>
