@@ -252,3 +252,31 @@ describe("a .table opened as a document", () => {
     expect(await screen.findByText("“nowhere.table” isn’t there any more.")).toBeDefined();
   });
 });
+
+describe("changes made elsewhere", () => {
+  it("applies them to the table on screen, without opening it again", async () => {
+    const { diffBundle } = await import("@workspace.sh/table-core");
+    const { useState } = await import("react");
+    const path = join(root, "projects.table");
+    const before = await readBundle(nodeFs, path);
+    const after = structuredClone(before);
+    const projects = after.tables["projects"]!;
+    const row = projects.rows.find((r) => r["title"] === "Workspace v1")!;
+    row["title"] = "Workspace v1, renamed elsewhere";
+    const changes = diffBundle(before, after);
+    let deliver: (() => void) | null = null;
+    function Host() {
+      const [incoming, setIncoming] = useState<{ changes: typeof changes; n: number } | undefined>(undefined);
+      deliver = () => setIncoming({ changes, n: 1 });
+      return (
+        <GtkWindow defaultWidth={1000} defaultHeight={700}>
+          <TableFile path={path} {...(incoming ? { incoming } : {})} />
+        </GtkWindow>
+      );
+    }
+    await render(<Host />);
+    await cell("Workspace v1");
+    await act(() => deliver!());
+    await cell("Workspace v1, renamed elsewhere");
+  });
+});
