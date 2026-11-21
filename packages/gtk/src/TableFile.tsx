@@ -8,6 +8,7 @@
 
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
+import { AdwAlertDialog } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { bundleOf, bundleTables, derive, linkedRowAddress, sheetReaders, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-app/node";
@@ -134,6 +135,9 @@ function Opened({
   // Read into memory with nowhere to be written (no path): to look at.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
+  // Looking only, a cell's note is still read from its row's menu, not only by hovering (D57).
+  const [readingNote, setReadingNote] = useState<string | null>(null);
+  const readNote = { onAskCellNote: (_rowId: string, _field: string, note?: string) => note !== undefined && setReadingNote(note) };
 
   // The file's tables, and the views of the one on screen.
   const keys = Object.keys(bundleTables(state.tables, bundleOf(state.active))).map((name) => `${bundleOf(state.active)}/${name}`);
@@ -263,7 +267,7 @@ function Opened({
         cells={table.cells}
             tableKey={tableName}
             sheet={derived.shown.sheet}
-            {...(lookOnly ? {} : callbacks)}
+            {...(lookOnly ? readNote : callbacks)}
             {...(cellFiles.onAttachFile ? { onAttachFile: cellFiles.onAttachFile } : {})}
             onOpenRelation={followLink}
             restorePlace={select}
@@ -287,6 +291,9 @@ function Opened({
       ) : null}
       <TableDialogs state={state} dispatch={dispatch} table={table} />
       {cellFiles.dialog}
+      {readingNote !== null ? (
+        <AdwAlertDialog heading="Note" body={readingNote} closeResponse="close" responses={[{ id: "close", label: "Close" }]} onResponse={() => setReadingNote(null)} />
+      ) : null}
      </AttachmentsProvider>
     </DisplaySettingsProvider>
   );
