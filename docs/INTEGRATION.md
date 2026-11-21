@@ -210,6 +210,24 @@ written against `parseTable`/`writeTable` and the contracts above
 will not change when sync lands — files are the interface, by
 design (DECISIONS D17). Do not couple consumer code to a transport.
 
+## Keeping a table in more than one place
+
+`diffBundle(before, after)` in `@workspace.sh/table-core` says what changed
+between two parsed bundles, as plain values that can be stored or sent.
+`applyChanges(bundle, changes)` applies them in the order given, and the same
+bundle with the same ordered changes always writes the same files. Neither
+knows about git, a file sync service or a peer-to-peer log: **the transport,
+and the order, are the consumer's**.
+
+- Edits to different cells or rows all survive. Two edits to one cell: the
+  later in the given order stands.
+- A row deleted on one side and edited on the other is kept, with the edit.
+- `modified_at` isn't a change, and computed values aren't carried.
+- A table whose rows aren't in memory (read later, or held in the index) is
+  refused with `RowsNotLoadedError`, never treated as empty.
+
+The format gains no file and no dependency from this.
+
 ## Minimum viable reader (non-JS consumers)
 
 To claim `.table/` support, an implementation needs only:
