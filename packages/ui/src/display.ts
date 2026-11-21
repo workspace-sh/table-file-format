@@ -414,9 +414,10 @@ export function describeCell(
   // What was kept as typed and can't be used as it is (D65): the cell says so, rather than standing empty.
   const kept = keptAsTyped(field, value);
   if (kept) return { kind: "error", ...kept };
+  // An empty list reads as empty, a list of links included.
+  if (Array.isArray(value) && value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
-    if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
   }
   // A map shape or an object, in words. Its full form is what opening the cell shows.
@@ -449,7 +450,9 @@ export function describeCell(
   const isDate = field?.type === "date" || field?.type === "datetime";
   const oneToken = isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
   if ((displayOf(field) || isDate) && value !== undefined && value !== null && value !== "") {
-    return { kind: "text", text: formatWithFieldFormat(field, value, display), oneToken };
+    // A date and time with no format anywhere still reads as one, not as its stored form.
+    const shownAs = field?.type === "datetime" && !displayOf(field) && !display.dateFormat ? { ...display, dateFormat: "short" } : display;
+    return { kind: "text", text: formatWithFieldFormat(field, value, shownAs), oneToken };
   }
   return { kind: "text", text: formatValue(value), oneToken };
 }
