@@ -3471,6 +3471,7 @@ export function TableView({
     // A cell with its own formula shows that formula, as it's edited: the "=" apart, then the text
     // in the reader's syntax (the stored form untouched). Its value is in the cell itself.
     const own = ownFormula(cells, sel.rowId, sel.name, row);
+    const selectedNote = ownNote(cells, sel.rowId, sel.name, row);
     editor.select({
       rowId: sel.rowId,
       name: sel.name,
@@ -3490,14 +3491,21 @@ export function TableView({
             })()
           : formatCellValue(field, row[sel.name], display),
       formula: own === undefined && field.computed !== undefined,
-      ...(field.description ? { description: field.description } : {}),
+      // A cell's note first (D57): on a touch screen, selecting the cell is how it's read.
+      ...(selectedNote !== undefined
+        ? { description: `Note: ${selectedNote}` }
+        : field.description
+          ? { description: field.description }
+          : {}),
       // What the web's header hover says, for a platform with no hover.
       facts: (() => {
         const hint = fieldHint({ field, name: sel.name, schema, editable: false, formulaSyntax });
         // A formula that failed: what's wrong first, as a hover says it on the web (#685).
         const value = row[sel.name];
         const problem = value instanceof FormulaError ? formulaErrorShow(value, field, formulaSyntax).explanation : undefined;
-        return [problem, hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs].filter(Boolean).join("\n\n");
+        return [selectedNote !== undefined ? `Note: ${selectedNote}` : undefined, problem, hint.facts.join(" · "), hint.description, hint.formula, hint.storedAs]
+          .filter(Boolean)
+          .join("\n\n");
       })(),
     });
   });
