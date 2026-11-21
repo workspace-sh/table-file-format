@@ -421,7 +421,7 @@ export function describeCell(
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
   }
   // A map shape or an object, in words. Its full form is what opening the cell shows.
-  if (typeof value === "object" && value !== null) {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     const shape = field?.type === "geojson" ? mapShapeText(value) : null;
     return { kind: "text", text: shape ?? objectText(value as Record<string, unknown>), oneToken: false };
   }

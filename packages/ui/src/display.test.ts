@@ -343,3 +343,10 @@ test("a date and time with no format reads as one, and a chosen format still sta
   assert.match((shown as { text: string }).text, /01\/11\/26|1\/11\/26/);
   assert.match((describeCell(f, raw, { dateFormat: "iso" }) as { text: string }).text, /^2026-11-01 /);
 });
+
+test("a list of links reads as its links, not as an object", () => {
+  const f = { name: "reviewers", type: "array", relation: { table: "people", field: "id", cardinality: "many" } } as const;
+  const shown = describeCell(f, ["p1", "p2"], {});
+  assert.equal(shown.kind, "relations");
+  assert.deepEqual(shown.kind === "relations" ? shown.links.map((l) => l.id) : [], ["p1", "p2"]);
+});
