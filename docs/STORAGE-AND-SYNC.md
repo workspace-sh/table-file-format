@@ -104,6 +104,15 @@ granularity. Viable only for single-writer / many-reader publishing.
   snapshot — new peers fetch snapshot + log tail instead of
   replaying full history.
 
+### The tools the format offers for this
+
+`diffBundle` and `applyChanges` (INTEGRATION, "Keeping a table in more than
+one place") are this section's row-level operations as a library, free of any
+transport. They settle two rules left open above: a row deleted on one side
+and edited on the other is **kept with the edit**, and a row inserted after a
+row id takes the place directly after it, so concurrent inserts land in the
+order the caller applies them.
+
 ### The authority inversion, stated plainly
 
 Within a synced workspace **the log is canonical and the files are
