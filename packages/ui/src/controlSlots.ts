@@ -100,6 +100,8 @@ export interface DateInputProps {
   label?: string;
   /** The cell's value as it's shown, for a picker that opens from it (Android). */
   trigger: ReactElement;
+  /** As wide as its trigger, rather than filling a cell: a heading that opens a picker. */
+  fit?: boolean;
 }
 
 /**

@@ -68,16 +68,21 @@ import {
 import {
   agendaDays,
   calendarEntries,
+  dayTimeline,
   daysBetween,
   entriesOn,
   hiddenOnDay,
+  hourWindow,
+  isTimed,
   moveEntry,
   resizeEntry,
+  retimeEntry,
   stepRange,
   weekDays,
   weekSegments,
   type CalendarEntry,
   type CalendarRange,
+  type WeekSegment,
 } from "./calendar";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
@@ -1185,8 +1190,8 @@ const styles = css.create({
     backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
   },
   calendarMore: { fontSize: 10, marginTop: "auto", color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8e8e93" } },
-  calendarBarPlace: { position: "absolute", height: 20 },
-  calendarBarAt: (left: number, top: number, width: number) => ({ left, top, width }),
+  calendarBarPlace: { position: "absolute", height: 20, paddingInline: 2, boxSizing: "border-box" },
+  calendarBarAt: (left: string, top: number, width: string) => ({ left, top, width }),
   calendarBar: {
     display: "flex", flexDirection: "row", alignItems: "center", gap: 4, width: "100%", height: 20, boxSizing: "border-box",
     paddingInline: 6, borderRadius: 5, borderWidth: 0, overflow: "hidden", cursor: "pointer", textAlign: "start",
@@ -1199,13 +1204,48 @@ const styles = css.create({
     fontSize: 11, fontWeight: "500", lineClamp: 1, overflow: "hidden", flexShrink: 1, minWidth: 0,
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
-  calendarBarEnd: { position: "absolute", top: 0, bottom: 0, insetInlineEnd: 0, width: 8 },
+  calendarBarEnd: { position: "absolute", top: 0, bottom: 0, insetInlineEnd: 2, width: 8 },
   calendarBarEndGrip: { width: 8, height: 20, cursor: "col-resize" },
-  calendarWeekColumns: { display: "flex", flexDirection: "row", minHeight: 320 },
-  calendarWeekColumn: {
-    flexShrink: 1, flexGrow: 0, minWidth: 0, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 4, padding: 4,
-    borderInlineEndWidth: 1, borderInlineEndStyle: "solid",
-    borderInlineEndColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+  calendarColumn: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, boxSizing: "border-box" },
+  calendarGutter: { width: 52, flexShrink: 0, flexGrow: 0, boxSizing: "border-box", alignItems: "flex-end", paddingInlineEnd: 6 },
+  calendarWeekHead: {
+    display: "flex", flexDirection: "row", paddingBlock: 6,
+    borderBottomWidth: 1, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+  },
+  calendarWeekHeadDay: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  calendarWeekdayInline: { fontSize: 11, fontWeight: "600", color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" } },
+  calendarAllDay: {
+    display: "flex", flexDirection: "row",
+    borderBottomWidth: 1, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#dcdce2", "@media (prefers-color-scheme: dark)": "#303036" },
+  },
+  calendarAllDayArea: { position: "relative", display: "flex", flexDirection: "row", flexGrow: 1, flexShrink: 1, minWidth: 0 },
+  calendarTimeGrid: { display: "flex", flexDirection: "row" },
+  calendarGridColumn: {
+    position: "relative",
+    borderInlineStartWidth: 1, borderInlineStartStyle: "solid",
+    borderInlineStartColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+  },
+  calendarHourLabel: { fontSize: 10, paddingTop: 2, textAlign: "end", color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#7c7c84" } },
+  calendarHourLine: { position: "absolute", left: 0, right: 0, height: 1, backgroundColor: { default: "#f0f0f4", "@media (prefers-color-scheme: dark)": "#222226" } },
+  calendarLineAt: (top: number) => ({ top }),
+  calendarEventPlace: { position: "absolute", paddingInline: 2, boxSizing: "border-box" },
+  calendarEventAt: (top: number, height: number, left: string, width: string) => ({ top, height, left, width }),
+  calendarEvent: {
+    display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", boxSizing: "border-box", paddingInline: 5, paddingBlock: 2,
+    borderRadius: 5, borderWidth: 0, overflow: "hidden", cursor: "pointer", textAlign: "start",
+    backgroundColor: { default: "#e8f0fe", ":hover": "#d2e3fc", "@media (prefers-color-scheme: dark)": "#1e2a44" },
+  },
+  calendarNow: { position: "absolute", left: 0, right: 0, height: 2, backgroundColor: "#ff3b30" },
+  calendarJump: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  calendarJumpTrigger: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6, cursor: "pointer" },
+  calendarJumpChevron: { fontSize: 15, marginTop: -5, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
+  calendarJumpInput: { fontSize: 13 },
+  calendarUndatedList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  calendarUndatedChip: {
+    display: "flex", flexDirection: "row", alignItems: "center", height: 26, maxWidth: 240, paddingInline: 10, borderRadius: 13, borderWidth: 0, cursor: "pointer",
+    backgroundColor: { default: "#f2f2f7", ":hover": "#e9e9ef", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
   },
   calendarAgenda: { display: "flex", flexDirection: "column", gap: 16 },
   calendarAgendaDay: { display: "flex", flexDirection: "column", gap: 4 },
@@ -6341,6 +6381,7 @@ export function ListView({
 const CALENDAR_DAY_HEAD = 30;
 const CALENDAR_LANE = 22;
 const CALENDAR_MORE = 18;
+const CALENDAR_HOUR = 44;
 
 /**
  * The calendar: a month of bars, a week of days, or an agenda, with what has
@@ -6352,7 +6393,7 @@ const CALENDAR_MORE = 18;
 export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
-  const { ChooseOne, CalendarControls } = usePlatformControls();
+  const { ChooseOne, CalendarControls, DateInput: DateInputControl } = usePlatformControls();
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
@@ -6365,7 +6406,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const [dragged, setDragged] = useState<{ id: string; end: boolean } | null>(null);
   const [hoverDay, setHoverDay] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
-  const { register: registerDay, hitTest: dayAt, remeasure } = useDropTargets<string>();
+  const { register: registerDay, hitTest: dayAt, remeasure, rectOf: dayRect } = useDropTargets<string>();
   const lastClick = useRef<{ day: string; at: number } | null>(null);
   const barClicked = useRef(false);
   useEffect(() => remeasure(), [rows, cursor, range, containerWidth, remeasure]);
@@ -6402,6 +6443,13 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     setCursor(todayKey);
     setChosenDay(todayKey);
   };
+  const chosenInView = range === "week" ? cursor : chosenDay.slice(0, 7) === cursor.slice(0, 7) ? chosenDay : cursor;
+  const jumpTo = (value: string) => {
+    const day = value.slice(0, 10);
+    if (!localDay(day) || !inBounds(day)) return;
+    setCursor(day);
+    setChosenDay(day);
+  };
   const heading =
     range === "week"
       ? `${localDay(thisWeek[0]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${localDay(thisWeek[6]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
@@ -6409,13 +6457,13 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const longDay = (key: string) =>
     localDay(key)!.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  // Seven columns that fill the width exactly: what's left over goes a point
-  // at a time to the first ones, so headers, days and bars all line up.
-  const available = Math.max(0, containerWidth - 2);
-  const dayWidth = containerWidth > 0 ? Math.floor(available / 7) : 0;
-  const extra = containerWidth > 0 ? available - dayWidth * 7 : 0;
-  const widthOf = (column: number) => dayWidth + (column < extra ? 1 : 0);
-  const leftOf = (column: number) => column * dayWidth + Math.min(column, extra);
+  // Seven equal columns, by proportion rather than a measured width, so
+  // they follow the pane the moment it changes (a sidebar closing). The
+  // measure only sets how tall a week is.
+  const dayWidth = containerWidth > 0 ? Math.floor((containerWidth - 2) / 7) : 0;
+  const share = (days: number) => `${(days / 7) * 100}%`;
+  const hours = hourWindow(entries, thisWeek);
+  const isDatetime = schema.fields.find((f) => f.name === calField)?.type === "datetime";
   const weekHeight = Math.max(104, Math.min(136, Math.round(dayWidth * 0.72)));
   const maxLanes = Math.max(1, Math.floor((weekHeight - CALENDAR_DAY_HEAD - CALENDAR_MORE) / CALENDAR_LANE));
 
@@ -6428,16 +6476,20 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     const id = onAddRow();
     if (typeof id === "string") onUpdateRow(id, calField, valueOn(day));
   };
-  const drop = (id: string, end: boolean, day: string) => {
+  const drop = (id: string, end: boolean, day: string, minutes?: number) => {
     if (!onUpdateRow) return;
     const entry = entries.find((e) => e.row.id === id);
+    const at = minutes !== undefined && isDatetime ? minutes : undefined;
+    const clock = at === undefined ? "" : `${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`;
     const patch = entry
       ? end
         ? resizeEntry(view, entry, day)
-        : entry.start === day
-          ? null
-          : moveEntry(view, entry, day)
-      : { [calField]: valueOn(day) };
+        : at !== undefined
+          ? retimeEntry(view, entry, day, at)
+          : entry.start === day
+            ? null
+            : moveEntry(view, entry, day)
+      : { [calField]: at !== undefined ? `${day}T${clock}:00` : valueOn(day) };
     if (!patch) return;
     animateNextLayout();
     for (const [field, value] of Object.entries(patch)) onUpdateRow(id, field, value);
@@ -6458,7 +6510,11 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
           },
           onDragEnd: (e: DragEvent) => {
             const hit = dayAt(e.pageX, e.pageY);
-            if (hit) drop(id, end, hit);
+            if (hit?.startsWith("t:")) {
+              const rect = dayRect(hit);
+              const raw = rect ? hours.first * 60 + ((e.pageY - rect.y) / CALENDAR_HOUR) * 60 : hours.first * 60;
+              drop(id, end, hit.slice(2), Math.max(0, Math.min(1425, Math.round(raw / 15) * 15)));
+            } else if (hit) drop(id, end, hit);
             setDragged(null);
             setHoverDay(null);
             setPointerPos(null);
@@ -6501,57 +6557,17 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const weekdayRow = (
     <html.div style={styles.calendarWeekdays}>
       {weekdayNames.map((name, i) => (
-        <html.span key={i} style={[styles.calendarWeekday, styles.cellWidth(widthOf(i))]}>{name}</html.span>
+        <html.span key={i} style={[styles.calendarWeekday, styles.calendarColumn]}>{name}</html.span>
       ))}
     </html.div>
   );
 
-  const monthWeeks = () => {
-    const cells = monthGrid(cursorDate, weekStart);
-    // Five weeks when the month fits: a sixth would hold only the next month.
-    const weeks = cells[35]!.inMonth ? 6 : 5;
-    return Array.from({ length: weeks }, (_, week) => {
-      const days = cells.slice(week * 7, week * 7 + 7);
-      const keys = days.map((c) => dateKey(c.date));
-      const segments = isCompact ? [] : weekSegments(entries, keys);
-      return (
-        <html.div key={week} style={[styles.calendarWeekRow, styles.calendarWeekHeight(isCompact ? 50 : weekHeight)]}>
-          {days.map((cell, column) => {
-            const key = keys[column]!;
-            const count = isCompact ? entriesOn(entries, key).length : 0;
-            const hidden = isCompact ? 0 : hiddenOnDay(segments, column, maxLanes);
-            const target = canEdit ? registerDay(key) : undefined;
-            return (
-              <html.button
-                key={key}
-                ref={target?.ref}
-                id={`${dayAnchor}-${key}`}
-                onClick={() => clickDay(key, hidden)}
-                style={[
-                  styles.calendarCell,
-                  styles.cellWidth(widthOf(column)),
-                  column === 6 && styles.noRightBorder,
-                  week === weeks - 1 && styles.noBottomBorder,
-                  !isCompact && styles.calendarCellWide,
-                  !cell.inMonth && styles.calendarCellOther,
-                  isCompact && chosenDay === key && styles.calendarCellChosen,
-                  hoverDay === key && styles.calendarCellDrop,
-                ]}
-              >
-                <html.span style={[styles.calendarNumber, !cell.inMonth && styles.calendarNumberOther, key === todayKey && styles.calendarNumberToday]}>
-                  {cell.date.getDate()}
-                </html.span>
-                {isCompact && count > 0 ? <html.span style={styles.calendarDayDot} /> : null}
-                {hidden > 0 ? <html.span style={styles.calendarMore}>{`+${hidden} more`}</html.span> : null}
-              </html.button>
-            );
-          })}
-          {segments.filter((s) => s.lane < maxLanes).map((s) => (
+  const barOf = (s: WeekSegment, top: number) => (
             <html.div
               key={s.entry.row.id}
               style={[
                 styles.calendarBarPlace,
-                styles.calendarBarAt(leftOf(s.column) + 2, CALENDAR_DAY_HEAD + s.lane * CALENDAR_LANE, leftOf(s.column + s.span) - leftOf(s.column) - 4),
+                styles.calendarBarAt(share(s.column), top + s.lane * CALENDAR_LANE, share(s.span)),
               ]}
             >
               <DragHandle {...dragProps(s.entry.row.id)}>
@@ -6580,7 +6596,49 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
                 </html.div>
               ) : null}
             </html.div>
-          ))}
+  );
+
+  const monthWeeks = () => {
+    const cells = monthGrid(cursorDate, weekStart);
+    // Five weeks when the month fits: a sixth would hold only the next month.
+    const weeks = cells[35]!.inMonth ? 6 : 5;
+    return Array.from({ length: weeks }, (_, week) => {
+      const days = cells.slice(week * 7, week * 7 + 7);
+      const keys = days.map((c) => dateKey(c.date));
+      const segments = isCompact ? [] : weekSegments(entries, keys);
+      return (
+        <html.div key={week} style={[styles.calendarWeekRow, styles.calendarWeekHeight(isCompact ? 50 : weekHeight)]}>
+          {days.map((cell, column) => {
+            const key = keys[column]!;
+            const count = isCompact ? entriesOn(entries, key).length : 0;
+            const hidden = isCompact ? 0 : hiddenOnDay(segments, column, maxLanes);
+            const target = canEdit ? registerDay(key) : undefined;
+            return (
+              <html.button
+                key={key}
+                ref={target?.ref}
+                id={`${dayAnchor}-${key}`}
+                onClick={() => clickDay(key, hidden)}
+                style={[
+                  styles.calendarCell,
+                  styles.calendarColumn,
+                  column === 6 && styles.noRightBorder,
+                  week === weeks - 1 && styles.noBottomBorder,
+                  !isCompact && styles.calendarCellWide,
+                  !cell.inMonth && styles.calendarCellOther,
+                  isCompact && chosenDay === key && styles.calendarCellChosen,
+                  hoverDay === key && styles.calendarCellDrop,
+                ]}
+              >
+                <html.span style={[styles.calendarNumber, !cell.inMonth && styles.calendarNumberOther, key === todayKey && styles.calendarNumberToday]}>
+                  {cell.date.getDate()}
+                </html.span>
+                {isCompact && count > 0 ? <html.span style={styles.calendarDayDot} /> : null}
+                {hidden > 0 ? <html.span style={styles.calendarMore}>{`+${hidden} more`}</html.span> : null}
+              </html.button>
+            );
+          })}
+          {segments.filter((s) => s.lane < maxLanes).map((s) => barOf(s, CALENDAR_DAY_HEAD))}
         </html.div>
       );
     });
@@ -6597,25 +6655,91 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     ));
   };
 
-  const weekColumns = () => (
-    <html.div style={styles.calendarWeekColumns}>
-      {thisWeek.map((day, column) => {
-        const on = entriesOn(entries, day);
-        const target = canEdit ? registerDay(day) : undefined;
-        return (
-          <html.div
-            key={day}
-            ref={target?.ref}
-            onClick={() => clickDay(day, 0)}
-            style={[styles.calendarWeekColumn, styles.cellWidth(widthOf(column)), column === 6 && styles.noRightBorder, hoverDay === day && styles.calendarCellDrop]}
-          >
-            <html.span style={[styles.calendarNumber, day === todayKey && styles.calendarNumberToday]}>{localDay(day)!.getDate()}</html.span>
-            {on.map((entry) => entryLine(entry, day))}
+  const weekColumns = () => {
+    const allDay = entries.filter((e) => !isTimed(e));
+    const segments = weekSegments(allDay, thisWeek);
+    const lanes = segments.reduce((most, s) => Math.max(most, s.lane + 1), 0);
+    const hourList = Array.from({ length: hours.last - hours.first }, (_, i) => hours.first + i);
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return (
+      <>
+        <html.div style={styles.calendarWeekHead}>
+          <html.div style={styles.calendarGutter} />
+          {thisWeek.map((day, column) => (
+            <html.div key={day} style={[styles.calendarColumn, styles.calendarWeekHeadDay]}>
+              <html.span style={styles.calendarWeekdayInline}>{weekdayNames[column]}</html.span>
+              <html.span style={[styles.calendarNumber, day === todayKey && styles.calendarNumberToday]}>{localDay(day)!.getDate()}</html.span>
+            </html.div>
+          ))}
+        </html.div>
+        <html.div style={styles.calendarAllDay}>
+          <html.div style={styles.calendarGutter}>
+            <html.span style={styles.calendarHourLabel}>all-day</html.span>
           </html.div>
-        );
-      })}
-    </html.div>
-  );
+          <html.div style={[styles.calendarAllDayArea, styles.calendarWeekHeight(Math.max(30, lanes * CALENDAR_LANE + 6))]}>
+            {thisWeek.map((day, column) => {
+              const target = canEdit ? registerDay(day) : undefined;
+              return (
+                <html.div
+                  key={day}
+                  ref={target?.ref}
+                  onClick={() => clickDay(day, 0)}
+                  style={[styles.calendarColumn, styles.calendarGridColumn, column === 6 && styles.noRightBorder, hoverDay === day && styles.calendarCellDrop]}
+                />
+              );
+            })}
+            {segments.map((s) => barOf(s, 3))}
+          </html.div>
+        </html.div>
+        <html.div style={styles.calendarTimeGrid}>
+          <html.div style={styles.calendarGutter}>
+            {hourList.map((hour) => (
+              <html.div key={hour} style={styles.calendarWeekHeight(CALENDAR_HOUR)}>
+                <html.span style={styles.calendarHourLabel}>{`${String(hour).padStart(2, "0")}:00`}</html.span>
+              </html.div>
+            ))}
+          </html.div>
+          {thisWeek.map((day, column) => {
+            const key = `t:${day}`;
+            const target = canEdit ? registerDay(key) : undefined;
+            return (
+              <html.div
+                key={day}
+                ref={target?.ref}
+                onClick={() => clickDay(day, 0)}
+                style={[styles.calendarColumn, styles.calendarGridColumn, styles.calendarWeekHeight(hourList.length * CALENDAR_HOUR), column === 6 && styles.noRightBorder, hoverDay === key && styles.calendarCellDrop]}
+              >
+                {hourList.map((hour, i) => (
+                  <html.div key={hour} style={[styles.calendarHourLine, styles.calendarLineAt(i * CALENDAR_HOUR)]} />
+                ))}
+                {dayTimeline(entries, day).map((t) => {
+                  const top = ((Math.max(t.from, hours.first * 60) - hours.first * 60) / 60) * CALENDAR_HOUR;
+                  const height = Math.max(22, ((t.to - t.from) / 60) * CALENDAR_HOUR - 2);
+                  return (
+                    <html.div key={t.entry.row.id} style={[styles.calendarEventPlace, styles.calendarEventAt(top, height, `${(t.column / t.columns) * 100}%`, `${100 / t.columns}%`)]}>
+                      <DragHandle {...dragProps(t.entry.row.id)}>
+                        <html.button
+                          onClick={() => onOpenBody?.(t.entry.row.id)}
+                          style={[styles.calendarEvent, styles.calendarWeekHeight(height), tintOf(colorsOf(t.entry.row).row), dragged?.id === t.entry.row.id && styles.cardDragging]}
+                        >
+                          <html.span style={styles.calendarBarTime}>{t.entry.time}</html.span>
+                          <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(t.entry.row)}</html.span>
+                        </html.button>
+                      </DragHandle>
+                    </html.div>
+                  );
+                })}
+                {day === todayKey && nowMinutes >= hours.first * 60 && nowMinutes < hours.last * 60 ? (
+                  <html.div style={[styles.calendarNow, styles.calendarLineAt(((nowMinutes - hours.first * 60) / 60) * CALENDAR_HOUR)]} />
+                ) : null}
+              </html.div>
+            );
+          })}
+        </html.div>
+      </>
+    );
+  };
 
   const listedRows = listedDay ? entriesOn(entries, listedDay) : [];
   const draggedRow = dragged ? rows.find((r) => r.id === dragged.id) : undefined;
@@ -6623,7 +6747,29 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   return (
     <html.div {...measureProps} style={styles.calendarPage}>
       <html.div style={styles.calendarTopBar}>
-        <html.span style={styles.calendarHeading}>{heading}</html.span>
+        {DateInputControl.available ? (
+          <html.div style={styles.calendarJump}>
+            {PLATFORM_OS === "ios" ? <html.span style={styles.calendarHeading}>{heading}</html.span> : null}
+            <DateInputControl
+              kind="date"
+              fit
+              label="Go to date"
+              value={chosenInView}
+              onChange={jumpTo}
+              trigger={
+                <html.span style={styles.calendarJumpTrigger}>
+                  <html.span style={styles.calendarHeading}>{heading}</html.span>
+                  <html.span style={styles.calendarJumpChevron}>⌄</html.span>
+                </html.span>
+              }
+            />
+          </html.div>
+        ) : (
+          <html.div style={styles.calendarJump}>
+            <html.span style={styles.calendarHeading}>{heading}</html.span>
+            <html.input type="date" aria-label="Go to date" value={chosenInView} onChange={(e: { target: { value: string } }) => jumpTo(e.target.value)} style={styles.calendarJumpInput} />
+          </html.div>
+        )}
         <CalendarControls
           range={range}
           onRange={setRange}
@@ -6642,8 +6788,8 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
         </html.div>
       ) : (
         <html.div style={styles.calendar}>
-          {weekdayRow}
-          {range === "week" ? weekColumns() : monthWeeks()}
+          {range === "week" ? weekColumns() : weekdayRow}
+          {range === "week" ? null : monthWeeks()}
         </html.div>
       )}
 
@@ -6664,15 +6810,17 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
             <html.span style={styles.calendarAgendaHead}>{`${showUndated ? "▾" : "▸"} No Date`}</html.span>
             <html.span style={styles.calendarMore}>{undated.length}</html.span>
           </html.button>
-          {showUndated
-            ? undated.map((row) => (
+          {showUndated ? (
+            <html.div style={styles.calendarUndatedList}>
+              {undated.map((row) => (
                 <DragHandle key={row.id} {...dragProps(row.id)}>
-                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarLine, tintOf(colorsOf(row).row)]}>
-                    <html.span dir="auto" style={styles.calendarLineTitle}>{labelOf(row)}</html.span>
+                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarUndatedChip, tintOf(colorsOf(row).row), dragged?.id === row.id && styles.cardDragging]}>
+                    <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(row)}</html.span>
                   </html.button>
                 </DragHandle>
-              ))
-            : null}
+              ))}
+            </html.div>
+          ) : null}
         </html.div>
       ) : null}
 
