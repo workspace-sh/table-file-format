@@ -100,7 +100,7 @@ const SPRING_MS = 400;
 const secondary = foregroundStyle({ type: "hierarchical", style: "secondary" });
 type Symbol = NonNullable<ComponentProps<typeof Image>["systemName"]>;
 
-function glass(shape: "circle" | "roundedRectangle", interactive = true) {
+function glass(shape: "circle" | "capsule" | "roundedRectangle", interactive = true) {
   return glassEffect({ glass: { variant: "regular", interactive }, shape, cornerRadius: shape === "roundedRectangle" ? SIZE / 2 : undefined });
 }
 
@@ -648,6 +648,24 @@ function Capsule(props: Part) {
           <HStack spacing={0}>
             {/* A notice beside the lead takes the room instead. */}
             {props.restNotice ? null : <Spacer />}
+            {props.restChoice ? (
+              <>
+                <Menu
+                  label={
+                    <HStack spacing={5} modifiers={[padding({ horizontal: 16 }), frame({ height: SIZE })]}>
+                      <Text modifiers={[font({ size: 16, weight: "medium" }), foregroundStyle("primary")]}>{props.restChoice.label}</Text>
+                      <Image systemName="chevron.up.chevron.down" size={11} modifiers={[secondary]} />
+                    </HStack>
+                  }
+                  modifiers={[glass("capsule"), glassEffectId("choice", ns), contentShape(shapes.capsule()), accessibilityLabel(props.restChoice.label)]}
+                >
+                  {props.restChoice.options.map((o) => (
+                    <Button key={o.id} label={o.label} systemImage={(o.on ? "checkmark" : o.symbol) as Symbol} onPress={() => props.restChoice?.onChoose(o.id)} />
+                  ))}
+                </Menu>
+                <Spacer />
+              </>
+            ) : null}
             <Image
               systemName="magnifyingglass"
               size={18}
