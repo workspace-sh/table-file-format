@@ -85,7 +85,7 @@ import {
   type CalendarRange,
   type WeekSegment,
 } from "./calendar";
-import { calendarRangeKey, remember, remembered } from "./viewMemory";
+import { CalendarRangeInBar, setCalendarRange, useCalendarRange } from "./viewMemory";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
@@ -6445,14 +6445,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const [range, setShownRange] = useState<CalendarRange>(() => {
-    const kept = remembered(calendarRangeKey(view.id));
-    return kept === "week" || kept === "agenda" ? kept : "month";
-  });
-  const setRange = (next: CalendarRange) => {
-    setShownRange(next);
-    remember(calendarRangeKey(view.id), next);
-  };
+  const range: CalendarRange = useCalendarRange(view.id) ?? "month";
+  const setRange = (next: CalendarRange) => setCalendarRange(view.id, next);
+  const rangeInBar = useContext(CalendarRangeInBar);
   const [cursor, setCursor] = useState(() => dateKey(initialMonth(view, rows)));
   const todayKey = dateKey(new Date());
   const [chosenDay, setChosenDay] = useState<string>(todayKey);
@@ -6951,17 +6946,19 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
               onToday={goToday}
             />
           </html.div>
-          <CalendarControls
-            part="range"
-            range={range}
-            onRange={setRange}
-            canPrevious={canGo(-1)}
-            canNext={canGo(1)}
-            canToday={inBounds(todayKey)}
-            onPrevious={() => go(-1)}
-            onNext={() => go(1)}
-            onToday={goToday}
-          />
+          {rangeInBar ? null : (
+            <CalendarControls
+              part="range"
+              range={range}
+              onRange={setRange}
+              canPrevious={canGo(-1)}
+              canNext={canGo(1)}
+              canToday={inBounds(todayKey)}
+              onPrevious={() => go(-1)}
+              onNext={() => go(1)}
+              onToday={goToday}
+            />
+          )}
         </html.div>
       ) : (
       <html.div style={styles.calendarTopBar}>
