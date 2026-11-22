@@ -49,9 +49,8 @@ import {
   BOARD_GAP,
   boardColumns,
   boardCardMove,
-  canStep,
+  calendarBounds,
   cardFields,
-  CALENDAR_CHIPS_PER_DAY,
   columnOf,
   columnValue,
   dateKey,
@@ -63,10 +62,23 @@ import {
   orderAfterDrop,
   orderMovedTo,
   orderSwapped,
-  rowsByDay,
   rowTitle,
   columnLabel,
 } from "./cards";
+import {
+  agendaDays,
+  calendarEntries,
+  daysBetween,
+  entriesOn,
+  hiddenOnDay,
+  moveEntry,
+  resizeEntry,
+  stepRange,
+  weekDays,
+  weekSegments,
+  type CalendarEntry,
+  type CalendarRange,
+} from "./calendar";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
@@ -1060,46 +1072,6 @@ const styles = css.create({
     borderRadius: 8,
     overflow: "hidden",
   },
-  calendarHeader: {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingInline: 12,
-    paddingBlock: 10,
-    backgroundColor: {
-      default: "#f5f5f7",
-      "@media (prefers-color-scheme: dark)": "#17171a",
-    },
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
-  },
-  calendarTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-  },
-  calendarNav: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    borderWidth: 0,
-    backgroundColor: "transparent",
-    fontSize: 16,
-    fontWeight: "600",
-    cursor: "pointer",
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-  },
   calendarNavDisabled: {
     opacity: 0.3,
     cursor: "default",
@@ -1133,128 +1105,6 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#8a8a93",
     },
   },
-  calendarGrid: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  calendarWeek: {
-    display: "flex",
-    flexDirection: "row",
-    flexWrap: "nowrap",
-  },
-  calendarDay: {
-    // Same `dayColWidth(n)` applied at use-site as the header cells,
-    // so headers and grid share identical column geometry. It may give a
-    // point or two back when the widths come to more than the row has.
-    flexShrink: 1,
-    minWidth: 0,
-    flexGrow: 0,
-    boxSizing: "border-box",
-    display: "flex",
-    flexDirection: "column",
-    minHeight: 80,
-    paddingInline: 4,
-    paddingBlock: 4,
-    borderInlineEndWidth: 1,
-    borderInlineEndStyle: "solid",
-    borderInlineEndColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
-    borderBottomWidth: 1,
-    borderBottomStyle: "solid",
-    borderBottomColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
-    gap: 2,
-    overflow: "hidden",
-  },
-  calendarDayOther: {
-    opacity: 0.4,
-  },
-  calendarDayToday: {
-    alignSelf: "flex-start",
-    paddingInline: 6,
-    borderRadius: 999,
-    color: "#ffffff",
-    backgroundColor: {
-      default: "#3478f6",
-      "@media (prefers-color-scheme: dark)": "#0a84ff",
-    },
-  },
-  calendarChips: {
-    display: "flex",
-    flexDirection: "column",
-    gap: 2,
-    marginTop: 4,
-    minWidth: 0,
-  },
-  calendarChip: {
-    fontSize: 11,
-    lineHeight: "16px",
-    maxHeight: 16,
-    lineClamp: 1,
-    overflow: "hidden",
-    paddingInline: 5,
-    borderRadius: 4,
-    cursor: "pointer",
-    color: {
-      default: "#1d4ed8",
-      "@media (prefers-color-scheme: dark)": "#93c5fd",
-    },
-    backgroundColor: {
-      default: "#e8f0fe",
-      ":hover": "#d2e3fc",
-      "@media (prefers-color-scheme: dark)": "#1e2a44",
-    },
-  },
-  calendarChipMore: {
-    fontSize: 10,
-    paddingInline: 5,
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
-  },
-  calendarDayNum: {
-    fontSize: 11,
-    fontWeight: "500",
-    paddingInline: 2,
-    color: {
-      default: "#1c1c1e",
-      "@media (prefers-color-scheme: dark)": "#f5f5f7",
-    },
-  },
-  calendarRowChip: {
-    fontSize: 10,
-    paddingInline: 4,
-    paddingBlock: 2,
-    borderRadius: 3,
-    borderWidth: 0,
-    cursor: "pointer",
-    textAlign: "start",
-    overflow: "hidden",
-    backgroundColor: {
-      default: "#dbeafe",
-      "@media (prefers-color-scheme: dark)": "#1e293b",
-    },
-    color: {
-      default: "#1e40af",
-      "@media (prefers-color-scheme: dark)": "#93c5fd",
-    },
-  },
-  // Apple / Google Calendar mobile pattern — day cell shows just a
-  // row of small dots indicating event density. Tap the day to open
-  // a sheet with the full event list. Less informative at a glance
-  // but legible at any cell size.
-  calendarDayDots: {
-    display: "flex",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    marginTop: 2,
-  },
   calendarDayDot: {
     width: 5,
     height: 5,
@@ -1263,26 +1113,6 @@ const styles = css.create({
       default: "#3478f6",
       "@media (prefers-color-scheme: dark)": "#0a84ff",
     },
-  },
-  calendarDayMore: {
-    fontSize: 9,
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
-  },
-  // Make the day cell tappable — full-bleed pressable area, no extra
-  // affordances; the dots inside hint at content.
-  calendarDayButton: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "stretch",
-    paddingInline: 6,
-    paddingBlock: 4,
-    backgroundColor: "transparent",
-    borderWidth: 0,
-    cursor: "pointer",
-    textAlign: "start",
   },
   // Bottom-sheet event list — one tappable row per event for the
   // selected day.
@@ -1325,6 +1155,93 @@ const styles = css.create({
       default: "#8e8e93",
       "@media (prefers-color-scheme: dark)": "#6e6e73",
     },
+  },
+  // Calendar: on the page as a gallery is, with soft fills and no chrome.
+  calendarPage: { display: "flex", flexDirection: "column", gap: 12, minWidth: 0 },
+  calendarTopBar: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  calendarHeading: { fontSize: 20, fontWeight: "700", color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" } },
+  calendarControls: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  calendarControl: {
+    width: 32, height: 30, borderRadius: 15, borderWidth: 0, fontSize: 18, cursor: "pointer",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+    backgroundColor: { default: "#f2f2f7", ":hover": "#e9e9ef", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
+  },
+  calendarStepper: {
+    display: "flex", flexDirection: "row", alignItems: "center", height: 30, borderRadius: 15, overflow: "hidden",
+    backgroundColor: { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
+  },
+  calendarStep: {
+    width: 32, height: 30, borderWidth: 0, fontSize: 17, cursor: "pointer", backgroundColor: "transparent",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  calendarToday: {
+    height: 30, paddingInline: 8, borderWidth: 0, fontSize: 13, fontWeight: "500", cursor: "pointer", backgroundColor: "transparent",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  calendarWeekRow: { position: "relative", display: "flex", flexDirection: "row", flexWrap: "nowrap" },
+  calendarWeekHeight: (height: number) => ({ height }),
+  calendarCell: {
+    flexShrink: 1, flexGrow: 0, minWidth: 0, boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center",
+    paddingBlock: 4, paddingInline: 2, cursor: "pointer", textAlign: "center",
+    backgroundColor: "transparent", borderTopWidth: 0, borderInlineStartWidth: 0,
+    borderInlineEndWidth: 1, borderInlineEndStyle: "solid",
+    borderInlineEndColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+    borderBottomWidth: 1, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+  },
+  calendarCellOther: { backgroundColor: { default: "#fafafc", "@media (prefers-color-scheme: dark)": "#141416" } },
+  calendarCellChosen: { backgroundColor: { default: "#e8f0fe", "@media (prefers-color-scheme: dark)": "#1e2a44" } },
+  calendarCellDrop: { backgroundColor: { default: "#dbe8ff", "@media (prefers-color-scheme: dark)": "#233a63" } },
+  calendarNumber: {
+    minWidth: 22, height: 22, lineHeight: "22px", borderRadius: 11, fontSize: 12, fontWeight: "500", textAlign: "center",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  calendarNumberOther: { color: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" } },
+  calendarNumberToday: {
+    color: "#ffffff", fontWeight: "700",
+    backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
+  },
+  calendarMore: { fontSize: 10, marginTop: "auto", color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8e8e93" } },
+  calendarBarPlace: { position: "absolute", height: 20 },
+  calendarBarAt: (left: number, top: number, width: number) => ({ left, top, width }),
+  calendarBar: {
+    display: "flex", flexDirection: "row", alignItems: "center", gap: 4, width: "100%", height: 20, boxSizing: "border-box",
+    paddingInline: 6, borderRadius: 5, borderWidth: 0, overflow: "hidden", cursor: "pointer", textAlign: "start",
+    backgroundColor: { default: "#e8f0fe", ":hover": "#d2e3fc", "@media (prefers-color-scheme: dark)": "#1e2a44" },
+  },
+  calendarBarFromBefore: { borderStartStartRadius: 0, borderEndStartRadius: 0 },
+  calendarBarIntoNext: { borderStartEndRadius: 0, borderEndEndRadius: 0 },
+  calendarBarTime: { fontSize: 10, flexShrink: 0, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
+  calendarBarTitle: {
+    fontSize: 11, fontWeight: "500", lineClamp: 1, overflow: "hidden", flexShrink: 1, minWidth: 0,
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  calendarBarEnd: { position: "absolute", top: 0, bottom: 0, insetInlineEnd: 0, width: 8 },
+  calendarBarEndGrip: { width: 8, height: 20, cursor: "col-resize" },
+  calendarWeekColumns: { display: "flex", flexDirection: "row", minHeight: 320 },
+  calendarWeekColumn: {
+    flexShrink: 1, flexGrow: 0, minWidth: 0, boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 4, padding: 4,
+    borderInlineEndWidth: 1, borderInlineEndStyle: "solid",
+    borderInlineEndColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
+  },
+  calendarAgenda: { display: "flex", flexDirection: "column", gap: 16 },
+  calendarAgendaDay: { display: "flex", flexDirection: "column", gap: 4 },
+  calendarAgendaHead: { fontSize: 13, fontWeight: "600", color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
+  calendarAgendaToday: { color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
+  calendarLine: {
+    display: "flex", flexDirection: "row", alignItems: "center", gap: 8, minHeight: 36, boxSizing: "border-box", width: "100%",
+    paddingInline: 10, paddingBlock: 6, borderRadius: 10, borderWidth: 0, cursor: "pointer", textAlign: "start",
+    backgroundColor: { default: "#f2f2f7", ":hover": "#e9e9ef", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
+  },
+  calendarLineTime: { fontSize: 12, flexShrink: 0, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
+  calendarLineTitle: {
+    fontSize: 14, fontWeight: "500", flexShrink: 1, minWidth: 0, lineClamp: 1, overflow: "hidden",
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
+  },
+  calendarUndated: { display: "flex", flexDirection: "column", gap: 4 },
+  calendarUndatedHead: {
+    display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBlock: 6,
+    borderWidth: 0, backgroundColor: "transparent", cursor: "pointer",
   },
   calendarEmpty: {
     padding: 24,
@@ -6437,279 +6354,389 @@ export function ListView({
  * calendar opens on, came out a day early there.
  */
 
+/** A month's week row: the day's number, then its bars. */
+const CALENDAR_DAY_HEAD = 30;
+const CALENDAR_LANE = 22;
+const CALENDAR_MORE = 18;
+
 /**
- * Minimal calendar view — month grid. Anchors rows on their
- * `view.calendar_field` (date string). Days outside the current month
- * render dimmed. Prev / next month navigation; "today" highlight is
- * deferred for now.
- *
- * Date parsing: tolerant of `YYYY-MM-DD` strings (the .table format's
- * `date` type) and full ISO datetime strings (extracts the date
- * portion). Non-string / invalid values are skipped silently.
- *
- * Layout: 7 columns × 6 rows. Day cells size via `dayColWidth(colIndex)`,
- * which divides the measured container by 7 and distributes the
- * remainder pixel-by-pixel across the leftmost columns so the grid
- * fills the available width exactly with no right-edge gap.
+ * The calendar: a month of bars, a week of days, or an agenda, with what has
+ * no date under it. What goes where is calendar.ts's. On a phone the month is
+ * a compact grid over the chosen day's entries, as the system's Calendar has
+ * it. Where the table can be edited, an entry drags to another day, its end
+ * drags to change its length, and a double click adds a row on a day.
  */
-export function CalendarView({
-  view,
-  rows,
-  schema,
-  bodies,
-  onOpenBody,
-}: ViewProps) {
+export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
-  const range = view.calendar_range;
-
-  // Day cell tap opens a sheet listing that day's rows — Apple /
-  // Google Calendar pattern. On a phone the cells show dots; wider,
-  // they show each entry's title, and clicking a title opens it.
-  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
-  // A day's rows: the Mac's popover pointing at the day (ChooseOne), else a sheet.
-  const { ChooseOne } = usePlatformControls();
+  const { ChooseOne, Select: SelectControl } = usePlatformControls();
   const dayAnchor = `day-${useId()}`;
-  const isTouchViewport = useCompactViewport(TOUCH_VIEWPORT_MAX);
-  // A title chip sits inside its day's button. The chip's click marks
-  // itself handled so the day's click doesn't also open the sheet —
-  // this works whether or not a platform lets a click stop propagating.
-  const chipClicked = useRef(false);
-
-  // Measure the calendar's own container — viewport width would be
-  // wrong on web layouts with a sidebar (calendar's parent is the
-  // main pane, narrower than the window). 7 columns means every cell
-  // is `floor(containerWidth / 7)`; until the first layout pass
-  // completes width is 0, so we guard with a tiny fallback that
-  // doesn't visibly flash.
+  const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
-  // 7 columns. `floor(width / 7)` alone leaves up to 6px of dead space
-  // on the right (the grid's border floating away from the cells); the
-  // remainder is spread one pixel at a time across the leftmost
-  // columns so weekdays + day cells fill the width exactly and line up
-  // vertically (each row keys its width on `colIndex`, not position).
-  // `− 2` accounts for the calendar's own 1px left/right border.
-  const calAvailable = Math.max(0, containerWidth - 2);
-  const baseDayWidth = containerWidth > 0 ? Math.floor(calAvailable / 7) : 0;
-  const dayRemainder = containerWidth > 0 ? calAvailable - baseDayWidth * 7 : 0;
-  const dayColWidth = (colIndex: number) =>
-    baseDayWidth + (colIndex < dayRemainder ? 1 : 0);
-
-  // Opens on the earliest dated row's month, inside `calendar_range`.
-  const [cursor, setCursor] = useState(() => initialMonth(view, rows));
+  const [range, setRange] = useState<CalendarRange>("month");
+  const [cursor, setCursor] = useState(() => dateKey(initialMonth(view, rows)));
+  const todayKey = dateKey(new Date());
+  const [chosenDay, setChosenDay] = useState<string>(todayKey);
+  const [listedDay, setListedDay] = useState<string | null>(null);
+  const [showUndated, setShowUndated] = useState(false);
+  const [dragged, setDragged] = useState<{ id: string; end: boolean } | null>(null);
+  const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
+  const { register: registerDay, hitTest: dayAt, remeasure } = useDropTargets<string>();
+  const lastClick = useRef<{ day: string; at: number } | null>(null);
+  const barClicked = useRef(false);
+  useEffect(() => remeasure(), [rows, cursor, range, containerWidth, remeasure]);
 
   if (!calField) {
     return (
       <html.div style={styles.calendarEmpty}>
-        <html.span>
-          No `calendar_field` configured on this view.
-        </html.span>
+        <html.span>Choose which date field this calendar uses in View Settings.</html.span>
       </html.div>
     );
   }
 
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const monthName = monthNameLong(cursor);
-  // Locale-aware: weekday labels + first-day-of-week. Sunday-first in
-  // US/CA/JP/etc., Monday-first across most of Europe + ISO, Saturday-
-  // first in parts of the Middle East. `Intl.Locale.getWeekInfo()`
-  // figures this out from the runtime's locale; falls back to Sunday.
-  const weekStart = firstDayOfWeek();
-  const orderedWeekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
-  // 6 weeks × 7 days, padded with the neighbouring months, whatever
-  // day of the week the 1st falls on in this locale.
-  const cells = monthGrid(cursor, weekStart);
-
-  const rowsByDate = rowsByDay(rows, calField);
-
+  const { entries, undated } = calendarEntries(view, rows);
+  const canEdit = !!onUpdateRow;
   const titleField = schema.fields[0]?.name;
   const labelOf = (row: Row) => rowTitle(row, titleField);
-  const today = new Date();
+  const weekStart = firstDayOfWeek();
+  const weekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
+  const cursorDate = localDay(cursor)!;
+  const firstOfCursor = `${cursor.slice(0, 7)}-01`;
+  const lastOfCursor = dateKey(new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0));
+  const thisWeek = weekDays(cursor, weekStart);
+  const { start: minMonth, end: maxMonth } = calendarBounds(view);
+  const inBounds = (key: string) => {
+    const month = localDay(`${key.slice(0, 7)}-01`)!;
+    return (!minMonth || month >= minMonth) && (!maxMonth || month <= maxMonth);
+  };
+  const canGo = (by: number) => inBounds(stepRange(range, range === "week" ? cursor : firstOfCursor, by));
+  const go = (by: number) => {
+    if (canGo(by)) setCursor(stepRange(range, range === "week" ? cursor : firstOfCursor, by));
+  };
+  const goToday = () => {
+    if (!inBounds(todayKey)) return;
+    setCursor(todayKey);
+    setChosenDay(todayKey);
+  };
+  const heading =
+    range === "week"
+      ? `${localDay(thisWeek[0]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${localDay(thisWeek[6]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+      : `${monthNameLong(cursorDate)} ${cursorDate.getFullYear()}`;
+  const longDay = (key: string) =>
+    localDay(key)!.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
-  // Range-aware navigation. When prev/next would step outside the
-  // bounds (if any), the button disables visually + functionally.
-  const { prev: canGoPrev, next: canGoNext } = canStep(view, cursor);
+  // Seven columns that fill the width exactly: what's left over goes a point
+  // at a time to the first ones, so headers, days and bars all line up.
+  const available = Math.max(0, containerWidth - 2);
+  const dayWidth = containerWidth > 0 ? Math.floor(available / 7) : 0;
+  const extra = containerWidth > 0 ? available - dayWidth * 7 : 0;
+  const widthOf = (column: number) => dayWidth + (column < extra ? 1 : 0);
+  const leftOf = (column: number) => column * dayWidth + Math.min(column, extra);
+  const weekHeight = Math.max(112, Math.min(156, Math.round(dayWidth * 0.82)));
+  const maxLanes = Math.max(1, Math.floor((weekHeight - CALENDAR_DAY_HEAD - CALENDAR_MORE) / CALENDAR_LANE));
 
-  return (
-    <html.div {...measureProps} style={styles.calendar}>
-      <html.div style={styles.calendarHeader}>
-        <html.button
-          onClick={
-            canGoPrev
-              ? () => setCursor(new Date(year, month - 1, 1))
-              : undefined
-          }
-          disabled={!canGoPrev}
-          style={[styles.calendarNav, !canGoPrev && styles.calendarNavDisabled]}
-        >
-          ‹
-        </html.button>
-        <html.span style={styles.calendarTitle}>
-          {monthName} {year}
+  const valueOn = (day: string) => {
+    const type = schema.fields.find((f) => f.name === calField)?.type;
+    return type === "datetime" ? `${day}T09:00:00` : day;
+  };
+  const addOn = (day: string) => {
+    if (!onAddRow || !onUpdateRow) return;
+    const id = onAddRow();
+    if (typeof id === "string") onUpdateRow(id, calField, valueOn(day));
+  };
+  const drop = (id: string, end: boolean, day: string) => {
+    if (!onUpdateRow) return;
+    const entry = entries.find((e) => e.row.id === id);
+    const patch = entry
+      ? end
+        ? resizeEntry(view, entry, day)
+        : entry.start === day
+          ? null
+          : moveEntry(view, entry, day)
+      : { [calField]: valueOn(day) };
+    if (!patch) return;
+    animateNextLayout();
+    for (const [field, value] of Object.entries(patch)) onUpdateRow(id, field, value);
+  };
+  const dragProps = (id: string, end = false) =>
+    canEdit
+      ? {
+          longPressMs: isCompact ? 300 : undefined,
+          onDragStart: (e: DragEvent) => {
+            remeasure();
+            setDragged({ id, end });
+            setPointerPos({ x: e.pageX, y: e.pageY });
+          },
+          onDragMove: (e: DragEvent) => {
+            setPointerPos({ x: e.pageX, y: e.pageY });
+            const hit = dayAt(e.pageX, e.pageY);
+            setHoverDay((was) => (was === hit ? was : hit));
+          },
+          onDragEnd: (e: DragEvent) => {
+            const hit = dayAt(e.pageX, e.pageY);
+            if (hit) drop(id, end, hit);
+            setDragged(null);
+            setHoverDay(null);
+            setPointerPos(null);
+          },
+        }
+      : {};
+
+  const clickDay = (day: string, hidden: number) => {
+    if (barClicked.current) {
+      barClicked.current = false;
+      return;
+    }
+    const now = Date.now();
+    const again = lastClick.current?.day === day && now - lastClick.current.at < 400;
+    lastClick.current = { day, at: now };
+    setChosenDay(day);
+    if (again && !isCompact) {
+      addOn(day);
+      return;
+    }
+    if (hidden > 0) setListedDay(day);
+  };
+
+  /** An entry on its own line, in a day's list or the agenda. */
+  const entryLine = (entry: CalendarEntry, day: string) => (
+    <DragHandle key={`${entry.row.id}-${day}`} {...dragProps(entry.row.id)}>
+      <html.button
+        onClick={() => onOpenBody?.(entry.row.id)}
+        style={[styles.calendarLine, tintOf(colorsOf(entry.row).row), dragged?.id === entry.row.id && styles.cardDragging]}
+      >
+        <html.span style={styles.calendarLineTime}>
+          {entry.start !== entry.end ? `${daysBetween(entry.start, day) + 1}/${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "All day")}
         </html.span>
-        <html.button
-          onClick={
-            canGoNext
-              ? () => setCursor(new Date(year, month + 1, 1))
-              : undefined
-          }
-          disabled={!canGoNext}
-          style={[styles.calendarNav, !canGoNext && styles.calendarNavDisabled]}
-        >
-          ›
-        </html.button>
-      </html.div>
-      <html.div style={styles.calendarWeekdays}>
-        {orderedWeekdayNames.map((d, i) => (
-          <html.span
-            // Use index as key — `d` (the localized name) can theoretically
-            // duplicate across exotic locales / ICU configurations, and we
-            // always render exactly 7 in stable order.
-            key={i}
-            style={[styles.calendarWeekday, styles.cellWidth(dayColWidth(i))]}
-          >
-            {d}
-          </html.span>
-        ))}
-      </html.div>
-      <html.div style={styles.calendarGrid}>
-        {/* A week to a row, seven to a row whatever their widths come to: one
-            wrapping row of days put a week's last day at the start of the next
-            line, under the wrong weekday, when the widths came to more than the
-            calendar measured. */}
-        {Array.from({ length: Math.ceil(cells.length / 7) }, (_, week) => (
-          <html.div key={week} style={styles.calendarWeek}>
-            {cells.slice(week * 7, week * 7 + 7).map((cell, j) => {
-              const i = week * 7 + j;
-              const key = dateKey(cell.date);
-              const dayRows = rowsByDate.get(key) ?? [];
-              const dotsToShow = Math.min(dayRows.length, 3);
-              const overflowCount = dayRows.length - dotsToShow;
-              const isToday = key === dateKey(today);
-              const chips = dayRows.slice(0, CALENDAR_CHIPS_PER_DAY);
-              const moreCount = dayRows.length - chips.length;
-              return (
+        <html.span dir="auto" style={styles.calendarLineTitle}>{labelOf(entry.row)}</html.span>
+        {bodies?.[entry.row.id] ? <BodyBadge /> : null}
+      </html.button>
+    </DragHandle>
+  );
+
+  const weekdayRow = (
+    <html.div style={styles.calendarWeekdays}>
+      {weekdayNames.map((name, i) => (
+        <html.span key={i} style={[styles.calendarWeekday, styles.cellWidth(widthOf(i))]}>{name}</html.span>
+      ))}
+    </html.div>
+  );
+
+  const monthWeeks = () => {
+    const cells = monthGrid(cursorDate, weekStart);
+    return Array.from({ length: 6 }, (_, week) => {
+      const days = cells.slice(week * 7, week * 7 + 7);
+      const keys = days.map((c) => dateKey(c.date));
+      const segments = isCompact ? [] : weekSegments(entries, keys);
+      return (
+        <html.div key={week} style={[styles.calendarWeekRow, styles.calendarWeekHeight(isCompact ? 50 : weekHeight)]}>
+          {days.map((cell, column) => {
+            const key = keys[column]!;
+            const count = isCompact ? entriesOn(entries, key).length : 0;
+            const hidden = isCompact ? 0 : hiddenOnDay(segments, column, maxLanes);
+            const target = canEdit ? registerDay(key) : undefined;
+            return (
+              <html.button
+                key={key}
+                ref={target?.ref}
+                id={`${dayAnchor}-${key}`}
+                onClick={() => clickDay(key, hidden)}
+                style={[
+                  styles.calendarCell,
+                  styles.cellWidth(widthOf(column)),
+                  column === 6 && styles.noRightBorder,
+                  week === 5 && styles.noBottomBorder,
+                  !cell.inMonth && styles.calendarCellOther,
+                  isCompact && chosenDay === key && styles.calendarCellChosen,
+                  hoverDay === key && styles.calendarCellDrop,
+                ]}
+              >
+                <html.span style={[styles.calendarNumber, !cell.inMonth && styles.calendarNumberOther, key === todayKey && styles.calendarNumberToday]}>
+                  {cell.date.getDate()}
+                </html.span>
+                {isCompact && count > 0 ? <html.span style={styles.calendarDayDot} /> : null}
+                {hidden > 0 ? <html.span style={styles.calendarMore}>{`+${hidden} more`}</html.span> : null}
+              </html.button>
+            );
+          })}
+          {segments.filter((s) => s.lane < maxLanes).map((s) => (
+            <html.div
+              key={s.entry.row.id}
+              style={[
+                styles.calendarBarPlace,
+                styles.calendarBarAt(leftOf(s.column) + 2, CALENDAR_DAY_HEAD + s.lane * CALENDAR_LANE, leftOf(s.column + s.span) - leftOf(s.column) - 4),
+              ]}
+            >
+              <DragHandle {...dragProps(s.entry.row.id)}>
                 <html.button
-                  key={i}
                   onClick={() => {
-                    if (chipClicked.current) {
-                      chipClicked.current = false;
-                      return;
-                    }
-                    setSelectedDateKey(key);
+                    barClicked.current = false;
+                    onOpenBody?.(s.entry.row.id);
                   }}
-                  id={`${dayAnchor}-${key}`}
                   style={[
-                    styles.calendarDay,
-                    styles.calendarDayButton,
-                    styles.cellWidth(dayColWidth(i % 7)),
-                    // The calendar's own border is the outer edge; the last
-                    // column and last week don't draw a second one.
-                    i % 7 === 6 && styles.noRightBorder,
-                    i >= cells.length - 7 && styles.noBottomBorder,
-                    !cell.inMonth && styles.calendarDayOther,
+                    styles.calendarBar,
+                    tintOf(colorsOf(s.entry.row).row),
+                    s.continuesBefore && styles.calendarBarFromBefore,
+                    s.continuesAfter && styles.calendarBarIntoNext,
+                    dragged?.id === s.entry.row.id && styles.cardDragging,
                   ]}
                 >
-                  <html.span style={[styles.calendarDayNum, isToday && styles.calendarDayToday]}>
-                    {cell.date.getDate()}
-                  </html.span>
-                  {!isTouchViewport && chips.length > 0 && (
-                    <html.div style={styles.calendarChips}>
-                      {chips.map((row) => (
-                        <html.span
-                          key={row.id}
-                          onClick={() => {
-                            chipClicked.current = true;
-                            onOpenBody?.(row.id);
-                          }}
-                          style={[styles.calendarChip, tintOf(colorsOf(row).row)]}
-                        >
-                          {labelOf(row)}
-                        </html.span>
-                      ))}
-                      {moreCount > 0 && (
-                        <html.span style={styles.calendarChipMore}>+{moreCount} more</html.span>
-                      )}
-                    </html.div>
-                  )}
-                  {isTouchViewport && dayRows.length > 0 && (
-                    <html.div style={styles.calendarDayDots}>
-                      {Array.from({ length: dotsToShow }).map((_, j) => (
-                        <html.span key={j} style={styles.calendarDayDot} />
-                      ))}
-                      {overflowCount > 0 && (
-                        <html.span style={styles.calendarDayMore}>
-                          +{overflowCount}
-                        </html.span>
-                      )}
-                    </html.div>
-                  )}
+                  {s.entry.time ? <html.span style={styles.calendarBarTime}>{s.entry.time}</html.span> : null}
+                  <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(s.entry.row)}</html.span>
                 </html.button>
-              );
-            })}
-          </html.div>
-        ))}
+              </DragHandle>
+              {canEdit && view.calendar_end_field && !s.continuesAfter ? (
+                <html.div style={styles.calendarBarEnd}>
+                  <DragHandle {...dragProps(s.entry.row.id, true)}>
+                    <html.div style={styles.calendarBarEndGrip} />
+                  </DragHandle>
+                </html.div>
+              ) : null}
+            </html.div>
+          ))}
+        </html.div>
+      );
+    });
+  };
+
+  const agendaOf = (from: string, to: string) => {
+    const days = agendaDays(entries, from, to);
+    if (days.length === 0) return <html.div style={styles.calendarEmpty}>Nothing in this period.</html.div>;
+    return days.map(({ day, entries: on }) => (
+      <html.div key={day} style={styles.calendarAgendaDay}>
+        <html.span style={[styles.calendarAgendaHead, day === todayKey && styles.calendarAgendaToday]}>{longDay(day)}</html.span>
+        {on.map((entry) => entryLine(entry, day))}
       </html.div>
-      {(() => {
-        // Day-detail sheet — renders the selected day's rows as a
-        // tappable list. Tap-through opens the row's body if it has
-        // one (same affordance as the calendar row chips had).
-        const dayRows = selectedDateKey
-          ? rowsByDate.get(selectedDateKey) ?? []
-          : [];
-        const sheetTitle = selectedDateKey
-          ? localDay(selectedDateKey)!.toLocaleDateString(undefined, {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-              year: "numeric",
-            })
-          : "";
-        if (ChooseOne) {
-          return selectedDateKey && dayRows.length > 0 ? (
-            <ChooseOne
-              key={selectedDateKey}
-              options={dayRows.map((row) => ({ value: row.id, label: labelOf(row) }))}
-              anchor={`${dayAnchor}-${selectedDateKey}`}
-              onPick={(id) => {
-                setSelectedDateKey(null);
-                onOpenBody?.(id);
-              }}
-              onClose={() => setSelectedDateKey(null)}
-            />
-          ) : null;
-        }
+    ));
+  };
+
+  const weekColumns = (
+    <html.div style={styles.calendarWeekColumns}>
+      {thisWeek.map((day, column) => {
+        const on = entriesOn(entries, day);
+        const target = canEdit ? registerDay(day) : undefined;
         return (
-          <BottomSheet
-            visible={selectedDateKey !== null}
-            onDismiss={() => setSelectedDateKey(null)}
-            title={sheetTitle}
+          <html.div
+            key={day}
+            ref={target?.ref}
+            onClick={() => clickDay(day, 0)}
+            style={[styles.calendarWeekColumn, styles.cellWidth(widthOf(column)), column === 6 && styles.noRightBorder, hoverDay === day && styles.calendarCellDrop]}
           >
-            {dayRows.length === 0 ? (
-              <html.span style={styles.daySheetEmpty}>
-                No items on this day.
-              </html.span>
-            ) : (
-              dayRows.map((row) => {
-                return (
-                  <html.button
-                    key={row.id}
-                    onClick={() => {
-                      setSelectedDateKey(null);
-                      onOpenBody?.(row.id);
-                    }}
-                    style={styles.daySheetItem}
-                  >
-                    {labelOf(row)}
-                    {bodies?.[row.id] ? <BodyBadge /> : null}
-                  </html.button>
-                );
-              })
-            )}
-          </BottomSheet>
+            <html.span style={[styles.calendarNumber, day === todayKey && styles.calendarNumberToday]}>{localDay(day)!.getDate()}</html.span>
+            {on.map((entry) => entryLine(entry, day))}
+          </html.div>
         );
-      })()}
+      })}
+    </html.div>
+  );
+
+  const listedRows = listedDay ? entriesOn(entries, listedDay) : [];
+  const draggedRow = dragged ? rows.find((r) => r.id === dragged.id) : undefined;
+
+  return (
+    <html.div {...measureProps} style={styles.calendarPage}>
+      <html.div style={styles.calendarTopBar}>
+        <html.span style={styles.calendarHeading}>{heading}</html.span>
+        <html.div style={styles.calendarControls}>
+          {canEdit && onAddRow ? (
+            <html.button aria-label="Add a row" onClick={() => addOn(chosenDay)} style={styles.calendarControl}>+</html.button>
+          ) : null}
+          <SelectControl
+            label="Calendar range"
+            value={range}
+            options={[
+              { value: "month", label: "Month" },
+              { value: "week", label: "Week" },
+              { value: "agenda", label: "Agenda" },
+            ]}
+            onChange={(value) => setRange(value as CalendarRange)}
+          />
+          <html.div style={styles.calendarStepper}>
+            <html.button aria-label="Previous" disabled={!canGo(-1)} onClick={() => go(-1)} style={[styles.calendarStep, !canGo(-1) && styles.calendarNavDisabled]}>‹</html.button>
+            <html.button disabled={!inBounds(todayKey)} onClick={goToday} style={[styles.calendarToday, !inBounds(todayKey) && styles.calendarNavDisabled]}>Today</html.button>
+            <html.button aria-label="Next" disabled={!canGo(1)} onClick={() => go(1)} style={[styles.calendarStep, !canGo(1) && styles.calendarNavDisabled]}>›</html.button>
+          </html.div>
+        </html.div>
+      </html.div>
+
+      {range === "agenda" || (range === "week" && isCompact) ? (
+        <html.div style={styles.calendarAgenda}>
+          {range === "week" ? agendaOf(thisWeek[0]!, thisWeek[6]!) : agendaOf(firstOfCursor, lastOfCursor)}
+        </html.div>
+      ) : (
+        <html.div style={styles.calendar}>
+          {weekdayRow}
+          {range === "week" ? weekColumns : monthWeeks()}
+        </html.div>
+      )}
+
+      {range === "month" && isCompact ? (
+        <html.div style={styles.calendarAgendaDay}>
+          <html.span style={styles.calendarAgendaHead}>{longDay(chosenDay)}</html.span>
+          {entriesOn(entries, chosenDay).length === 0 ? (
+            <html.span style={styles.daySheetEmpty}>Nothing on this day.</html.span>
+          ) : (
+            entriesOn(entries, chosenDay).map((entry) => entryLine(entry, chosenDay))
+          )}
+        </html.div>
+      ) : null}
+
+      {undated.length > 0 ? (
+        <html.div style={styles.calendarUndated}>
+          <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
+            <html.span style={styles.calendarAgendaHead}>{`${showUndated ? "▾" : "▸"} No Date`}</html.span>
+            <html.span style={styles.calendarMore}>{undated.length}</html.span>
+          </html.button>
+          {showUndated
+            ? undated.map((row) => (
+                <DragHandle key={row.id} {...dragProps(row.id)}>
+                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarLine, tintOf(colorsOf(row).row)]}>
+                    <html.span dir="auto" style={styles.calendarLineTitle}>{labelOf(row)}</html.span>
+                  </html.button>
+                </DragHandle>
+              ))
+            : null}
+        </html.div>
+      ) : null}
+
+      {draggedRow && pointerPos ? (
+        <DragGhost pointerPos={pointerPos}>
+          <html.div style={[styles.calendarBar, tintOf(colorsOf(draggedRow).row)]}>
+            <html.span style={styles.calendarBarTitle}>{labelOf(draggedRow)}</html.span>
+          </html.div>
+        </DragGhost>
+      ) : null}
+
+      {listedDay && listedRows.length > 0 && ChooseOne ? (
+        <ChooseOne
+          key={listedDay}
+          options={listedRows.map((e) => ({ value: e.row.id, label: labelOf(e.row) }))}
+          anchor={`${dayAnchor}-${listedDay}`}
+          onPick={(id) => {
+            setListedDay(null);
+            onOpenBody?.(id);
+          }}
+          onClose={() => setListedDay(null)}
+        />
+      ) : null}
+      {!ChooseOne ? (
+        <BottomSheet visible={listedDay !== null} onDismiss={() => setListedDay(null)} title={listedDay ? longDay(listedDay) : ""}>
+          {listedRows.map((e) => (
+            <html.button
+              key={e.row.id}
+              onClick={() => {
+                setListedDay(null);
+                onOpenBody?.(e.row.id);
+              }}
+              style={styles.daySheetItem}
+            >
+              {labelOf(e.row)}
+              {bodies?.[e.row.id] ? <BodyBadge /> : null}
+            </html.button>
+          ))}
+        </BottomSheet>
+      ) : null}
     </html.div>
   );
 }
