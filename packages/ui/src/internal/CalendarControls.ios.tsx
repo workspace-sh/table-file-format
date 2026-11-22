@@ -21,11 +21,11 @@ export function CalendarControls({ range, onRange, canPrevious, canNext, canToda
     </Picker>
   );
   // One capsule, as a toolbar's group of buttons is, rather than three.
-  const step = (can: boolean) => [buttonStyle("plain"), labelStyle("iconOnly"), frame({ width: 40, height: 36 }), disabled(!can)];
+  const step = (can: boolean) => [buttonStyle("plain"), labelStyle("iconOnly"), frame({ width: 36, height: 36 }), disabled(!can)];
   const moves = (
     <HStack spacing={0} modifiers={[glassEffect({ glass: { variant: "regular", interactive: true }, shape: "capsule" })]}>
       <Button label="Previous" systemImage="chevron.backward" onPress={onPrevious} modifiers={step(canPrevious)} />
-      <Button label="Today" onPress={onToday} modifiers={[buttonStyle("plain"), frame({ width: 58, height: 36 }), disabled(!canToday)]} />
+      <Button label="Today" onPress={onToday} modifiers={[buttonStyle("plain"), frame({ width: 54, height: 36 }), disabled(!canToday)]} />
       <Button label="Next" systemImage="chevron.forward" onPress={onNext} modifiers={step(canNext)} />
     </HStack>
   );

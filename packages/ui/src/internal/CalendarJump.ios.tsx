@@ -9,16 +9,17 @@ import { buttonStyle, datePickerStyle, font, foregroundStyle, frame, labelsHidde
 import type { CalendarJumpProps } from "../controlSlots";
 import { dateOfStored, storedOfDate } from "../dateEntry";
 
-export function CalendarJump({ title, detail, value, onChange }: CalendarJumpProps) {
+export function CalendarJump({ title, detail, small, value, onChange }: CalendarJumpProps) {
   const [open, setOpen] = useState(false);
+  const size = small ? 20 : 24;
   return (
     <Host matchContents>
       <Popover isPresented={open} onIsPresentedChange={setOpen} attachmentAnchor="bottom" arrowEdge="top">
         <Popover.Trigger>
           <Button onPress={() => setOpen(true)} modifiers={[buttonStyle("plain")]}>
             <HStack spacing={6}>
-              <Text modifiers={[font({ size: 24, weight: "bold" }), foregroundStyle("primary"), lineLimit(1)]}>{title}</Text>
-              {detail ? <Text modifiers={[font({ size: 24 }), foregroundStyle("primary"), lineLimit(1)]}>{detail}</Text> : null}
+              <Text modifiers={[font({ size, weight: "bold" }), foregroundStyle("primary"), lineLimit(1)]}>{title}</Text>
+              {detail ? <Text modifiers={[font({ size }), foregroundStyle("primary"), lineLimit(1)]}>{detail}</Text> : null}
               <Image systemName="chevron.down" size={13} modifiers={[foregroundStyle({ type: "hierarchical", style: "secondary" })]} />
             </HStack>
           </Button>
