@@ -1,11 +1,10 @@
-// The views that show rows as cards, on GTK: board, gallery, list and
-// calendar. Which card goes where comes from table-ui's shared `cards`
+// The views that show rows as cards, on GTK: board, gallery and list
+// (the calendar is calendar.tsx). Which card goes where comes from table-ui's shared `cards`
 // module, the same code the web views run; only the drawing is here.
 
 import * as Gtk from "@gtkx/gi/gtk";
 import * as Pango from "@gtkx/gi/pango";
-import { AdwDialog, AdwHeaderBar, AdwStatusPage, AdwToolbarView } from "@gtkx/jsx/adw";
-import { GtkAdjustment, GtkBox, GtkButton, GtkEventControllerKey, GtkLabel, GtkListBox, GtkListBoxRow, GtkScrolledWindow } from "@gtkx/jsx/gtk";
+import { GtkAdjustment, GtkBox, GtkButton, GtkEventControllerKey, GtkLabel, GtkScrolledWindow } from "@gtkx/jsx/gtk";
 import type { Field, ParsedTable, Row } from "@workspace.sh/table-core";
 import {
   BOARD_GAP,
@@ -15,26 +14,14 @@ import {
   orderAfterDrop,
   orderMovedTo,
   bodyExcerpt,
-  CALENDAR_CHIPS_PER_DAY,
-  canStep,
   cardFields,
-  dateKey,
   fieldsByName,
-  firstDayOfWeek,
   GALLERY_GAP,
   galleryLayout,
   groupedRows,
-  initialMonth,
-  localDay,
-  monthGrid,
-  monthNameLong,
   pillFor,
-  rotateWeekdays,
-  rowsByDay,
   rowTitle,
-  useDisplaySettings,
   visibleFields,
-  weekdayNamesShort,
   type ViewProps,
   columnLabel,
   boardCardMove,
@@ -50,7 +37,7 @@ import { CellValue } from "./CellValue.js";
 import { dragRow, dropRow } from "./drag.js";
 import { styles, tintClass, useDark } from "./theme.js";
 import { useRowColors } from "./rowColors.js";
-import { bottomIn, childAt, drawnOf, scrollerHeight, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
+import { bottomIn, childAt, drawnOf, useEmbedded, useEmbeddedScroller, viewMargins } from "./embedded.js";
 
 /** A board column's width: the web board's. */
 const BOARD_COLUMN_WIDTH = 268;
@@ -500,111 +487,6 @@ export function ListView({ view, rows, schema, bodies, onOpenBody, onUpdateView,
             </CardButton>
           </GtkBox>
         ))}
-      </GtkBox>
-    </GtkScrolledWindow>
-  );
-}
-
-export function CalendarView({ view, rows, schema, bodies, onOpenBody }: ViewProps) {
-  const dark = useDark();
-  const colorsOf = useRowColors(view, schema);
-  const embedded = useEmbedded();
-  const field = view.calendar_field;
-  const { locale } = useDisplaySettings();
-  const [month, setMonth] = useState(() => initialMonth(view, rows));
-  const [openDay, setOpenDay] = useState<string | null>(null);
-  // Read once: a calendar left open past midnight keeps its day until it's shown again.
-  const [today] = useState(() => dateKey(new Date()));
-
-  if (!field) {
-    return <AdwStatusPage vexpand iconName="x-office-calendar-symbolic" title="No date field" description="This view has no calendar_field to place its rows by." />;
-  }
-
-  const weekStart = firstDayOfWeek(locale);
-  const weekdays = rotateWeekdays(weekdayNamesShort(locale), weekStart);
-  const cells = monthGrid(month, weekStart);
-  const byDay = rowsByDay(rows, field);
-  const titleField = schema.fields[0]?.name;
-  const step = canStep(view, month);
-  const weeks = [0, 1, 2, 3, 4, 5].map((w) => cells.slice(w * 7, w * 7 + 7));
-  const dayRows = openDay ? (byDay.get(openDay) ?? []) : [];
-
-  return (
-    <GtkScrolledWindow hexpand {...scrollerHeight(embedded)} hscrollbarPolicy={Gtk.PolicyType.NEVER}>
-      <GtkBox orientation={Gtk.Orientation.VERTICAL} {...viewMargins(embedded)} cssClasses={["card", styles.calendar]}>
-        <GtkBox marginTop={6} marginBottom={6} marginStart={6} marginEnd={6}>
-          <GtkButton
-            iconName="go-previous-symbolic"
-            cssClasses={["flat"]}
-            sensitive={step.prev}
-            tooltipText="Previous month"
-            onClicked={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
-          />
-          <GtkLabel label={`${monthNameLong(month, locale)} ${month.getFullYear()}`} hexpand cssClasses={["heading"]} />
-          <GtkButton
-            iconName="go-next-symbolic"
-            cssClasses={["flat"]}
-            sensitive={step.next}
-            tooltipText="Next month"
-            onClicked={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
-          />
-        </GtkBox>
-        <GtkBox homogeneous cssClasses={[styles.calendarWeekdays]}>
-          {weekdays.map((d, i) => (
-            <GtkLabel key={i} label={d.toUpperCase()} cssClasses={["caption", "dim-label"]} marginTop={6} marginBottom={6} />
-          ))}
-        </GtkBox>
-        {weeks.map((week, w) => (
-          <GtkBox key={w} homogeneous>
-            {week.map((cell) => {
-              const key = dateKey(cell.date);
-              const entries = byDay.get(key) ?? [];
-              const chips = entries.slice(0, CALENDAR_CHIPS_PER_DAY);
-              const more = entries.length - chips.length;
-              return (
-                <GtkButton
-                  key={key}
-                  cssClasses={["flat", styles.calendarDay, ...(cell.inMonth ? [] : [styles.calendarOther])]}
-                  heightRequest={80}
-                  onClicked={() => setOpenDay(key)}
-                  tooltipText={entries.length > 0 ? `${entries.length} on this day` : undefined}
-                >
-                  <GtkBox orientation={Gtk.Orientation.VERTICAL} spacing={2} valign={Gtk.Align.START} hexpand>
-                    <GtkLabel label={String(cell.date.getDate())} xalign={0} cssClasses={[styles.calendarNumber, ...(key === today ? [styles.calendarToday] : [])]} />
-                    {chips.map((row) => (
-                      <Title key={row.id} text={rowTitle(row, titleField)} classes={[styles.calendarChip, ...tintClass(colorsOf(row).row, dark)]} />
-                    ))}
-                    {more > 0 ? <GtkLabel label={`+${more} more`} xalign={0} cssClasses={["caption", "dim-label"]} /> : null}
-                  </GtkBox>
-                </GtkButton>
-              );
-            })}
-          </GtkBox>
-        ))}
-        {openDay ? (
-          <AdwDialog
-            title={localDay(openDay)!.toLocaleDateString(locale, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-            contentWidth={360}
-            onClosed={() => setOpenDay(null)}
-          >
-            <AdwToolbarView topBar={<AdwHeaderBar />}>
-              {dayRows.length === 0 ? (
-                <GtkLabel label="No items on this day." cssClasses={["dim-label"]} marginTop={24} marginBottom={24} />
-              ) : (
-                <GtkListBox cssClasses={["boxed-list"]} selectionMode={Gtk.SelectionMode.NONE} marginStart={12} marginEnd={12} marginBottom={12}>
-                  {dayRows.map((row) => (
-                    <GtkListBoxRow key={row.id} activatable={!!onOpenBody} onActivate={() => onOpenBody?.(row.id)}>
-                      <GtkBox spacing={6} marginStart={12} marginEnd={12} marginTop={10} marginBottom={10}>
-                        <Title text={rowTitle(row, titleField)} />
-                        {bodies?.[row.id] !== undefined ? <GtkLabel label="Page" cssClasses={[styles.bodyBadge]} /> : null}
-                      </GtkBox>
-                    </GtkListBoxRow>
-                  ))}
-                </GtkListBox>
-              )}
-            </AdwToolbarView>
-          </AdwDialog>
-        ) : null}
       </GtkBox>
     </GtkScrolledWindow>
   );

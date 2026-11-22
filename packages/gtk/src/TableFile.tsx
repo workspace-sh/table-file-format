@@ -13,11 +13,11 @@ import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSea
 import { bundleOf, bundleTables, derive, linkedRowAddress, sheetReaders, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
-import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
+import { LAYOUT_LABELS, remember, remembered, tableViewKey } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
 import { addressedView, newId, parseAddress, type BundleChange, type ParsedTable } from "@workspace.sh/table-core";
 import { AttachmentsProvider } from "@workspace.sh/table-ui/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useCellFiles } from "./cellFiles.js";
 
@@ -151,6 +151,24 @@ function Opened({
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
   // Looking only, a cell's note is still read from its row's menu, not only by hovering (D57).
+  // The table and view last looked at in this file, on this device (never in the file), back
+  // before the first paint; then kept as they change. table-app's tableFileView does the same.
+  const memoryKey = tableViewKey(shown.library.paths[bundleOf(shown.key)] ?? shown.key);
+  const restoredView = useRef(false);
+  useLayoutEffect(() => {
+    if (shown.viewId) return;
+    try {
+      const last = JSON.parse(remembered(memoryKey) ?? "null") as { table?: string; view?: string } | null;
+      if (last?.table && state.tables[last.table]) {
+        if (last.table !== state.active) dispatch({ type: "showTable", key: last.table });
+        if (last.view) dispatch({ type: "showView", key: last.table, viewId: last.view });
+      }
+    } catch {
+      // Nothing usable kept: it opens as it would.
+    }
+    // Once, as the file opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [readingNote, setReadingNote] = useState<string | null>(null);
   const readNote = { onAskCellNote: (_rowId: string, _field: string, note?: string) => note !== undefined && setReadingNote(note) };
 
@@ -161,6 +179,13 @@ function Opened({
   const views = table.views;
   const viewAt = Math.max(0, views.findIndex((v) => v.id === view.id));
   const viewsPicker = useSelected<Gtk.DropDown>(viewAt, views.map((v) => v.id).join("\u0000"));
+  useEffect(() => {
+    if (!restoredView.current) {
+      restoredView.current = true;
+      return;
+    }
+    remember(memoryKey, JSON.stringify({ table: state.active, view: view.id }));
+  }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
