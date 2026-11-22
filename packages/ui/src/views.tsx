@@ -6523,9 +6523,16 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
     setCursor(day);
     setChosenDay(day);
   };
+  // A phone's week, short enough to sit beside its controls: "16–22 Nov", "26 Oct–1 Nov".
+  const weekFrom = localDay(thisWeek[0]!)!;
+  const weekTo = localDay(thisWeek[6]!)!;
+  const dayMonth = (d: Date) => d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const shortWeek = `${weekFrom.getMonth() === weekTo.getMonth() ? weekFrom.getDate() : dayMonth(weekFrom)}–${dayMonth(weekTo)}`;
   const heading =
     range === "week"
-      ? `${localDay(thisWeek[0]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${localDay(thisWeek[6]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
+      ? isCompact
+        ? `${shortWeek} ${weekTo.getFullYear()}`
+        : `${dayMonth(weekFrom)} – ${weekTo.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
       : `${monthNameLong(cursorDate)} ${cursorDate.getFullYear()}`;
   // The month in bold and its year beside it, on both the Mac and a phone.
   const headingLine = (style: typeof styles.phoneHeading | typeof styles.calendarHeading) =>
@@ -6956,8 +6963,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
           <html.div style={styles.phoneTitleRow}>
             {PLATFORM_OS === "ios" ? (
               <CalendarJump
-                title={range === "week" ? heading : monthNameLong(cursorDate)}
-                {...(range === "week" ? {} : { detail: String(cursorDate.getFullYear()) })}
+                title={range === "week" ? shortWeek : monthNameLong(cursorDate)}
+                detail={String(range === "week" ? weekTo.getFullYear() : cursorDate.getFullYear())}
+                small={range === "week"}
                 value={chosenInView}
                 onChange={jumpTo}
               />

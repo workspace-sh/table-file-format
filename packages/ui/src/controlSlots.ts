@@ -305,6 +305,8 @@ export interface CalendarJumpProps {
   title: string;
   /** Beside the title, lighter: the year. */
   detail?: string;
+  /** A longer title (a week's dates), a size down so it fits beside the controls. */
+  small?: boolean;
   /** The day it opens on, `YYYY-MM-DD`. */
   value: string;
   onChange: (day: string) => void;
