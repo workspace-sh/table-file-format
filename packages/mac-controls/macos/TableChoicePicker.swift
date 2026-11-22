@@ -244,3 +244,67 @@ private struct Tag: View {
     }
   }
 }
+
+// MARK: A calendar's controls
+
+private final class CalendarControlsModel: ObservableObject {
+  @Published var range = "month"
+  @Published var canPrevious = true
+  @Published var canNext = true
+  @Published var canToday = true
+  var send: (String) -> Void = { _ in }
+}
+
+private struct CalendarControlsContent: View {
+  @ObservedObject var model: CalendarControlsModel
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Spacer(minLength: 0)
+      Picker("Range", selection: Binding(get: { model.range }, set: { model.send($0) })) {
+        Text("Month").tag("month")
+        Text("Week").tag("week")
+        Text("Agenda").tag("agenda")
+      }
+      .pickerStyle(.segmented)
+      .labelsHidden()
+      .fixedSize()
+      ControlGroup {
+        Button { model.send("previous") } label: { Label("Previous", systemImage: "chevron.backward") }
+          .disabled(!model.canPrevious)
+        Button("Today") { model.send("today") }
+          .disabled(!model.canToday)
+        Button { model.send("next") } label: { Label("Next", systemImage: "chevron.forward") }
+          .disabled(!model.canNext)
+      }
+      .labelStyle(.iconOnly)
+      .fixedSize()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+/// The range as the system's segmented control, and Previous, Today and
+/// Next as its button group. Drawn by SwiftUI and told what to show by React.
+@objc(TableCalendarControlsView)
+public final class TableCalendarControlsView: NSView {
+  private let model = CalendarControlsModel()
+
+  @objc public var selectedRange: String = "month" { didSet { model.range = selectedRange } }
+  @objc public var canPrevious: Bool = true { didSet { model.canPrevious = canPrevious } }
+  @objc public var canNext: Bool = true { didSet { model.canNext = canNext } }
+  @objc public var canToday: Bool = true { didSet { model.canToday = canToday } }
+  @objc public var onCommand: (([AnyHashable: Any]?) -> Void)?
+
+  public override init(frame: NSRect) {
+    super.init(frame: frame)
+    model.send = { [weak self] command in self?.onCommand?(["command": command]) }
+    let host = NSHostingView(rootView: CalendarControlsContent(model: model))
+    host.sizingOptions = []
+    host.frame = bounds
+    host.autoresizingMask = [.width, .height]
+    addSubview(host)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+}

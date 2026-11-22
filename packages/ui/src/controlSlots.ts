@@ -284,7 +284,23 @@ export type SheetSlot = ((props: SheetProps) => ReactElement) & { presentsSettin
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
+/** What a calendar's own controls say and do: its range, and moving through time. */
+export interface CalendarControlsProps {
+  range: "month" | "week" | "agenda";
+  onRange: (range: "month" | "week" | "agenda") => void;
+  canPrevious: boolean;
+  canNext: boolean;
+  canToday: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+  onToday: () => void;
+}
+
+export type CalendarControlsSlot = (props: CalendarControlsProps) => ReactElement;
+
 export interface PlatformControls {
+  /** The range and Previous, Today and Next: the system's segmented control and buttons. */
+  CalendarControls: CalendarControlsSlot;
   RowActions: RowActionsSlot;
   Select: SelectSlot;
   DateInput: DateInputSlot;
