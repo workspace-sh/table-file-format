@@ -135,6 +135,7 @@ form (SPEC section 2). Typed as in a spreadsheet on every platform.
 | Manual row order | Partly | Partly | Partly | Partly | By dragging in board and list views; not table or gallery (#573). |
 | Column widths, single rows' heights | Yes | Yes | Yes | Yes | |
 | A view's default row height, a calendar's range | Partly | Partly | Partly | Partly | Honoured; can't be set (#573). |
+| A calendar's end date (`calendar_end_field`) | Yes | Yes | Yes | Partly | Set in View Settings. Linux has the setting; its calendar doesn't draw spans yet (#849). |
 | Personal arrangements, Save for Everyone | Yes | Yes | Yes | Yes | |
 | Hidden rows (`hidden`, D58) | Yes | Yes | Yes | Yes | Hide Row in a row's menu; View Settings shows them all again. A Sheet view keeps their numbers. Hidden columns are a view's columns. |
 | Frozen columns (`frozen.columns`, D58) | Yes | Yes | Yes | Yes | A view's first `frozen.columns` stay put on a wide window (the title alone when it doesn't say; never all of them). View Settings sets it: Freeze Columns. Seen on Linux and the web. iOS and the Mac draw a table edge to edge, with nothing frozen, and don't offer the setting. #674 |

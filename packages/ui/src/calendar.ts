@@ -1,8 +1,9 @@
 // What a calendar shows, with no renderer in it: its entries, the days a
 // range covers, how spans stack across a week, and the edit a move or a
 // resize makes. Days are `YYYY-MM-DD` keys and are counted in UTC, so a
-// daylight-saving day is one day like any other. A datetime's day and time
-// are read as written: its wall clock, floating or with an offset.
+// daylight-saving day is one day like any other. A datetime with an offset
+// names an instant, shown in the reader's clock as a table's cell shows it; a
+// floating one is its wall clock wherever it's read (SPEC section 2).
 
 import type { Row, View } from "@workspace.sh/table-core";
 
@@ -15,8 +16,10 @@ export interface CalendarEntry {
   end: string;
   /** `HH:MM` as written, for a datetime; null for an all-day entry. */
   time: string | null;
-  /** The end's `HH:MM`, for a datetime end. */
+  /** The end's `HH:MM`, for a datetime end; `24:00` when it ends at the midnight after `end`. */
   endTime: string | null;
+  /** The day the stored end names, which is the day after `end` when it's that midnight. */
+  storedEnd: string | null;
 }
 
 /** A timed entry placed in a day's grid: minutes from midnight, and its share of the day's width. */
@@ -43,13 +46,22 @@ export interface WeekSegment {
 const DAY_MS = 86_400_000;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/;
 
+const OFFSET = /(?:Z|[+-]\d{2}:\d{2})$/i;
+
+function utcDay(year: number, month: number, day: number): Date {
+  const d = new Date(0);
+  d.setUTCFullYear(year, month, day);
+  return d;
+}
+
 function dayNumber(key: string): number {
   const m = DAY.exec(key);
-  return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / DAY_MS : Number.NaN;
+  return m ? utcDay(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() / DAY_MS : Number.NaN;
 }
 
 function keyOf(day: number): string {
-  return new Date(day * DAY_MS).toISOString().slice(0, 10);
+  const d = new Date(day * DAY_MS);
+  return `${String(d.getUTCFullYear()).padStart(4, "0")}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())}`;
 }
 
 /** The day `n` days after `key`. */
@@ -62,16 +74,49 @@ export function daysBetween(from: string, to: string): number {
   return dayNumber(to) - dayNumber(from);
 }
 
-function realDay(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const key = value.slice(0, 10);
-  const day = dayNumber(key);
-  return Number.isFinite(day) && keyOf(day) === key ? key : null;
+function two(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
-function timeOf(value: string): string | null {
+function localKey(d: Date): string {
+  return `${String(d.getFullYear()).padStart(4, "0")}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
+
+/** Whether a stored value names an instant: it has a time and an offset. */
+function isInstant(value: string): boolean {
+  return value.length > 10 && OFFSET.test(value);
+}
+
+/** A stored date or datetime as the reader's day and `HH:MM`; null when it isn't a real one. */
+function moment(value: unknown): { day: string; time: string | null } | null {
+  if (typeof value !== "string") return null;
+  const written = value.slice(0, 10);
+  const number = dayNumber(written);
+  if (!Number.isFinite(number) || keyOf(number) !== written) return null;
+  if (isInstant(value)) {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return null;
+    return { day: localKey(d), time: `${two(d.getHours())}:${two(d.getMinutes())}` };
+  }
   const m = DAY.exec(value);
-  return m?.[4] !== undefined ? `${m[4]}:${m[5]}` : null;
+  return { day: written, time: m?.[4] !== undefined ? `${m[4]}:${m[5]}` : null };
+}
+
+function realDay(value: unknown): string | null {
+  return moment(value)?.day ?? null;
+}
+
+/** `value` at `day` and `HH:MM` on the reader's clock: an instant in UTC, floating as written. */
+function storedAt(value: string, day: string, time: string | null): string {
+  if (value.length <= 10) return day;
+  const clockTime = time ?? value.slice(11, 16);
+  if (!isInstant(value)) return `${day}T${clockTime}${value.slice(16)}`;
+  const seconds = Number(value.slice(17, 19)) || 0;
+  const m = DAY.exec(day)!;
+  const d = new Date(2000, 0, 1);
+  d.setFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  d.setHours(Number(clockTime.slice(0, 2)), Number(clockTime.slice(3, 5)), seconds, 0);
+  return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 /** The rows with a date, in date and time order, and those without one. */
@@ -87,13 +132,19 @@ export function calendarEntries(view: View, rows: Row[]): { entries: CalendarEnt
       undated.push(row);
       continue;
     }
-    const end = endField ? realDay(row[endField]) : null;
+    const stored = endField ? moment(row[endField]) : null;
+    const startAt = moment(value)!;
+    // A datetime end is a moment, so one at midnight has ended the day before.
+    const atMidnight = stored?.time === "00:00" && stored.day > start;
+    const end = stored === null ? null : atMidnight ? addDays(stored.day, -1) : stored.day;
+    const valid = end !== null && end >= start;
     entries.push({
       row,
       start,
-      end: end !== null && end >= start ? end : start,
-      time: timeOf(value as string),
-      endTime: end !== null && end >= start ? timeOf(row[endField!] as string) : null,
+      end: valid ? end : start,
+      time: startAt.time,
+      endTime: valid ? (atMidnight ? "24:00" : stored!.time) : null,
+      storedEnd: valid ? stored!.day : null,
     });
   }
   // Stable: rows at the same moment keep the view's order.
@@ -229,37 +280,32 @@ export function retimeEntry(view: View, entry: CalendarEntry, day: string, minut
   const field = view.calendar_field;
   if (!field) return {};
   const value = String(entry.row[field]);
-  const tail = value.length > 16 ? value.slice(16) : ":00";
-  const patch: Record<string, string> = { [field]: `${day}T${clock(minutes)}${tail}` };
+  const patch: Record<string, string> = { [field]: value.length > 10 ? storedAt(value, day, clock(minutes)) : `${day}T${clock(minutes)}:00` };
   const endField = view.calendar_end_field;
   const end = endField ? entry.row[endField] : undefined;
-  if (endField && typeof end === "string" && realDay(end) !== null) {
+  if (endField && typeof end === "string" && entry.storedEnd !== null) {
     const days = daysBetween(entry.start, day);
     if (entry.endTime === null || entry.time === null) {
-      patch[endField] = onDay(end, addDays(entry.end, days));
+      patch[endField] = storedAt(end, addDays(entry.storedEnd, days), null);
     } else {
       const moved = dayNumber(entry.end) * 1440 + minutesOf(entry.endTime) + days * 1440 + minutes - minutesOf(entry.time);
       const endDay = Math.floor(moved / 1440);
-      patch[endField] = `${keyOf(endDay)}T${clock(moved - endDay * 1440)}${end.slice(16)}`;
+      patch[endField] = storedAt(end, keyOf(endDay), clock(moved - endDay * 1440));
     }
   }
   return patch;
-}
-
-/** The date `value` falls on moved to `day`, its time and offset kept. */
-function onDay(value: string, day: string): string {
-  return day + value.slice(10);
 }
 
 /** The cells a move to `day` changes: the start, and an end by as much, so its length is kept. */
 export function moveEntry(view: View, entry: CalendarEntry, day: string): Record<string, string> {
   const field = view.calendar_field;
   if (!field) return {};
-  const patch: Record<string, string> = { [field]: onDay(String(entry.row[field]), day) };
+  const patch: Record<string, string> = { [field]: storedAt(String(entry.row[field]), day, entry.time) };
   const endField = view.calendar_end_field;
   const end = endField ? entry.row[endField] : undefined;
-  if (endField && typeof end === "string" && realDay(end) !== null) {
-    patch[endField] = onDay(end, addDays(entry.end, daysBetween(entry.start, day)));
+  if (endField && typeof end === "string" && entry.storedEnd !== null) {
+    const time = entry.endTime === "24:00" ? "00:00" : entry.endTime;
+    patch[endField] = storedAt(end, addDays(entry.storedEnd, daysBetween(entry.start, day)), time);
   }
   return patch;
 }
@@ -270,13 +316,16 @@ export function resizeEntry(view: View, entry: CalendarEntry, day: string): Reco
   if (!endField) return null;
   const to = day < entry.start ? entry.start : day;
   const current = entry.row[endField];
-  return { [endField]: typeof current === "string" && realDay(current) !== null ? onDay(current, to) : to };
+  if (typeof current !== "string" || entry.storedEnd === null) return { [endField]: to };
+  if (entry.endTime === "24:00") return { [endField]: storedAt(current, addDays(to, 1), "00:00") };
+  return { [endField]: storedAt(current, to, entry.endTime) };
 }
 
-/** The first of the month or the day a step of `by` reaches from `key`. */
+/** The first of the month or the day a step of `by` reaches from `key`; `key` itself past year 0000 or 9999. */
 export function stepRange(range: CalendarRange, key: string, by: number): string {
-  if (range === "week") return addDays(key, 7 * by);
   const m = DAY.exec(key);
   if (!m) return key;
-  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1 + by, 1)).toISOString().slice(0, 10);
+  const next = range === "week" ? new Date((dayNumber(key) + 7 * by) * DAY_MS) : utcDay(Number(m[1]), Number(m[2]) - 1 + by, 1);
+  const year = next.getUTCFullYear();
+  return year < 0 || year > 9999 ? key : next.toISOString().slice(0, 10);
 }

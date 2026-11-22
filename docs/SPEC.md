@@ -1122,9 +1122,11 @@ A view MAY colour rows or cells by their values (DECISIONS D53).
 - `gallery_field` — hero/lead field for gallery cards.
 - `calendar_field` — date field for calendar layouts.
 - `calendar_end_field` — optional `date` or `datetime` field an entry
-  ends on, inclusive, for entries spanning several days. Without it, with
-  an empty value, or with an end before the start, an entry is one day.
-  Apps that don't recognise it show each entry on its start day.
+  ends on, for entries spanning several days. A `date` end is inclusive.
+  A `datetime` end is a moment, so one at exactly midnight has ended the
+  day before. Without it, with an empty value, or with an end before the
+  start, an entry is one day. Apps that don't recognise it show each
+  entry on its start day.
 - `calendar_range` — optional `{start, end}` (YYYY-MM-DD) bound for
   `layout: "calendar"` views. When present, calendar navigation is
   locked to this window: prev / next disable at the bounds and the
