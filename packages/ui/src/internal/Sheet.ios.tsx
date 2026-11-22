@@ -78,14 +78,13 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
                 ]
               : [],
         }}
-        {...(page
-          ? {
-              stackPresentation: "pageSheet" as const,
-              // A swipe closes it when that loses nothing. Otherwise iOS keeps
-              // the sheet and reports the attempt, for the caller to ask.
-              preventNativeDismiss: !dismissible,
-              onNativeDismissCancelled: onDismiss,
-            }
+        // A swipe closes a page when that loses nothing. Otherwise iOS keeps
+        // the sheet and reports the attempt, for the caller to ask.
+        {...(page ? { preventNativeDismiss: !dismissible, onNativeDismissCancelled: onDismiss } : {})}
+        // A page in a host's editor is a Liquid Glass sheet too: half way up,
+        // and docked full height if it's pulled or written in.
+        {...(page && !fill
+          ? { stackPresentation: "pageSheet" as const }
           : {
               stackPresentation: "formSheet" as const,
               sheetAllowedDetents: [0.5, 1],
