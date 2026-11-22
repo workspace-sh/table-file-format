@@ -1506,7 +1506,8 @@ stays.
 - every row's key;
 - every view's keys that name a field: `fields`, `sort`, `filter`,
   `group`, `columnWidths`, `totals`, `colors`, `merged`,
-  `calendar_range`, `board_field`, `gallery_field` and `calendar_field`;
+  `calendar_range`, `board_field`, `gallery_field`, `calendar_field` and
+  `calendar_end_field`;
 - `cells/` lines;
 - every formula that reads it, in its table or another of the same
   `.table`: a bare word, and `field`, `values`, `related`, `linked`,

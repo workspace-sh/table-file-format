@@ -11,8 +11,30 @@
 #import <AppKit/AppKit.h>
 #import <React/RCTBridgeModule.h>
 #import <React/RCTEventEmitter.h>
+#import <React/RCTViewManager.h>
 
 #import "TableMacControls-Swift.h"
+
+/// The system's controls for a calendar (TableChoicePicker.swift's TableCalendarControlsView).
+@interface TableCalendarControlsManager : RCTViewManager
+@end
+
+@implementation TableCalendarControlsManager
+
+RCT_EXPORT_MODULE(TableCalendarControls)
+
+- (RCTPlatformView *)view
+{
+  return [[TableCalendarControlsView alloc] initWithFrame:NSZeroRect];
+}
+
+RCT_EXPORT_VIEW_PROPERTY(selectedRange, NSString)
+RCT_EXPORT_VIEW_PROPERTY(canPrevious, BOOL)
+RCT_EXPORT_VIEW_PROPERTY(canNext, BOOL)
+RCT_EXPORT_VIEW_PROPERTY(canToday, BOOL)
+RCT_EXPORT_VIEW_PROPERTY(onCommand, RCTBubblingEventBlock)
+
+@end
 
 @interface TableMacControls : RCTEventEmitter
 @end

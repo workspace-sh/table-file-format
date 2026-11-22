@@ -125,6 +125,11 @@ export function ViewSettings({
             <FieldSelect fields={dateFields} value={view.calendar_field} onChange={(f) => onChange({ calendar_field: f })} />
           </FieldRow>
         )}
+        {view.layout === "calendar" && (
+          <FieldRow label="Ends on">
+            <FieldSelect fields={dateFields} value={view.calendar_end_field} none="Nothing" onChange={(f) => onChange({ calendar_end_field: f || undefined })} />
+          </FieldRow>
+        )}
         {view.layout === "gallery" && (
           <FieldRow label="Card lead">
             <FieldSelect
@@ -495,6 +500,7 @@ function viewSettingsSections({
   }
   if (view.layout === "calendar") {
     viewRows.push(choice("calendar", "Dates from", view.calendar_field, fieldOptions(choices.date), (f) => onChange({ calendar_field: f || undefined })));
+    viewRows.push(choice("calendar-end", "Ends on", view.calendar_end_field, fieldOptions(choices.date, "Nothing"), (f) => onChange({ calendar_end_field: f || undefined })));
   }
   if (view.layout === "gallery") {
     viewRows.push(choice("gallery", "Card lead", view.gallery_field, fieldOptions(live, "Nothing"), (f) => onChange({ gallery_field: f || undefined })));

@@ -75,11 +75,11 @@ test("rows are bucketed by day, datetimes by their date, undated left out", () =
   assert.equal([...byDay.values()].flat().length, 3);
 });
 
-test("a calendar opens on its earliest row's month, inside its range", () => {
+test("a calendar opens on the month of the row nearest today, inside its range", () => {
   const cal: View = { id: "c", name: "Cal", layout: "calendar", calendar_field: "due" };
-  assert.equal(dateKey(initialMonth(cal, rows)), "2026-02-01");
+  assert.equal(dateKey(initialMonth(cal, rows, new Date(2026, 0, 1))), "2026-02-01");
   const ranged = { ...cal, calendar_range: { start: "2026-03-01", end: "2026-04-30" } };
-  assert.equal(dateKey(initialMonth(ranged, rows)), "2026-03-01");
+  assert.equal(dateKey(initialMonth(ranged, rows, new Date(2026, 0, 1))), "2026-03-01");
   assert.deepEqual(canStep(ranged, new Date(2026, 2, 1)), { prev: false, next: true });
   assert.deepEqual(canStep(ranged, new Date(2026, 3, 1)), { prev: true, next: false });
   assert.equal(dateKey(initialMonth({ ...cal, calendar_field: undefined }, rows, new Date(2026, 6, 9))), "2026-07-01");

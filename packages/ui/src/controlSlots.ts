@@ -100,6 +100,8 @@ export interface DateInputProps {
   label?: string;
   /** The cell's value as it's shown, for a picker that opens from it (Android). */
   trigger: ReactElement;
+  /** As wide as its trigger, rather than filling a cell: a heading that opens a picker. */
+  fit?: boolean;
 }
 
 /**
@@ -284,7 +286,35 @@ export type SheetSlot = ((props: SheetProps) => ReactElement) & { presentsSettin
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
+/** What a calendar's own controls say and do: its range, and moving through time. */
+export interface CalendarControlsProps {
+  range: "month" | "week" | "agenda";
+  onRange: (range: "month" | "week" | "agenda") => void;
+  canPrevious: boolean;
+  canNext: boolean;
+  canToday: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  /** On a phone they sit apart: only the range, or only Previous, Today and Next. Absent: both. */
+  part?: "range" | "navigate";
+}
+
+/** A calendar's heading, which opens the platform's own way to go to a date. */
+export interface CalendarJumpProps {
+  title: string;
+  /** Beside the title, lighter: the year. */
+  detail?: string;
+  /** The day it opens on, `YYYY-MM-DD`. */
+  value: string;
+  onChange: (day: string) => void;
+}
+
+export type CalendarControlsSlot = (props: CalendarControlsProps) => ReactElement;
+
 export interface PlatformControls {
+  /** The range and Previous, Today and Next: the system's segmented control and buttons. */
+  CalendarControls: CalendarControlsSlot;
   RowActions: RowActionsSlot;
   Select: SelectSlot;
   DateInput: DateInputSlot;

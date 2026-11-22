@@ -208,7 +208,7 @@ function viewWithoutField(view: View, name: string): View {
     if (merged.length > 0) next.merged = merged;
     else delete next.merged;
   }
-  for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === name) delete next[k];
+  for (const k of ["board_field", "gallery_field", "calendar_field", "calendar_end_field"] as const) if (view[k] === name) delete next[k];
   return next;
 }
 
