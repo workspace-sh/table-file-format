@@ -11,12 +11,14 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { BundleChange } from "@workspace.sh/table-core";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
 import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
+import { remember, remembered, tableViewKey } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -87,6 +89,11 @@ export interface TableFileChrome {
 }
 
 export interface TableFileViewProps {
+  /**
+   * Changes to this file made somewhere else (`diffBundle`), applied to what's
+   * on screen without reading it again. Each new `n` applies once.
+   */
+  incoming?: { changes: BundleChange[]; n: number };
   /** The file, read over the host's files (readTableFileWith, readTableArchiveFile); null while it's read. */
   read: EmbedRead | null;
   /** How the host writes the file back (embedFilesWith over its files). */
@@ -170,7 +177,7 @@ function alertAsk(confirm: Confirm, answer: (response: string) => void) {
   );
 }
 
-function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
+function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask, chrome, onChrome, index, formulaSyntax, saveRowsWhen, flush, attach, discardAttachments }: Omit<TableFileViewProps, "read"> & { shown: EmbedShown }) {
   // A large table's rows are saved from its index, after the rest of the file is written.
   const saveIndexed = useRef<((tables: Record<string, ParsedTable>, later?: boolean) => Promise<boolean>) | null>(null);
   const flushIndexed = useRef<(() => Promise<void>) | null>(null);
@@ -204,6 +211,14 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
     tell: (heading, body) => dispatch({ type: "tell", message: { heading, ...(body ? { body } : {}) } }),
     openIndexDatabase: index?.openIndexDatabase ?? noIndex,
   });
+  const appliedIncoming = useRef(incoming?.n);
+  useEffect(() => {
+    if (!incoming || incoming.n === appliedIncoming.current) return;
+    appliedIncoming.current = incoming.n;
+    dispatch({ type: "changesApplied", bundle: bundleOf(state.active), changes: incoming.changes });
+    // Each set of changes once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.n]);
   saveIndexed.current = indexed.save;
   flushIndexed.current = indexed.flush;
   useEffect(() => {
@@ -278,6 +293,31 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
         dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
     );
   };
+
+  // The table and view last looked at in this file, on this device, back
+  // before the first paint; then kept as they change.
+  const memoryKey = tableViewKey(shown.library.paths[bundleOf(shown.key)] ?? shown.key);
+  const restoredView = useRef(false);
+  useLayoutEffect(() => {
+    try {
+      const kept = JSON.parse(remembered(memoryKey) ?? "null") as { table?: string; view?: string } | null;
+      if (kept?.table && state.tables[kept.table]) {
+        if (kept.table !== state.active) dispatch({ type: "showTable", key: kept.table });
+        if (kept.view) dispatch({ type: "showView", key: kept.table, viewId: kept.view });
+      }
+    } catch {
+      // Nothing usable kept: it opens as it would.
+    }
+    // Once, as the file opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!restoredView.current) {
+      restoredView.current = true;
+      return;
+    }
+    remember(memoryKey, JSON.stringify({ table: state.active, view: view.id }));
+  }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
@@ -387,6 +427,7 @@ function Opened({ shown, files, readOnly, locale, at, onOpenLink, ask, chrome, o
         cells={table.cells}
         tableKey={tableName}
         sheet={derived.shown.sheet}
+        {...(state.search ? { searchQuery: state.search } : {})}
         // A large table's rows: from its index, or as many as are read so far while it's made.
         {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}

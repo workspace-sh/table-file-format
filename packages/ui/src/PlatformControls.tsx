@@ -17,6 +17,7 @@ import { Toggle as PlatformToggle } from "./internal/Toggle";
 import { Sheet as PlatformSheet } from "./internal/Sheet";
 import { SettingsForm as PlatformSettingsForm } from "./internal/SettingsForm";
 import { PageMark as PlatformPageMark } from "./internal/PageMark";
+import { CalendarControls as PlatformCalendarControls } from "./internal/CalendarControls";
 
 const defaults: PlatformControls = {
   RowActions,
@@ -26,12 +27,13 @@ const defaults: PlatformControls = {
   Sheet: PlatformSheet,
   SettingsForm: PlatformSettingsForm,
   PageMark: PlatformPageMark,
+  CalendarControls: PlatformCalendarControls,
 };
 
 const Context = createContext<PlatformControls>(defaults);
 
 export function PlatformControlsProvider({ value, children }: { value: Partial<PlatformControls>; children: ReactNode }) {
-  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm, ChooseMany: chooseMany, ChooseOne: chooseOne, CellProblem: cellProblem, PageMark: pageMark } = value;
+  const { RowActions: rowActions, Select: select, DateInput: dateInput, Toggle: toggle, Sheet: sheet, SettingsForm: settingsForm, ChooseMany: chooseMany, ChooseOne: chooseOne, CellProblem: cellProblem, PageMark: pageMark, CalendarControls: calendarControls, PageEditor: pageEditor } = value;
   const merged = useMemo<PlatformControls>(
     () => ({
       RowActions: rowActions ?? defaults.RowActions,
@@ -45,8 +47,10 @@ export function PlatformControlsProvider({ value, children }: { value: Partial<P
       CellProblem: cellProblem ?? null,
       // Null is the host's choice of the chip; left out, the platform's mark.
       PageMark: pageMark !== undefined ? pageMark : defaults.PageMark,
+      CalendarControls: calendarControls ?? defaults.CalendarControls,
+      PageEditor: pageEditor ?? null,
     }),
-    [rowActions, select, dateInput, toggle, sheet, settingsForm, chooseMany, chooseOne, cellProblem, pageMark],
+    [rowActions, select, dateInput, toggle, sheet, settingsForm, chooseMany, chooseOne, cellProblem, pageMark, calendarControls, pageEditor],
   );
   return <Context.Provider value={merged}>{children}</Context.Provider>;
 }

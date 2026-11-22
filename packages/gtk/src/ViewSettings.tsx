@@ -256,6 +256,9 @@ export function ViewSettings({ view, schema, onChange, onDelete, onClose, onCanc
             {view.layout === "calendar" ? (
               <Choice title="Dates From" options={fieldOptions(choices.date)} value={view.calendar_field} onChange={(f) => onChange({ calendar_field: f })} />
             ) : null}
+            {view.layout === "calendar" ? (
+              <Choice title="Ends On" options={fieldOptions(choices.date)} value={view.calendar_end_field} none="Nothing" onChange={(f) => onChange({ calendar_end_field: f })} />
+            ) : null}
             {view.layout === "gallery" ? (
               <Choice title="Cards Lead With" options={fieldOptions(choices.live)} value={view.gallery_field} none="Nothing" onChange={(f) => onChange({ gallery_field: f })} />
             ) : null}

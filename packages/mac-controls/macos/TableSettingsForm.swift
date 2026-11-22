@@ -160,10 +160,29 @@ private struct RowView: View {
         LabeledContent(row.label ?? "", value: row.value ?? "")
       }
     case "toggle":
-      Toggle(row.label ?? "", isOn: Binding(
+      let isOn = Binding(
         get: { row.on == true },
-        set: { next in if next != (row.on == true) { send(["what": "toggle", "id": row.id, "value": next]) } }
-      ))
+        set: { (next: Bool) in if next != (row.on == true) { send(["what": "toggle", "id": row.id, "value": next]) } }
+      )
+      if let actions = row.actions, !actions.isEmpty {
+        // Its buttons before its switch, as an info row has them at its end.
+        LabeledContent {
+          HStack(spacing: 8) {
+            ForEach(actions) { action in RowView(row: action, send: send) }
+            Toggle(row.label ?? "", isOn: isOn).labelsHidden()
+          }
+          .fixedSize()
+        } label: {
+          Text(row.label ?? "")
+          if let value = row.value { Text(value) }
+        }
+      } else {
+        Toggle(isOn: isOn) {
+          // A second Text is the system's line under a label.
+          Text(row.label ?? "")
+          if let value = row.value, !value.isEmpty { Text(value) }
+        }
+      }
     case "action":
       Button(role: row.role == "destructive" ? .destructive : nil) {
         send(["what": "press", "id": row.id])

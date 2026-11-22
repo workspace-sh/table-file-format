@@ -9,7 +9,7 @@ import { ERROR_MARKS, type FormulaErrorGroup } from "../display";
 import { ErrorMark as CharacterMark } from "./ErrorMark.tsx";
 
 const hasSymbols = UIManager.hasViewManagerConfig?.("TableSymbol") ?? false;
-const TableSymbol = hasSymbols ? requireNativeComponent<ViewProps & { name: string; pointSize: number; tint: string }>("TableSymbol") : null;
+export const TableSymbol = hasSymbols ? requireNativeComponent<ViewProps & { name: string; pointSize: number; tint: string }>("TableSymbol") : null;
 
 export function ErrorMark({ group }: { group: FormulaErrorGroup }) {
   if (!TableSymbol) return <CharacterMark group={group} />;
