@@ -42,9 +42,10 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
           // Settings: no fill, so the bar is glass over the form, as the tables
           // sheet's is. UIKit makes it so on its own only for a scroll view it
           // can find, and a SwiftUI form's it can't; the form insets itself.
-          // A page's editor doesn't, so its bar is the standard one, with the
-          // page below it.
-          ...(page ? {} : { translucent: true, backgroundColor: "transparent" }),
+          // A page's own text area doesn't, so its bar is the standard one,
+          // with the page below it. A host's editor that scrolls itself (`fill`)
+          // insets itself too, so its bar is the sheet's, with no strip of its own.
+          ...(page && !fill ? {} : { translucent: true, backgroundColor: "transparent" }),
           headerLeftBarButtonItems: cancel
             ? [{ type: "button", icon: { type: "sfSymbol", name: "xmark" }, accessibilityLabel: cancel.label, onPress: cancel.onPress }]
             : [],
@@ -94,7 +95,7 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
         onDismissed={onDismiss}
       >
         {page ? (
-          <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
+          <KeyboardAvoidingView behavior="padding" style={fill ? { flex: 1 } : { flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
             {children}
           </KeyboardAvoidingView>
         ) : fill ? (
