@@ -17,9 +17,12 @@
  * fills it.
  */
 import type { ReactElement } from "react";
-import { KeyboardAvoidingView, PlatformColor, ScrollView, Text, View } from "react-native";
+import { DynamicColorIOS, KeyboardAvoidingView, PlatformColor, ScrollView, Text, View } from "react-native";
 import { ScreenStack, ScreenStackHeaderCenterView, ScreenStackItem } from "react-native-screens";
 import type { SheetProps, SheetSlot } from "../controlSlots";
+
+/** The colour of a page sheet's bar, so a host's editor under it reads as one surface with it. */
+const PAGE_FILL = DynamicColorIOS({ light: "#ffffff", dark: "#1c1c1e" });
 
 function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDismiss, fill, children }: SheetProps) {
   const page = size !== "settings";
@@ -42,10 +45,9 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
           // Settings: no fill, so the bar is glass over the form, as the tables
           // sheet's is. UIKit makes it so on its own only for a scroll view it
           // can find, and a SwiftUI form's it can't; the form insets itself.
-          // A page's own text area doesn't, so its bar is the standard one,
-          // with the page below it. A host's editor that scrolls itself (`fill`)
-          // insets itself too, so its bar is the sheet's, with no strip of its own.
-          ...(page && !fill ? {} : { translucent: true, backgroundColor: "transparent" }),
+          // A page's editor doesn't, so its bar is the standard one, with the
+          // page below it, in the bar's colour (PAGE_FILL).
+          ...(page ? {} : { translucent: true, backgroundColor: "transparent" }),
           headerLeftBarButtonItems: cancel
             ? [{ type: "button", icon: { type: "sfSymbol", name: "xmark" }, accessibilityLabel: cancel.label, onPress: cancel.onPress }]
             : [],
@@ -95,7 +97,7 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
         onDismissed={onDismiss}
       >
         {page ? (
-          <KeyboardAvoidingView behavior="padding" style={fill ? { flex: 1 } : { flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: fill ? PAGE_FILL : PlatformColor("systemBackground") }}>
             {children}
           </KeyboardAvoidingView>
         ) : fill ? (
