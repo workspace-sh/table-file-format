@@ -148,17 +148,16 @@ export function mapShapeText(value: unknown): string | null {
   }
 }
 
-function partText(value: unknown): string {
-  if (value === null || value === undefined || value === "") return EMPTY_TEXT;
-  if (Array.isArray(value)) return plural(value.length, "item");
-  if (typeof value === "object") return plural(Object.keys(value).length, "item");
-  return String(value);
-}
-
-/** An object in words, a part at a time: `city: Paris · priority: 3 · nested: 1 item`. */
-export function objectText(value: Record<string, unknown>): string {
-  const parts = Object.entries(value).map(([key, part]) => `${key}: ${partText(part)}`);
-  return parts.length ? parts.join(" · ") : EMPTY_TEXT;
+/** An object's values for its pills, in order: a nested object or list reads in words. */
+export function objectParts(value: Record<string, unknown>): string[] {
+  return Object.values(value).map((part) => {
+    if (part === null || part === undefined || part === "") return EMPTY_TEXT;
+    if (Array.isArray(part)) return plural(part.length, "item");
+    if (typeof part === "object") {
+      return Object.entries(part).map(([key, inner]) => `${key}: ${typeof inner === "object" && inner !== null ? "…" : String(inner)}`).join(", ") || EMPTY_TEXT;
+    }
+    return String(part);
+  });
 }
 
 export function bodyExcerpt(body: string | undefined, title?: string, max = 160): string | undefined {
@@ -420,10 +419,13 @@ export function describeCell(
   if (Array.isArray(value) && !field?.relation) {
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
   }
-  // A map shape or an object, in words. Its full form is what opening the cell shows.
+  // A map shape in words, an object as a pill per value. Its full form is what opening the cell shows.
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
     const shape = field?.type === "geojson" ? mapShapeText(value) : null;
-    return { kind: "text", text: shape ?? objectText(value as Record<string, unknown>), oneToken: false };
+    if (shape) return { kind: "text", text: shape, oneToken: false };
+    const parts = objectParts(value as Record<string, unknown>);
+    if (parts.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
+    return { kind: "pills", pills: parts.map((part) => pillFor(undefined, part)) };
   }
   const isEnum = hasChoices(field);
   if (isEnum && value !== undefined && value !== null && value !== "") {
