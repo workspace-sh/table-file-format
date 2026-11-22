@@ -12,12 +12,13 @@
 // look at.
 
 import type { BundleChange } from "@workspace.sh/table-core";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
 import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
+import { remember, remembered, tableViewKey } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
 import { bundleOf, bundleTables, tableNameOf } from "./bundles.ts";
@@ -292,6 +293,31 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
         dispatch({ type: "tell", message: { heading: "Couldn't attach the file", body: error instanceof Error ? error.message : String(error) } }),
     );
   };
+
+  // The table and view last looked at in this file, on this device, back
+  // before the first paint; then kept as they change.
+  const memoryKey = tableViewKey(shown.library.paths[bundleOf(shown.key)] ?? shown.key);
+  const restoredView = useRef(false);
+  useLayoutEffect(() => {
+    try {
+      const kept = JSON.parse(remembered(memoryKey) ?? "null") as { table?: string; view?: string } | null;
+      if (kept?.table && state.tables[kept.table]) {
+        if (kept.table !== state.active) dispatch({ type: "showTable", key: kept.table });
+        if (kept.view) dispatch({ type: "showView", key: kept.table, viewId: kept.view });
+      }
+    } catch {
+      // Nothing usable kept: it opens as it would.
+    }
+    // Once, as the file opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!restoredView.current) {
+      restoredView.current = true;
+      return;
+    }
+    remember(memoryKey, JSON.stringify({ table: state.active, view: view.id }));
+  }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
