@@ -28,3 +28,4 @@ export { CalendarRangeInBar, calendarRange, remember, remembered, setCalendarRan
 export { dateOfStored, localDate, storedOfDate, type DateKind } from "./dateEntry";
 export { rowLayout, type RowLayout, type RowMark } from "./rowLayout";
 export { isImmediate, useViewFacts, useViewWindow, VIEW_PAGE, type ViewFacts } from "./useViewRows";
+export { addDays, agendaDays, calendarEntries, daysBetween, dayTimeline, entriesOn, hiddenOnDay, hourWindow, isTimed, moveEntry, resizeEntry, retimeEntry, stepRange, weekDays, weekSegments, type CalendarEntry, type TimedEntry, type WeekSegment } from "./calendar";
