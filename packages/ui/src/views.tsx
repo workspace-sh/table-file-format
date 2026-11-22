@@ -1067,14 +1067,8 @@ const styles = css.create({
   },
 
   // Calendar — month grid (7 cols × 6 rows = 42 cells).
-  // Calendar: on the page, with hairlines and no box around it.
-  calendar: {
-    display: "flex",
-    flexDirection: "column",
-    borderTopWidth: 0.5,
-    borderTopStyle: "solid",
-    borderTopColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#38383a" },
-  },
+  // Calendar: edge to edge on the page, with hairlines and no box.
+  calendar: { display: "flex", flexDirection: "column" },
   calendarNavDisabled: {
     opacity: 0.3,
     cursor: "default",
@@ -1082,32 +1076,18 @@ const styles = css.create({
   calendarWeekdays: {
     display: "flex",
     flexDirection: "row",
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomStyle: "solid",
-    borderBottomColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
+    borderBottomColor: { default: "#c6c6c8", "@media (prefers-color-scheme: dark)": "#38383a" },
   },
   calendarWeekday: {
-    // Width applied at use-site via the `dayColWidth(colIndex)` helper.
-    // Container-measured (not viewport-derived) so columns track the
-    // calendar's actual parent — handles sidebar layouts, narrow
-    // panels, orientation changes, browser resize.
-    flexShrink: 0,
-    flexGrow: 0,
     boxSizing: "border-box",
     paddingBlock: 6,
-    paddingInlineEnd: 10,
-    fontSize: 10,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+    paddingInlineEnd: 11,
+    fontSize: 14,
+    fontWeight: "500",
     textAlign: "end",
-    color: {
-      default: "#6e6e73",
-      "@media (prefers-color-scheme: dark)": "#8a8a93",
-    },
+    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
   calendarDayDot: {
     width: 5,
@@ -1163,7 +1143,7 @@ const styles = css.create({
   // Calendar: on the page as a gallery is, with soft fills and no chrome.
   calendarPage: { display: "flex", flexDirection: "column", gap: 12, minWidth: 0 },
   calendarTopBar: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  calendarHeading: { fontSize: 20, fontWeight: "700", color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" } },
+  calendarHeading: { fontSize: 28, fontWeight: "700", color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" } },
   calendarWeekRow: { position: "relative", display: "flex", flexDirection: "row", flexWrap: "nowrap" },
   calendarWeekHeight: (height: number) => ({ height }),
   calendarCell: {
@@ -1180,10 +1160,11 @@ const styles = css.create({
   calendarCellChosen: { backgroundColor: { default: "#e8f0fe", "@media (prefers-color-scheme: dark)": "#1e2a44" } },
   calendarCellDrop: { backgroundColor: { default: "#dbe8ff", "@media (prefers-color-scheme: dark)": "#233a63" } },
   calendarNumber: {
-    minWidth: 22, height: 22, lineHeight: "22px", borderRadius: 11, fontSize: 12, fontWeight: "500", textAlign: "center",
+    minWidth: 26, height: 26, lineHeight: "26px", paddingInline: 4, boxSizing: "border-box", borderRadius: 13, overflow: "hidden",
+    fontSize: 15, fontWeight: "500", textAlign: "center",
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
-  calendarNumberOther: { color: { default: "#aeaeb2", "@media (prefers-color-scheme: dark)": "#5a5a60" } },
+  calendarNumberOther: { color: { default: "#c7c7cc", "@media (prefers-color-scheme: dark)": "#5a5a60" } },
   calendarNumberToday: {
     color: "#ffffff", fontWeight: "700",
     backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" },
@@ -1277,7 +1258,13 @@ const styles = css.create({
   // A phone's calendar, after the system's: no box, hairlines, and marks.
   phoneHead: { display: "flex", flexDirection: "column", gap: 10 },
   phoneTitleRow: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  phoneHeading: { fontSize: 22, fontWeight: "700", color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" } },
+  calendarYear: { fontWeight: "400" },
+  calendarMark: (color: string) => ({ backgroundColor: color }),
+  calendarTick: { width: 3, height: 13, borderRadius: 2, flexShrink: 0 },
+  calendarBarSingle: { backgroundColor: { default: "transparent", ":hover": "#f2f2f7", "@media (prefers-color-scheme: dark)": "transparent" } },
+  calendarEventEdge: (color: string) => ({ borderInlineStartWidth: 3, borderInlineStartStyle: "solid", borderInlineStartColor: color }),
+  calendarCellOffDay: { backgroundColor: { default: "#f8f8fa", "@media (prefers-color-scheme: dark)": "#18181b" } },
+  phoneHeading: { fontSize: 24, fontWeight: "700", color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" } },
   phoneWeekdays: {
     display: "flex", flexDirection: "row", paddingBottom: 5,
     borderBottomWidth: 0.5, borderBottomStyle: "solid",
@@ -1305,7 +1292,7 @@ const styles = css.create({
   phoneChosenToday: { color: "#ffffff", backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
   phoneMarks: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", height: 8, marginTop: 3, borderRadius: 3, overflow: "hidden", maxWidth: "76%" },
   phoneDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
-  phoneStripe: { width: 9, height: 6, flexShrink: 1, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
+  phoneStripe: { width: 9, height: 6, flexShrink: 1, opacity: 0.55, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
   calendarRow: {
     display: "flex", flexDirection: "row", alignItems: "center", gap: 12, minHeight: 46, width: "100%", boxSizing: "border-box",
     paddingBlock: 8, borderTopWidth: 0, borderInlineStartWidth: 0, borderInlineEndWidth: 0, cursor: "pointer", textAlign: "start", backgroundColor: "transparent",
@@ -6431,8 +6418,14 @@ export function ListView({
  * calendar opens on, came out a day early there.
  */
 
+/** Each choice colour at full strength, for the small marks a calendar draws. */
+const CALENDAR_MARKS: Record<EnumColor, string> = {
+  gray: "#8e8e93", brown: "#a2845e", red: "#ff3b30", orange: "#ff9500", yellow: "#ffcc00", lime: "#9fc92d", green: "#34c759",
+  mint: "#00c7be", teal: "#30b0c7", cyan: "#32ade6", blue: "#007aff", indigo: "#5856d6", purple: "#af52de", pink: "#ff2d55",
+};
+
 /** A month's week row: the day's number, then its bars. */
-const CALENDAR_DAY_HEAD = 30;
+const CALENDAR_DAY_HEAD = 34;
 const CALENDAR_LANE = 22;
 const CALENDAR_MORE = 18;
 const CALENDAR_HOUR = 44;
@@ -6496,7 +6489,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
   const canEdit = !!onUpdateRow;
   const titleField = schema.fields[0]?.name;
   const labelOf = (row: Row) => rowTitle(row, titleField);
+  const markOf = (row: Row) => CALENDAR_MARKS[colorsOf(row).row ?? "blue"] ?? CALENDAR_MARKS.blue;
   const weekStart = firstDayOfWeek();
+  const offDay = (column: number) => (column + weekStart) % 7 === 0 || (column + weekStart) % 7 === 6;
   const weekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
   const cursorDate = localDay(cursor)!;
   const firstOfCursor = `${cursor.slice(0, 7)}-01`;
@@ -6531,6 +6526,15 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
     range === "week"
       ? `${localDay(thisWeek[0]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short" })} – ${localDay(thisWeek[6]!)!.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`
       : `${monthNameLong(cursorDate)} ${cursorDate.getFullYear()}`;
+  // The month in bold and its year beside it, on both the Mac and a phone.
+  const headingLine = (style: typeof styles.phoneHeading | typeof styles.calendarHeading) =>
+    range === "week" ? (
+      <html.span style={style}>{heading}</html.span>
+    ) : (
+      <html.span style={style}>
+        {monthNameLong(cursorDate)} <html.span style={styles.calendarYear}>{cursorDate.getFullYear()}</html.span>
+      </html.span>
+    );
   const longDay = (key: string) =>
     localDay(key)!.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
 
@@ -6547,11 +6551,11 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
   const isDatetime = schema.fields.find((f) => f.name === calField)?.type === "datetime";
   // What's above and below the grid: the title, the controls, the weekdays,
   // the page's margin, and No Date (with its chips when it's open).
-  const aroundGrid = 172 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
+  const aroundGrid = 186 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
   const weeksShown = monthGrid(cursorDate, weekStart)[35]!.inMonth ? 6 : 5;
   const weekHeight =
     pageHeight > 0
-      ? Math.max(84, Math.min(168, Math.floor((pageHeight - aroundGrid) / weeksShown)))
+      ? Math.max(88, Math.min(190, Math.floor((pageHeight - aroundGrid) / weeksShown)))
       : Math.max(104, Math.min(136, Math.round(dayWidth * 0.72)));
   const maxLanes = Math.max(1, Math.floor((weekHeight - CALENDAR_DAY_HEAD - CALENDAR_MORE) / CALENDAR_LANE));
 
@@ -6646,20 +6650,14 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
     <DragHandle key={`${entry.row.id}-${day}`} {...dragProps(entry.row.id)}>
       <html.button
         onClick={() => onOpenBody?.(entry.row.id)}
-        style={[isCompact ? styles.calendarRow : styles.calendarLine, !isCompact && tintOf(colorsOf(entry.row).row), dragged?.id === entry.row.id && styles.cardDragging]}
+        style={[styles.calendarRow, dragged?.id === entry.row.id && styles.cardDragging]}
       >
-        {isCompact ? <html.span style={[styles.calendarRowDot, tintOf(colorsOf(entry.row).row)]} /> : (
-          <html.span style={styles.calendarLineTime}>
-            {entry.start !== entry.end ? `${daysBetween(entry.start, day) + 1}/${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "All day")}
-          </html.span>
-        )}
-        <html.span dir="auto" style={[styles.calendarLineTitle, isCompact && styles.calendarRowTitle]}>{labelOf(entry.row)}</html.span>
+        <html.span style={[styles.calendarRowDot, styles.calendarMark(markOf(entry.row))]} />
+        <html.span dir="auto" style={[styles.calendarLineTitle, styles.calendarRowTitle]}>{labelOf(entry.row)}</html.span>
         {bodies?.[entry.row.id] ? <BodyBadge /> : null}
-        {isCompact ? (
-          <html.span style={styles.calendarRowTime}>
-            {entry.start !== entry.end ? `Day ${daysBetween(entry.start, day) + 1} of ${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "all-day")}
-          </html.span>
-        ) : null}
+        <html.span style={styles.calendarRowTime}>
+          {entry.start !== entry.end ? `Day ${daysBetween(entry.start, day) + 1} of ${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "all-day")}
+        </html.span>
       </html.button>
     </DragHandle>
   );
@@ -6667,7 +6665,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
   const weekdayRow = (
     <html.div style={styles.calendarWeekdays}>
       {weekdayNames.map((name, i) => (
-        <html.span key={i} style={[styles.calendarWeekday, styles.calendarColumn]}>{name}</html.span>
+        <html.span key={i} style={[styles.calendarWeekday, styles.calendarColumn, offDay(i) && styles.phoneOffDay]}>{name}</html.span>
       ))}
     </html.div>
   );
@@ -6688,14 +6686,15 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                   }}
                   style={[
                     styles.calendarBar,
-                    tintOf(colorsOf(s.entry.row).row),
+                    s.span === 1 && !s.continuesBefore && !s.continuesAfter ? styles.calendarBarSingle : tintOf(colorsOf(s.entry.row).row),
                     s.continuesBefore && styles.calendarBarFromBefore,
                     s.continuesAfter && styles.calendarBarIntoNext,
                     dragged?.id === s.entry.row.id && styles.cardDragging,
                   ]}
                 >
-                  {s.entry.time ? <html.span style={styles.calendarBarTime}>{s.entry.time}</html.span> : null}
+                  <html.span style={[styles.calendarTick, styles.calendarMark(markOf(s.entry.row))]} />
                   <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(s.entry.row)}</html.span>
+                  {s.entry.time ? <html.span style={styles.calendarBarTime}>{s.entry.time}</html.span> : null}
                 </html.button>
               </DragHandle>
               {canEdit && view.calendar_end_field && !s.continuesAfter ? (
@@ -6717,7 +6716,6 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       Array.from({ length: 7 }, (_, i) => calendarDate(1970, 0, 4 + i).toLocaleDateString(undefined, { weekday: "narrow" })),
       weekStart,
     );
-    const offDay = (column: number) => ((column + weekStart) % 7 === 0 || (column + weekStart) % 7 === 6);
     return (
       <Bleed>
         <html.div style={styles.phoneWeekdays}>
@@ -6755,7 +6753,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                   </html.span>
                   <html.div style={styles.phoneMarks}>
                     {on.slice(0, 5).map((entry) => (
-                      <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, tintOf(colorsOf(entry.row).row)]} />
+                      <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
                     ))}
                   </html.div>
                 </html.button>
@@ -6794,13 +6792,14 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                   column === 6 && styles.noRightBorder,
                   week === weeks - 1 && styles.noBottomBorder,
                   !isCompact && styles.calendarCellWide,
+                  offDay(column) && styles.calendarCellOffDay,
                   !cell.inMonth && styles.calendarCellOther,
                   isCompact && chosenDay === key && styles.calendarCellChosen,
                   hoverDay === key && styles.calendarCellDrop,
                 ]}
               >
                 <html.span style={[styles.calendarNumber, !cell.inMonth && styles.calendarNumberOther, key === todayKey && styles.calendarNumberToday]}>
-                  {cell.date.getDate()}
+                  {cell.date.getDate() === 1 ? cell.date.toLocaleDateString(undefined, { day: "numeric", month: "short" }) : cell.date.getDate()}
                 </html.span>
                 {isCompact && count > 0 ? <html.span style={styles.calendarDayDot} /> : null}
                 {hidden > 0 ? <html.span style={styles.calendarMore}>{`+${hidden} more`}</html.span> : null}
@@ -6877,7 +6876,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                 key={day}
                 ref={target?.ref}
                 onClick={() => clickDay(day, 0)}
-                style={[styles.calendarColumn, styles.calendarGridColumn, styles.calendarWeekHeight(hourList.length * hourHeight), column === 6 && styles.noRightBorder, hoverDay === key && styles.calendarCellDrop]}
+                style={[styles.calendarColumn, styles.calendarGridColumn, styles.calendarWeekHeight(hourList.length * hourHeight), column === 6 && styles.noRightBorder, offDay(column) && styles.calendarCellOffDay, hoverDay === key && styles.calendarCellDrop]}
               >
                 {hourList.map((hour, i) => (
                   <html.div key={hour} style={[styles.calendarHourLine, styles.calendarLineAt(i * hourHeight)]} />
@@ -6890,7 +6889,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                       <DragHandle {...dragProps(t.entry.row.id)}>
                         <html.button
                           onClick={() => onOpenBody?.(t.entry.row.id)}
-                          style={[styles.calendarEvent, styles.calendarWeekHeight(height), tintOf(colorsOf(t.entry.row).row), dragged?.id === t.entry.row.id && styles.cardDragging]}
+                          style={[styles.calendarEvent, styles.calendarWeekHeight(height), tintOf(colorsOf(t.entry.row).row), styles.calendarEventEdge(markOf(t.entry.row)), dragged?.id === t.entry.row.id && styles.cardDragging]}
                         >
                           <html.span style={styles.calendarBarTime}>{t.entry.time}</html.span>
                           <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(t.entry.row)}</html.span>
@@ -6920,7 +6919,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
           <html.div style={styles.phoneTitleRow}>
             {PLATFORM_OS === "ios" ? (
               <html.button aria-label={`${heading}. Go to date`} onClick={() => setJumping(true)} style={styles.calendarJumpTrigger}>
-                <html.span style={styles.phoneHeading}>{heading}</html.span>
+                {headingLine(styles.phoneHeading)}
                 <html.div style={styles.calendarJumpChevron} />
               </html.button>
             ) : DateInputControl.available ? (
@@ -6932,13 +6931,13 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                 onChange={jumpTo}
                 trigger={
                   <html.div style={styles.calendarJumpTrigger}>
-                    <html.span style={styles.phoneHeading}>{heading}</html.span>
+                    {headingLine(styles.phoneHeading)}
                     <html.div style={styles.calendarJumpChevron} />
                   </html.div>
                 }
               />
             ) : (
-              <html.span style={styles.phoneHeading}>{heading}</html.span>
+              headingLine(styles.phoneHeading)
             )}
             <CalendarControls
               part="navigate"
@@ -6968,7 +6967,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       <html.div style={styles.calendarTopBar}>
         {DateInputControl.available ? (
           <html.div style={styles.calendarJump}>
-            {PLATFORM_OS === "ios" ? <html.span style={styles.calendarHeading}>{heading}</html.span> : null}
+            {PLATFORM_OS === "ios" ? headingLine(styles.calendarHeading) : null}
             <DateInputControl
               kind="date"
               fit
@@ -6977,7 +6976,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
               onChange={jumpTo}
               trigger={
                 <html.div style={styles.calendarJumpTrigger}>
-                  <html.span style={styles.calendarHeading}>{heading}</html.span>
+                  {headingLine(styles.calendarHeading)}
                   <html.div style={styles.calendarJumpChevron} />
                 </html.div>
               }
@@ -6985,7 +6984,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
           </html.div>
         ) : (
           <html.div style={styles.calendarJump}>
-            <html.span style={styles.calendarHeading}>{heading}</html.span>
+            {headingLine(styles.calendarHeading)}
             <html.input type="date" aria-label="Go to date" value={chosenInView} onChange={(e: { target: { value: string } }) => jumpTo(e.target.value)} style={styles.calendarJumpInput} />
           </html.div>
         )}
@@ -7015,10 +7014,12 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       ) : isCompact ? (
         phoneMonth()
       ) : (
-        <html.div style={styles.calendar}>
-          {range === "week" ? weekColumns() : weekdayRow}
-          {range === "week" ? null : monthWeeks()}
-        </html.div>
+        <Bleed>
+          <html.div style={styles.calendar}>
+            {range === "week" ? weekColumns() : weekdayRow}
+            {range === "week" ? null : monthWeeks()}
+          </html.div>
+        </Bleed>
       )}
 
       {range === "month" && isCompact ? (
