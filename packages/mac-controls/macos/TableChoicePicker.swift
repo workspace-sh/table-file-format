@@ -269,16 +269,25 @@ private struct CalendarControlsContent: View {
       .pickerStyle(.segmented)
       .labelsHidden()
       .fixedSize()
-      ControlGroup {
-        Button { model.send("previous") } label: { Label("Previous", systemImage: "chevron.backward") }
-          .disabled(!model.canPrevious)
-        Button("Today") { model.send("today") }
-          .disabled(!model.canToday)
-        Button { model.send("next") } label: { Label("Next", systemImage: "chevron.forward") }
-          .disabled(!model.canNext)
+      // One capsule, as on iOS.
+      HStack(spacing: 0) {
+        Button { model.send("previous") } label: {
+          Image(systemName: "chevron.backward").frame(width: 32, height: 28).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Previous")
+        .disabled(!model.canPrevious)
+        Button { model.send("today") } label: {
+          Text("Today").frame(width: 50, height: 28).contentShape(Rectangle())
+        }
+        .disabled(!model.canToday)
+        Button { model.send("next") } label: {
+          Image(systemName: "chevron.forward").frame(width: 32, height: 28).contentShape(Rectangle())
+        }
+        .accessibilityLabel("Next")
+        .disabled(!model.canNext)
       }
-      .labelStyle(.iconOnly)
-      .fixedSize()
+      .buttonStyle(.plain)
+      .glassEffect(.regular.interactive(), in: .capsule)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
