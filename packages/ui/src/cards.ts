@@ -144,20 +144,22 @@ export function calendarBounds(view: View): { start: Date | null; end: Date | nu
 }
 
 /**
- * The month a calendar opens on: the earliest dated row's, so past data
- * doesn't open on an empty month; else this month. Kept inside the range.
+ * The month a calendar opens on: the one holding the dated row nearest
+ * today, so it starts at what's current and never on an empty month; else
+ * this month. Kept inside the range.
  */
 export function initialMonth(view: View, rows: Row[], now = new Date()): Date {
   const field = view.calendar_field;
-  const earliest = field
+  const distance = (d: Date) => Math.abs(d.getTime() - now.getTime());
+  const nearest = field
     ? rows
         .map((r) => r[field])
         .filter((v): v is string => typeof v === "string")
         .map(localDay)
         .filter((d): d is Date => d !== null)
-        .sort((a, b) => a.getTime() - b.getTime())[0]
+        .sort((a, b) => distance(a) - distance(b) || a.getTime() - b.getTime())[0]
     : undefined;
-  let month = firstOfMonth(earliest ?? now);
+  let month = firstOfMonth(nearest ?? now);
   const { start, end } = calendarBounds(view);
   if (start && month < start) month = start;
   if (end && month > end) month = end;
