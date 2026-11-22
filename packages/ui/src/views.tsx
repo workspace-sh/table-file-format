@@ -1160,24 +1160,6 @@ const styles = css.create({
   calendarPage: { display: "flex", flexDirection: "column", gap: 12, minWidth: 0 },
   calendarTopBar: { display: "flex", flexDirection: "row", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 8 },
   calendarHeading: { fontSize: 20, fontWeight: "700", color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" } },
-  calendarControls: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
-  calendarControl: {
-    width: 32, height: 30, borderRadius: 15, borderWidth: 0, fontSize: 18, cursor: "pointer",
-    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
-    backgroundColor: { default: "#f2f2f7", ":hover": "#e9e9ef", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
-  },
-  calendarStepper: {
-    display: "flex", flexDirection: "row", alignItems: "center", height: 30, borderRadius: 15, overflow: "hidden",
-    backgroundColor: { default: "#f2f2f7", "@media (prefers-color-scheme: dark)": "#1c1c1f" },
-  },
-  calendarStep: {
-    width: 32, height: 30, borderWidth: 0, fontSize: 17, cursor: "pointer", backgroundColor: "transparent",
-    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
-  },
-  calendarToday: {
-    height: 30, paddingInline: 8, borderWidth: 0, fontSize: 13, fontWeight: "500", cursor: "pointer", backgroundColor: "transparent",
-    color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
-  },
   calendarWeekRow: { position: "relative", display: "flex", flexDirection: "row", flexWrap: "nowrap" },
   calendarWeekHeight: (height: number) => ({ height }),
   calendarCell: {
@@ -1189,6 +1171,7 @@ const styles = css.create({
     borderBottomWidth: 1, borderBottomStyle: "solid",
     borderBottomColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
   },
+  calendarCellWide: { alignItems: "flex-end", paddingInline: 6 },
   calendarCellOther: { backgroundColor: { default: "#fafafc", "@media (prefers-color-scheme: dark)": "#141416" } },
   calendarCellChosen: { backgroundColor: { default: "#e8f0fe", "@media (prefers-color-scheme: dark)": "#1e2a44" } },
   calendarCellDrop: { backgroundColor: { default: "#dbe8ff", "@media (prefers-color-scheme: dark)": "#233a63" } },
@@ -6369,7 +6352,7 @@ const CALENDAR_MORE = 18;
 export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
-  const { ChooseOne, Select: SelectControl } = usePlatformControls();
+  const { ChooseOne, CalendarControls } = usePlatformControls();
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
@@ -6433,7 +6416,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const extra = containerWidth > 0 ? available - dayWidth * 7 : 0;
   const widthOf = (column: number) => dayWidth + (column < extra ? 1 : 0);
   const leftOf = (column: number) => column * dayWidth + Math.min(column, extra);
-  const weekHeight = Math.max(112, Math.min(156, Math.round(dayWidth * 0.82)));
+  const weekHeight = Math.max(104, Math.min(136, Math.round(dayWidth * 0.72)));
   const maxLanes = Math.max(1, Math.floor((weekHeight - CALENDAR_DAY_HEAD - CALENDAR_MORE) / CALENDAR_LANE));
 
   const valueOn = (day: string) => {
@@ -6525,7 +6508,9 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
 
   const monthWeeks = () => {
     const cells = monthGrid(cursorDate, weekStart);
-    return Array.from({ length: 6 }, (_, week) => {
+    // Five weeks when the month fits: a sixth would hold only the next month.
+    const weeks = cells[35]!.inMonth ? 6 : 5;
+    return Array.from({ length: weeks }, (_, week) => {
       const days = cells.slice(week * 7, week * 7 + 7);
       const keys = days.map((c) => dateKey(c.date));
       const segments = isCompact ? [] : weekSegments(entries, keys);
@@ -6546,7 +6531,8 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
                   styles.calendarCell,
                   styles.cellWidth(widthOf(column)),
                   column === 6 && styles.noRightBorder,
-                  week === 5 && styles.noBottomBorder,
+                  week === weeks - 1 && styles.noBottomBorder,
+                  !isCompact && styles.calendarCellWide,
                   !cell.inMonth && styles.calendarCellOther,
                   isCompact && chosenDay === key && styles.calendarCellChosen,
                   hoverDay === key && styles.calendarCellDrop,
@@ -6638,26 +6624,16 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     <html.div {...measureProps} style={styles.calendarPage}>
       <html.div style={styles.calendarTopBar}>
         <html.span style={styles.calendarHeading}>{heading}</html.span>
-        <html.div style={styles.calendarControls}>
-          {canEdit && onAddRow ? (
-            <html.button aria-label="Add a row" onClick={() => addOn(chosenDay)} style={styles.calendarControl}>+</html.button>
-          ) : null}
-          <SelectControl
-            label="Calendar range"
-            value={range}
-            options={[
-              { value: "month", label: "Month" },
-              { value: "week", label: "Week" },
-              { value: "agenda", label: "Agenda" },
-            ]}
-            onChange={(value) => setRange(value as CalendarRange)}
-          />
-          <html.div style={styles.calendarStepper}>
-            <html.button aria-label="Previous" disabled={!canGo(-1)} onClick={() => go(-1)} style={[styles.calendarStep, !canGo(-1) && styles.calendarNavDisabled]}>‹</html.button>
-            <html.button disabled={!inBounds(todayKey)} onClick={goToday} style={[styles.calendarToday, !inBounds(todayKey) && styles.calendarNavDisabled]}>Today</html.button>
-            <html.button aria-label="Next" disabled={!canGo(1)} onClick={() => go(1)} style={[styles.calendarStep, !canGo(1) && styles.calendarNavDisabled]}>›</html.button>
-          </html.div>
-        </html.div>
+        <CalendarControls
+          range={range}
+          onRange={setRange}
+          canPrevious={canGo(-1)}
+          canNext={canGo(1)}
+          canToday={inBounds(todayKey)}
+          onPrevious={() => go(-1)}
+          onNext={() => go(1)}
+          onToday={goToday}
+        />
       </html.div>
 
       {range === "agenda" || (range === "week" && isCompact) ? (

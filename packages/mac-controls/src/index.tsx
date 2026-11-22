@@ -11,7 +11,7 @@ import { cloneElement, forwardRef, useEffect, useId, useImperativeHandle, useRef
 import { Pressable, requireNativeComponent, View as ReactNativeView, type View, type ViewProps } from "react-native";
 import { html, css } from "react-strict-dom";
 import { dateOfStored, storedOfDate } from "@workspace.sh/table-ui/shared";
-import type { CellProblemProps, CellProblemSlot, ChooseManyProps, ChooseManySlot, ChooseOneProps, ChooseOneSlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
+import type { CalendarControlsProps, CellProblemProps, CellProblemSlot, ChooseManyProps, ChooseManySlot, ChooseOneProps, ChooseOneSlot, DateInputProps, DateInputSlot, MenuAction, PlatformControls, RowActionsProps, RowActionsSlot, SelectHandle, SelectProps, SelectSlot, ToggleProps, ToggleSlot } from "@workspace.sh/table-ui/shared";
 import { chooseMany, chooseManyClose, chooseOne, onContextMenu, pickDate, popUpMenu, showProblem, type PopUpItem } from "./native";
 
 export { useMacFormulaEditing } from "./formula";
@@ -231,7 +231,28 @@ function ToggleView({ checked, onChange, label, children, style }: ToggleProps):
 
 export const MacToggle: ToggleSlot = ToggleView;
 
-export const macControls: Partial<PlatformControls> = { Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, ChooseOne: MacChooseOne, CellProblem: MacCellProblem, Toggle: MacToggle };
+/** The system's segmented control and button group (macos/TableChoicePicker.swift). */
+const NativeCalendarControls = requireNativeComponent<ViewProps & { selectedRange: string; canPrevious: boolean; canNext: boolean; canToday: boolean; onCommand: (event: { nativeEvent: { command: string } }) => void }>("TableCalendarControls");
+
+function MacCalendarControls({ range, onRange, canPrevious, canNext, canToday, onPrevious, onNext, onToday }: CalendarControlsProps) {
+  return (
+    <NativeCalendarControls
+      style={{ width: 356, height: 30 }}
+      selectedRange={range}
+      canPrevious={canPrevious}
+      canNext={canNext}
+      canToday={canToday}
+      onCommand={({ nativeEvent: { command } }) => {
+        if (command === "previous") onPrevious();
+        else if (command === "next") onNext();
+        else if (command === "today") onToday();
+        else onRange(command as CalendarControlsProps["range"]);
+      }}
+    />
+  );
+}
+
+export const macControls: Partial<PlatformControls> = { CalendarControls: MacCalendarControls, Select: MacSelect, RowActions: MacRowActions, DateInput: MacDateInput, ChooseMany: MacChooseMany, ChooseOne: MacChooseOne, CellProblem: MacCellProblem, Toggle: MacToggle };
 
 const styles = css.create({
   toggleRow: {
