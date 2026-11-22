@@ -18,6 +18,7 @@ export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, isImageFile, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
 export { PlatformControlsProvider, usePlatformControls } from "./PlatformControls";
+export type { PageEditorProps } from "./controlSlots";
 export { screenBackground } from "./internal/screenBackground";
 export type { PlatformControls, SheetProps } from "./controlSlots";
 export { HapticsProvider, useHaptics, type Haptics } from "./Haptics";

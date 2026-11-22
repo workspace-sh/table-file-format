@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { Sheet } from "./PlatformControls";
+import { Sheet, usePlatformControls } from "./PlatformControls";
 import { confirmDestructive } from "./internal/confirm";
 import { PanelSurface } from "./panelSurface";
 import { useEscape } from "./internal/useEscape";
@@ -64,6 +64,8 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
   // What's been saved, as this editor knows it.
   const [saved, setSaved] = useState(content);
   const onSurface = useContext(PanelSurface) !== null;
+  // The host's own editor, where it has one (a Markdown editor).
+  const { PageEditor: HostEditor } = usePlatformControls();
   const isNew = content.length === 0;
   const next = pageSave(saved, draft);
 
@@ -126,15 +128,20 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
       // the page: then it stays, and a swipe asks (onDismiss).
       dismissible={next !== "ask"}
       onDismiss={close}
+      fill={!!HostEditor}
     >
-      <html.textarea
-        {...escape.inputProps}
-        dir="auto"
-        value={draft}
-        onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
-        placeholder="Long-form markdown body…"
-        style={[styles.textarea, onSurface && styles.textareaOnSurface]}
-      />
+      {HostEditor ? (
+        <HostEditor initialText={content} onChange={setDraft} />
+      ) : (
+        <html.textarea
+          {...escape.inputProps}
+          dir="auto"
+          value={draft}
+          onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
+          placeholder="Long-form markdown body…"
+          style={[styles.textarea, onSurface && styles.textareaOnSurface]}
+        />
+      )}
     </Sheet>
   );
 }
