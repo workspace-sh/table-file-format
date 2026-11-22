@@ -1067,17 +1067,13 @@ const styles = css.create({
   },
 
   // Calendar — month grid (7 cols × 6 rows = 42 cells).
+  // Calendar: on the page, with hairlines and no box around it.
   calendar: {
     display: "flex",
     flexDirection: "column",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: {
-      default: "#e5e5ea",
-      "@media (prefers-color-scheme: dark)": "#26262b",
-    },
-    borderRadius: 8,
-    overflow: "hidden",
+    borderTopWidth: 0.5,
+    borderTopStyle: "solid",
+    borderTopColor: { default: "#d1d1d6", "@media (prefers-color-scheme: dark)": "#38383a" },
   },
   calendarNavDisabled: {
     opacity: 0.3,
@@ -1102,11 +1098,12 @@ const styles = css.create({
     flexGrow: 0,
     boxSizing: "border-box",
     paddingBlock: 6,
+    paddingInlineEnd: 10,
     fontSize: 10,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.4,
-    textAlign: "center",
+    textAlign: "end",
     color: {
       default: "#6e6e73",
       "@media (prefers-color-scheme: dark)": "#8a8a93",
@@ -1178,8 +1175,8 @@ const styles = css.create({
     borderBottomWidth: 1, borderBottomStyle: "solid",
     borderBottomColor: { default: "#ececf0", "@media (prefers-color-scheme: dark)": "#242428" },
   },
-  calendarCellWide: { alignItems: "flex-end", paddingInline: 6 },
-  calendarCellOther: { backgroundColor: { default: "#fafafc", "@media (prefers-color-scheme: dark)": "#141416" } },
+  calendarCellWide: { alignItems: "flex-end", paddingInline: 5 },
+  calendarCellOther: { backgroundColor: "transparent" },
   calendarCellChosen: { backgroundColor: { default: "#e8f0fe", "@media (prefers-color-scheme: dark)": "#1e2a44" } },
   calendarCellDrop: { backgroundColor: { default: "#dbe8ff", "@media (prefers-color-scheme: dark)": "#233a63" } },
   calendarNumber: {
@@ -1269,6 +1266,55 @@ const styles = css.create({
     fontSize: 14, fontWeight: "500", flexShrink: 1, minWidth: 0, lineClamp: 1, overflow: "hidden",
     color: { default: "#1c1c1e", "@media (prefers-color-scheme: dark)": "#f5f5f7" },
   },
+  calendarDisclosureTitle: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
+  calendarDisclosure: {
+    width: 6, height: 6, transform: "rotate(-45deg)",
+    borderRightWidth: 1.5, borderBottomWidth: 1.5, borderRightStyle: "solid", borderBottomStyle: "solid",
+    borderRightColor: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
+    borderBottomColor: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
+  },
+  calendarDisclosureOpen: { transform: "rotate(45deg)" },
+  // A phone's calendar, after the system's: no box, hairlines, and marks.
+  phoneHead: { display: "flex", flexDirection: "column", gap: 10 },
+  phoneTitleRow: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  phoneHeading: { fontSize: 22, fontWeight: "700", color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" } },
+  phoneWeekdays: {
+    display: "flex", flexDirection: "row", paddingBottom: 5,
+    borderBottomWidth: 0.5, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#c6c6c8", "@media (prefers-color-scheme: dark)": "#38383a" },
+  },
+  phoneWeekday: { fontSize: 12, fontWeight: "600", textAlign: "center", color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" } },
+  phoneOffDay: { color: { default: "#8e8e93", "@media (prefers-color-scheme: dark)": "#8e8e93" } },
+  phoneWeek: { display: "flex", flexDirection: "row", height: 58 },
+  phoneDay: {
+    display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 4, cursor: "pointer", backgroundColor: "transparent",
+    borderTopWidth: 0, borderInlineStartWidth: 0, borderInlineEndWidth: 0,
+    borderBottomWidth: 0.5, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#c6c6c8", "@media (prefers-color-scheme: dark)": "#38383a" },
+  },
+  phoneNumber: {
+    width: 34, height: 34, lineHeight: "34px", borderRadius: 17, overflow: "hidden", textAlign: "center", fontSize: 20, fontWeight: "500",
+    color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" },
+  },
+  phoneToday: { fontWeight: "700", color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
+  phoneChosen: {
+    fontWeight: "700",
+    color: { default: "#ffffff", "@media (prefers-color-scheme: dark)": "#000000" },
+    backgroundColor: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" },
+  },
+  phoneChosenToday: { color: "#ffffff", backgroundColor: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
+  phoneMarks: { display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "center", height: 8, marginTop: 3, borderRadius: 3, overflow: "hidden", maxWidth: "76%" },
+  phoneDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
+  phoneStripe: { width: 9, height: 6, flexShrink: 1, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
+  calendarRow: {
+    display: "flex", flexDirection: "row", alignItems: "center", gap: 12, minHeight: 46, width: "100%", boxSizing: "border-box",
+    paddingBlock: 8, borderTopWidth: 0, borderInlineStartWidth: 0, borderInlineEndWidth: 0, cursor: "pointer", textAlign: "start", backgroundColor: "transparent",
+    borderBottomWidth: 0.5, borderBottomStyle: "solid",
+    borderBottomColor: { default: "#c6c6c8", "@media (prefers-color-scheme: dark)": "#38383a" },
+  },
+  calendarRowDot: { width: 12, height: 12, borderRadius: 6, flexShrink: 0, backgroundColor: { default: "#aebff0", "@media (prefers-color-scheme: dark)": "#4a5f96" } },
+  calendarRowTitle: { fontSize: 17, fontWeight: "500", flexGrow: 1 },
+  calendarRowTime: { fontSize: 15, flexShrink: 0, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
   calendarUndated: { display: "flex", flexDirection: "column", gap: 4 },
   calendarUndatedHead: {
     display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBlock: 6,
@@ -6401,7 +6447,8 @@ const CALENDAR_HOUR = 44;
 export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
-  const { ChooseOne, CalendarControls, DateInput: DateInputControl } = usePlatformControls();
+  const { ChooseOne, CalendarControls, DateInput: DateInputControl, Sheet: CalendarSheet } = usePlatformControls();
+  const [jumping, setJumping] = useState(false);
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
@@ -6599,13 +6646,20 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
     <DragHandle key={`${entry.row.id}-${day}`} {...dragProps(entry.row.id)}>
       <html.button
         onClick={() => onOpenBody?.(entry.row.id)}
-        style={[styles.calendarLine, tintOf(colorsOf(entry.row).row), dragged?.id === entry.row.id && styles.cardDragging]}
+        style={[isCompact ? styles.calendarRow : styles.calendarLine, !isCompact && tintOf(colorsOf(entry.row).row), dragged?.id === entry.row.id && styles.cardDragging]}
       >
-        <html.span style={styles.calendarLineTime}>
-          {entry.start !== entry.end ? `${daysBetween(entry.start, day) + 1}/${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "All day")}
-        </html.span>
-        <html.span dir="auto" style={styles.calendarLineTitle}>{labelOf(entry.row)}</html.span>
+        {isCompact ? <html.span style={[styles.calendarRowDot, tintOf(colorsOf(entry.row).row)]} /> : (
+          <html.span style={styles.calendarLineTime}>
+            {entry.start !== entry.end ? `${daysBetween(entry.start, day) + 1}/${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "All day")}
+          </html.span>
+        )}
+        <html.span dir="auto" style={[styles.calendarLineTitle, isCompact && styles.calendarRowTitle]}>{labelOf(entry.row)}</html.span>
         {bodies?.[entry.row.id] ? <BodyBadge /> : null}
+        {isCompact ? (
+          <html.span style={styles.calendarRowTime}>
+            {entry.start !== entry.end ? `Day ${daysBetween(entry.start, day) + 1} of ${daysBetween(entry.start, entry.end) + 1}` : (entry.time ?? "all-day")}
+          </html.span>
+        ) : null}
       </html.button>
     </DragHandle>
   );
@@ -6653,6 +6707,65 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
               ) : null}
             </html.div>
   );
+
+  // A phone's month, as the system's Calendar lays one out: edge to edge with
+  // no box, only the month's own days, and a mark under each for what's on it.
+  const phoneMonth = () => {
+    const cells = monthGrid(cursorDate, weekStart);
+    const weeks = cells[35]!.inMonth ? 6 : 5;
+    const letters = rotateWeekdays(
+      Array.from({ length: 7 }, (_, i) => calendarDate(1970, 0, 4 + i).toLocaleDateString(undefined, { weekday: "narrow" })),
+      weekStart,
+    );
+    const offDay = (column: number) => ((column + weekStart) % 7 === 0 || (column + weekStart) % 7 === 6);
+    return (
+      <Bleed>
+        <html.div style={styles.phoneWeekdays}>
+          {letters.map((letter, i) => (
+            <html.span key={i} style={[styles.phoneWeekday, styles.calendarColumn, offDay(i) && styles.phoneOffDay]}>{letter}</html.span>
+          ))}
+        </html.div>
+        {Array.from({ length: weeks }, (_, week) => (
+          <html.div key={week} style={styles.phoneWeek}>
+            {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
+              const key = dateKey(cell.date);
+              if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
+              const on = entriesOn(entries, key);
+              const target = canEdit ? registerDay(key) : undefined;
+              const isToday = key === todayKey;
+              const isChosen = key === chosenDay;
+              return (
+                <html.button
+                  key={key}
+                  ref={target?.ref}
+                  aria-label={longDay(key)}
+                  onClick={() => clickDay(key, 0)}
+                  style={[styles.calendarColumn, styles.phoneDay, hoverDay === key && styles.calendarCellDrop]}
+                >
+                  <html.span
+                    style={[
+                      styles.phoneNumber,
+                      offDay(column) && styles.phoneOffDay,
+                      isToday && styles.phoneToday,
+                      isChosen && styles.phoneChosen,
+                      isChosen && isToday && styles.phoneChosenToday,
+                    ]}
+                  >
+                    {cell.date.getDate()}
+                  </html.span>
+                  <html.div style={styles.phoneMarks}>
+                    {on.slice(0, 5).map((entry) => (
+                      <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, tintOf(colorsOf(entry.row).row)]} />
+                    ))}
+                  </html.div>
+                </html.button>
+              );
+            })}
+          </html.div>
+        ))}
+      </Bleed>
+    );
+  };
 
   const monthWeeks = () => {
     const cells = monthGrid(cursorDate, weekStart);
@@ -6802,6 +6915,56 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
 
   return (
     <html.div {...measureProps} style={styles.calendarPage}>
+      {isCompact ? (
+        <html.div style={styles.phoneHead}>
+          <html.div style={styles.phoneTitleRow}>
+            {PLATFORM_OS === "ios" ? (
+              <html.button aria-label={`${heading}. Go to date`} onClick={() => setJumping(true)} style={styles.calendarJumpTrigger}>
+                <html.span style={styles.phoneHeading}>{heading}</html.span>
+                <html.div style={styles.calendarJumpChevron} />
+              </html.button>
+            ) : DateInputControl.available ? (
+              <DateInputControl
+                kind="date"
+                fit
+                label="Go to date"
+                value={chosenInView}
+                onChange={jumpTo}
+                trigger={
+                  <html.div style={styles.calendarJumpTrigger}>
+                    <html.span style={styles.phoneHeading}>{heading}</html.span>
+                    <html.div style={styles.calendarJumpChevron} />
+                  </html.div>
+                }
+              />
+            ) : (
+              <html.span style={styles.phoneHeading}>{heading}</html.span>
+            )}
+            <CalendarControls
+              part="navigate"
+              range={range}
+              onRange={setRange}
+              canPrevious={canGo(-1)}
+              canNext={canGo(1)}
+              canToday={inBounds(todayKey)}
+              onPrevious={() => go(-1)}
+              onNext={() => go(1)}
+              onToday={goToday}
+            />
+          </html.div>
+          <CalendarControls
+            part="range"
+            range={range}
+            onRange={setRange}
+            canPrevious={canGo(-1)}
+            canNext={canGo(1)}
+            canToday={inBounds(todayKey)}
+            onPrevious={() => go(-1)}
+            onNext={() => go(1)}
+            onToday={goToday}
+          />
+        </html.div>
+      ) : (
       <html.div style={styles.calendarTopBar}>
         {DateInputControl.available ? (
           <html.div style={styles.calendarJump}>
@@ -6837,11 +7000,20 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
           onToday={goToday}
         />
       </html.div>
+      )}
+
+      {jumping ? (
+        <CalendarSheet size="settings" title="Go to Date" dismissible onDismiss={() => setJumping(false)} confirm={{ label: "Done", onPress: () => setJumping(false) }}>
+          <DateInputControl kind="date" graphical label="Go to date" value={chosenInView} onChange={jumpTo} trigger={<></>} />
+        </CalendarSheet>
+      ) : null}
 
       {range === "agenda" || (range === "week" && isCompact) ? (
         <html.div style={styles.calendarAgenda}>
           {range === "week" ? agendaOf(thisWeek[0]!, thisWeek[6]!) : agendaOf(firstOfCursor, lastOfCursor)}
         </html.div>
+      ) : isCompact ? (
+        phoneMonth()
       ) : (
         <html.div style={styles.calendar}>
           {range === "week" ? weekColumns() : weekdayRow}
@@ -6863,7 +7035,10 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       {undated.length > 0 ? (
         <html.div style={styles.calendarUndated}>
           <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
-            <html.span style={styles.calendarAgendaHead}>{`${showUndated ? "▾" : "▸"} No Date`}</html.span>
+            <html.div style={styles.calendarDisclosureTitle}>
+              <html.div style={[styles.calendarDisclosure, showUndated && styles.calendarDisclosureOpen]} />
+              <html.span style={styles.calendarAgendaHead}>No Date</html.span>
+            </html.div>
             <html.span style={styles.calendarMore}>{undated.length}</html.span>
           </html.button>
           {showUndated ? (

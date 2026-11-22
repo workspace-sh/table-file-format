@@ -102,6 +102,8 @@ export interface DateInputProps {
   trigger: ReactElement;
   /** As wide as its trigger, rather than filling a cell: a heading that opens a picker. */
   fit?: boolean;
+  /** The whole month on show, where the platform has it: for a sheet that goes to a date. */
+  graphical?: boolean;
 }
 
 /**
@@ -296,6 +298,8 @@ export interface CalendarControlsProps {
   onPrevious: () => void;
   onNext: () => void;
   onToday: () => void;
+  /** On a phone they sit apart: only the range, or only Previous, Today and Next. Absent: both. */
+  part?: "range" | "navigate";
 }
 
 export type CalendarControlsSlot = (props: CalendarControlsProps) => ReactElement;
