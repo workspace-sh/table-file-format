@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { mapShapeText, objectParts, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -311,4 +311,44 @@ test("a card's excerpt leaves out a first heading that is the row's title", () =
   assert.equal(bodyExcerpt("# Plugin SDK\n", "Plugin SDK"), undefined);
   // The title as a first line of plain text isn't a heading, and stays.
   assert.equal(bodyExcerpt("Plugin SDK\nMore.", "Plugin SDK"), "Plugin SDK More.");
+});
+
+test("a map shape reads in words", () => {
+  const f = { name: "area", type: "geojson" } as const;
+  assert.deepEqual(describeCell(f, { type: "Point", coordinates: [2.35, 48.85] }, {}), { kind: "text", text: "2.35, 48.85", oneToken: false });
+  assert.equal(mapShapeText({ type: "LineString", coordinates: [[0, 0], [1, 1], [2, 2]] }), "Line · 3 points");
+  assert.equal(mapShapeText({ type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }), "Polygon · 4 points");
+  assert.equal(mapShapeText({ type: "MultiPolygon", coordinates: [[[[0, 0], [1, 0], [0, 0]]], [[[2, 2], [3, 2], [2, 2]]]] }), "2 polygons · 6 points");
+  assert.equal(mapShapeText({ type: "Feature", geometry: { type: "Point", coordinates: [1, 2] } }), "1, 2");
+  assert.equal(mapShapeText({ type: "FeatureCollection", features: [{}, {}] }), "2 features");
+  assert.equal(mapShapeText({ city: "not a shape" }), null);
+});
+test("an object shows a pill per value", () => {
+  const f = { name: "details", type: "object" } as const;
+  const shown = describeCell(f, { city: "Paris", priority: 3, nested: { ok: true } }, {});
+  assert.equal(shown.kind, "pills");
+  assert.deepEqual(shown.kind === "pills" && shown.pills.map((pill) => pill.label), ["Paris", "3", "ok: true"]);
+  assert.deepEqual(objectParts({ list: [1, 2], none: null }), ["2 items", "—"]);
+  assert.deepEqual(describeCell(f, {}, {}), { kind: "text", text: "—", oneToken: false });
+});
+
+test("an empty list of links reads as empty", () => {
+  const f = { name: "reviewers", type: "array", relation: { table: "people", field: "id", cardinality: "many" } } as const;
+  assert.deepEqual(describeCell(f, [], {}), { kind: "text", text: "—", oneToken: false });
+});
+test("a date and time with no format reads as one, and a chosen format still stands", () => {
+  const f = { name: "updated", type: "datetime" } as const;
+  const raw = "2026-11-01T09:30:00Z";
+  const shown = describeCell(f, raw, { locale: "en-GB" });
+  assert.equal(shown.kind, "text");
+  assert.notEqual((shown as { text: string }).text, raw);
+  assert.match((shown as { text: string }).text, /01\/11\/26|1\/11\/26/);
+  assert.match((describeCell(f, raw, { dateFormat: "iso" }) as { text: string }).text, /^2026-11-01 /);
+});
+
+test("a list of links reads as its links, not as an object", () => {
+  const f = { name: "reviewers", type: "array", relation: { table: "people", field: "id", cardinality: "many" } } as const;
+  const shown = describeCell(f, ["p1", "p2"], {});
+  assert.equal(shown.kind, "relations");
+  assert.deepEqual(shown.kind === "relations" ? shown.links.map((l) => l.id) : [], ["p1", "p2"]);
 });

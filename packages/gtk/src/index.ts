@@ -4,7 +4,8 @@
 // show a table the same way.
 
 export { TableView } from "./TableView.js";
-export { BoardView, CalendarView, GalleryView, ListView } from "./cards.js";
+export { BoardView, GalleryView, ListView } from "./cards.js";
+export { CalendarView } from "./calendar.js";
 export { CellValue, type CellValueProps } from "./CellValue.js";
 export { EditableCell, type EditableCellProps } from "./EditableCell.js";
 export { useDark } from "./theme.js";

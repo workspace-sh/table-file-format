@@ -38,6 +38,8 @@ export interface ViewProps {
    * A view that can't read a source draws from `rows`.
    */
   source?: ViewRows;
+  /** What the reader is searching for, when they are: `rows` are already what it found. */
+  searchQuery?: string;
   schema: TableSchema;
   bodies?: Record<string, string>;
   /**

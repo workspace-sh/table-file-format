@@ -191,7 +191,29 @@ export const styles = {
   calendarToday: css({ color: "@accent_color", fontWeight: "700" }),
   /** A choice's colour, as a dot before it in Field settings. */
   choiceSwatch: css({ minWidth: "14px", minHeight: "14px", borderRadius: "7px" }),
-  calendarChip: css({ fontSize: "smaller", padding: "1px 6px", borderRadius: "4px", backgroundColor: "alpha(@accent_bg_color, 0.15)", color: "@accent_color" }),
+  /** A calendar's month or week, bold, as its heading: a button that opens a date to go to. */
+  calendarHeading: css({ fontSize: "15px", fontWeight: "700" }),
+  calendarOffDay: css({ backgroundColor: "alpha(currentColor, 0.025)" }),
+  /** An entry's bar across the days it covers; square where it carries on from a week before or into the next. */
+  calendarBar: css({ borderRadius: "4px", padding: "0 0 0 4px", fontSize: "12px" }),
+  calendarBarFromBefore: css({ borderTopLeftRadius: "0", borderBottomLeftRadius: "0" }),
+  calendarBarIntoNext: css({ borderTopRightRadius: "0", borderBottomRightRadius: "0" }),
+  calendarBarTitle: css({ fontSize: "12px" }),
+  /** The mark before an entry, in its row's colour. */
+  calendarTick: css({ minWidth: "3px", minHeight: "12px", borderRadius: "2px" }),
+  calendarDot: css({ minWidth: "8px", minHeight: "8px", borderRadius: "4px" }),
+  calendarTime: css({ fontSize: "11px", opacity: 0.7, fontFeatureSettings: '"tnum"' }),
+  calendarMore: css({ fontSize: "11px", padding: "0 4px", minHeight: "18px", opacity: 0.75 }),
+  calendarAllDay: css({ borderBottom: `1px solid ${RULE}` }),
+  calendarAllDayDay: css({ borderRight: `1px solid ${RULE}` }),
+  calendarHours: css({ borderRight: `1px solid ${RULE}` }),
+  calendarHour: css({ borderTop: `1px solid ${RULE}` }),
+  /** A timed entry in a week's grid, as tall as it lasts. */
+  calendarTimed: css({ borderRadius: "4px", padding: "2px 4px" }),
+  /** Now, across today's hours. */
+  calendarNow: css({ backgroundColor: "@error_color", minHeight: "2px" }),
+  /** A row with no date, as a chip under the calendar. */
+  calendarChip: css({ borderRadius: "6px", padding: "3px 8px" }),
 } as const;
 
 const pillClasses = new Map<string, string>();

@@ -186,6 +186,11 @@ export type GlassBarProps = {
    * Edit a Copy). Tapped, the notice calls `onPress`; the lead still calls `onFilter`.
    */
   restNotice?: { title: string; detail?: string; onPress?: () => void };
+  /**
+   * At rest, a choice between the lead and Search: a capsule saying what's
+   * chosen, opening the system's menu (a calendar's Month, Week or Agenda).
+   */
+  restChoice?: { label: string; options: { id: string; label: string; symbol: string; on: boolean }[]; onChoose: (id: string) => void };
   onMore?: () => void;
   /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;

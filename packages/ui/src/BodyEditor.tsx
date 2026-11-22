@@ -1,8 +1,9 @@
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { html, css } from "react-strict-dom";
-import { Sheet } from "./PlatformControls";
+import { Sheet, usePlatformControls } from "./PlatformControls";
 import { confirmDestructive } from "./internal/confirm";
 import { PanelSurface } from "./panelSurface";
+import { PLATFORM_OS } from "./internal/platformOS";
 import { useEscape } from "./internal/useEscape";
 import { pageSave } from "./pageEdit";
 import { bodyFileName } from "@workspace.sh/table-core";
@@ -64,6 +65,8 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
   // What's been saved, as this editor knows it.
   const [saved, setSaved] = useState(content);
   const onSurface = useContext(PanelSurface) !== null;
+  // The host's own editor, where it has one (a Markdown editor).
+  const { PageEditor: HostEditor } = usePlatformControls();
   const isNew = content.length === 0;
   const next = pageSave(saved, draft);
 
@@ -114,27 +117,41 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
   // web, the text input on macOS, nothing on touch screens).
   const escape = useEscape(close);
 
+  const status = next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved";
+
   return (
     // The platform's sheet (PlatformControls): a card over the page on the
     // web and macOS, the system's sheet on a phone.
     <Sheet
       title={rowTitle || rowId}
-      subtitle={`bodies/${pageFile}${isNew ? " · new" : ""}`}
+      // The file it's kept in, for those working on the format. In a host's own
+      // editor, what a reader wants to know: that it's saved. A Mac's sheet says
+      // that at its foot, so it has no line here.
+      {...(HostEditor
+        ? PLATFORM_OS === "ios"
+          ? { subtitle: status ?? "New page" }
+          : {}
+        : { subtitle: `bodies/${pageFile}${isNew ? " · new" : ""}` })}
       confirm={{ label: "Done", onPress: close }}
-      status={next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved"}
+      {...(status ? { status } : {})}
       // A swipe or a tap outside closes it, saving, unless it would delete
       // the page: then it stays, and a swipe asks (onDismiss).
       dismissible={next !== "ask"}
       onDismiss={close}
+      fill={!!HostEditor}
     >
-      <html.textarea
-        {...escape.inputProps}
-        dir="auto"
-        value={draft}
-        onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
-        placeholder="Long-form markdown body…"
-        style={[styles.textarea, onSurface && styles.textareaOnSurface]}
-      />
+      {HostEditor ? (
+        <HostEditor initialText={content} onChange={setDraft} />
+      ) : (
+        <html.textarea
+          {...escape.inputProps}
+          dir="auto"
+          value={draft}
+          onChange={(e: { target: { value: string } }) => setDraft(e.target.value)}
+          placeholder="Long-form markdown body…"
+          style={[styles.textarea, onSurface && styles.textareaOnSurface]}
+        />
+      )}
     </Sheet>
   );
 }

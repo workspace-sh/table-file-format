@@ -4,7 +4,7 @@
 // Android, a pointer menu on the web and macOS), and an app passes its
 // own where it wants something else. Free of any renderer, as shared.ts.
 
-import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
+import type { ComponentType, ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
 import type { AnchorRect } from "./internal/anchorRect";
 
 /** An entry of a menu the platform draws: a row's, or a column's. */
@@ -100,6 +100,8 @@ export interface DateInputProps {
   label?: string;
   /** The cell's value as it's shown, for a picker that opens from it (Android). */
   trigger: ReactElement;
+  /** As wide as its trigger, rather than filling a cell: a heading that opens a picker. */
+  fit?: boolean;
 }
 
 /**
@@ -284,7 +286,51 @@ export type SheetSlot = ((props: SheetProps) => ReactElement) & { presentsSettin
  * Every control a host may replace. Each is optional: what's given is
  * used, and the rest stay the platform's defaults.
  */
+/** What a calendar's own controls say and do: its range, and moving through time. */
+export interface CalendarControlsProps {
+  range: "month" | "week" | "agenda";
+  onRange: (range: "month" | "week" | "agenda") => void;
+  canPrevious: boolean;
+  canNext: boolean;
+  canToday: boolean;
+  onPrevious: () => void;
+  onNext: () => void;
+  onToday: () => void;
+  /** On a phone they sit apart: only the range, or only Previous, Today and Next. Absent: both. */
+  part?: "range" | "navigate";
+}
+
+/**
+ * How a row's page is written, where the host has an editor of its own (a
+ * Markdown editor). The library depends on none: without one, a plain text
+ * area. It holds its own text from `initialText`, and says each change.
+ */
+export interface PageEditorProps {
+  initialText: string;
+  onChange: (text: string) => void;
+}
+
+export type PageEditorSlot = ComponentType<PageEditorProps>;
+
+/** A calendar's heading, which opens the platform's own way to go to a date. */
+export interface CalendarJumpProps {
+  title: string;
+  /** Beside the title, lighter: the year. */
+  detail?: string;
+  /** A longer title (a week's dates), a size down so it fits beside the controls. */
+  small?: boolean;
+  /** The day it opens on, `YYYY-MM-DD`. */
+  value: string;
+  onChange: (day: string) => void;
+}
+
+export type CalendarControlsSlot = (props: CalendarControlsProps) => ReactElement;
+
 export interface PlatformControls {
+  /** The range and Previous, Today and Next: the system's segmented control and buttons. */
+  CalendarControls: CalendarControlsSlot;
+  /** A row's page, in the host's own editor. Absent: a plain text area. */
+  PageEditor?: PageEditorSlot | null;
   RowActions: RowActionsSlot;
   Select: SelectSlot;
   DateInput: DateInputSlot;

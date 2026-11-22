@@ -33,11 +33,16 @@ export interface DisplayOptions {
   now?: Date;
 }
 
+/** A value as text: an object as its JSON, never `[object Object]`. */
+function plainText(value: unknown): string {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? JSON.stringify(value) : String(value);
+}
+
 export function formatValue(field: Field | undefined, value: unknown, options: DisplayOptions = {}): string {
   if (value === undefined || value === null || value === "") return "";
   const isDate = field?.type === "date" || field?.type === "datetime";
   const format = displayOf(field) ?? (isDate ? options.dateFormat : undefined);
-  if (!format) return String(value);
+  if (!format) return plainText(value);
 
   switch (field!.type) {
     case "number":
@@ -49,7 +54,7 @@ export function formatValue(field: Field | undefined, value: unknown, options: D
       return formatDate(format, value, options, field!.type === "datetime");
     default:
       // string + everything else: raw text (see stringFormatKind).
-      return String(value);
+      return plainText(value);
   }
 }
 

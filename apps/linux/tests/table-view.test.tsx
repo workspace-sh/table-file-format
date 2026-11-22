@@ -4,7 +4,7 @@ import { fromBundle, showView } from "@workspace.sh/table-app";
 import type { ParsedTable, Row, TableSchema, View, ViewRows } from "@workspace.sh/table-core";
 import { bundles } from "@workspace.sh/table-fixtures";
 import { BoardView, CalendarView, DisplaySettingsProvider, GalleryView, ListView, TableView, type ViewProps } from "@workspace.sh/table-gtk";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 // The fixtures every demo and test shares, keyed `bundle/table` as an app
 // holds them.
@@ -118,7 +118,8 @@ describe("the card views on GTK", () => {
   it("a gallery leads each card with its hero field and shows a page's opening", async () => {
     await renderView("projects/projects", "6nif36nrryx7o", GalleryView);
     expect(await screen.findByText("Open .table format research")).toBeDefined();
-    expect((await screen.findAllByText(/^Table file format spike Open/)).length).toBe(1);
+    // The page's opening, without the heading that only repeats the card's title.
+    expect((await screen.findAllByText(/^Open, app-agnostic data-matrix/)).length).toBe(1);
   });
 
   it("a list shows each row by its title, marking those with a page", async () => {
@@ -127,8 +128,10 @@ describe("the card views on GTK", () => {
     expect((await screen.findAllByText("Page")).length).toBeGreaterThan(0);
   });
 
-  it("a calendar opens on its first dated row's month, and keeps inside its range", async () => {
+  it("a calendar opens on the month of the dated row nearest today, and keeps inside its range", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 0, 10) });
     await renderView("projects/projects", "iitdxx3iitt5d", CalendarView);
+    vi.useRealTimers();
     expect(await screen.findByText("January 2026")).toBeDefined();
     expect(await screen.findByText("Workspace v1")).toBeDefined();
     const previous = await screen.findByRole(Gtk.AccessibleRole.BUTTON, { name: "Previous month" });

@@ -4,7 +4,8 @@
 import type { View } from "@workspace.sh/table-core";
 import type { ViewProps } from "@workspace.sh/table-ui/shared";
 
-import { BoardView, CalendarView, GalleryView, ListView } from "./cards.js";
+import { BoardView, GalleryView, ListView } from "./cards.js";
+import { CalendarView } from "./calendar.js";
 import { TableView } from "./TableView.js";
 
 export function LayoutView({ layout, ...props }: ViewProps & { layout: View["layout"] }) {

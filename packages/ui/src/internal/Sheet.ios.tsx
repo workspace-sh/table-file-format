@@ -42,9 +42,10 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
           // Settings: no fill, so the bar is glass over the form, as the tables
           // sheet's is. UIKit makes it so on its own only for a scroll view it
           // can find, and a SwiftUI form's it can't; the form insets itself.
-          // A page's editor doesn't, so its bar is the standard one, with the
-          // page below it.
-          ...(page ? {} : { translucent: true, backgroundColor: "transparent" }),
+          // A page's own text area doesn't, so its bar is the standard one, with
+          // the page below it. A host's editor (`fill`) insets itself, and has no
+          // colour of its own: bar and page are the sheet's one surface.
+          ...(page && !fill ? {} : { translucent: true, backgroundColor: "transparent" }),
           headerLeftBarButtonItems: cancel
             ? [{ type: "button", icon: { type: "sfSymbol", name: "xmark" }, accessibilityLabel: cancel.label, onPress: cancel.onPress }]
             : [],
@@ -77,24 +78,24 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
                 ]
               : [],
         }}
-        {...(page
-          ? {
-              stackPresentation: "pageSheet" as const,
-              // A swipe closes it when that loses nothing. Otherwise iOS keeps
-              // the sheet and reports the attempt, for the caller to ask.
-              preventNativeDismiss: !dismissible,
-              onNativeDismissCancelled: onDismiss,
-            }
+        // A swipe closes a page when that loses nothing. Otherwise iOS keeps
+        // the sheet and reports the attempt, for the caller to ask.
+        {...(page ? { preventNativeDismiss: !dismissible, onNativeDismissCancelled: onDismiss } : {})}
+        // A page in a host's editor is a Liquid Glass sheet too: half way up,
+        // and nearly the whole screen if it's pulled up or written in.
+        {...(page && !fill
+          ? { stackPresentation: "pageSheet" as const }
           : {
               stackPresentation: "formSheet" as const,
-              sheetAllowedDetents: [0.5, 1],
+              // A page stops just short of full height: iOS draws a sheet at full height opaque.
+              sheetAllowedDetents: page ? [0.5, 0.94] : [0.5, 1],
               sheetGrabberVisible: true,
               sheetExpandsWhenScrolledToEdge: true,
             })}
         onDismissed={onDismiss}
       >
         {page ? (
-          <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
+          <KeyboardAvoidingView behavior="padding" style={fill ? { flex: 1 } : { flex: 1, backgroundColor: PlatformColor("systemBackground") }}>
             {children}
           </KeyboardAvoidingView>
         ) : fill ? (

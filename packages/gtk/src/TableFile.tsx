@@ -8,15 +8,16 @@
 
 import * as Gdk from "@gtkx/gi/gdk";
 import * as Gtk from "@gtkx/gi/gtk";
+import { AdwAlertDialog } from "@gtkx/jsx/adw";
 import { GtkBox, GtkButton, GtkDropDown, GtkEventControllerKey, GtkLabel, GtkSearchEntry } from "@gtkx/jsx/gtk";
 import { bundleOf, bundleTables, derive, linkedRowAddress, sheetReaders, tableNameOf, type EmbeddedTableFiles, type EmbedRead, type EmbedShown, type KeyValueStore } from "@workspace.sh/table-app";
 import { embedFiles, readTableFile, type IndexHost } from "@workspace.sh/table-app/node";
 import { storeFor, useEmbeddedTable } from "@workspace.sh/table-app/react";
-import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
+import { LAYOUT_LABELS, remember, remembered, tableViewKey } from "@workspace.sh/table-ui/shared";
 import { DisplaySettingsProvider } from "@workspace.sh/table-ui/shared";
-import { addressedView, newId, parseAddress, type ParsedTable } from "@workspace.sh/table-core";
+import { addressedView, newId, parseAddress, type BundleChange, type ParsedTable } from "@workspace.sh/table-core";
 import { AttachmentsProvider } from "@workspace.sh/table-ui/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useCellFiles } from "./cellFiles.js";
 
@@ -63,6 +64,11 @@ export interface TableFileProps {
    * told again as that changes, and told null as the file closes.
    */
   onNavigation?: (navigation: TableNavigation | null) => void;
+  /**
+   * Changes made to this file elsewhere (another device, another app), applied to the table on screen in place:
+   * each new `n` is applied once, keeping the view, scroll and selection.
+   */
+  incoming?: { changes: BundleChange[]; n: number };
 }
 
 /** The table's own Back and Forward: whether each can go, and going. */
@@ -83,8 +89,10 @@ function Opened({
   onOpenLink,
   chooseFile,
   onNavigation,
+  incoming,
 }: {
   shown: EmbedShown;
+  incoming?: TableFileProps["incoming"];
   store: KeyValueStore | null;
   openIndex: (bundleDir: string) => IndexHost;
   readOnly: boolean;
@@ -105,6 +113,14 @@ function Opened({
     },
   };
   const { state, dispatch, derived: drawn, display, tableName, related, callbacks } = useEmbeddedTable(shown, files, locale, kept);
+  const appliedIncoming = useRef(incoming?.n);
+  useEffect(() => {
+    if (!incoming || incoming.n === appliedIncoming.current) return;
+    appliedIncoming.current = incoming.n;
+    dispatch({ type: "changesApplied", bundle: bundleOf(state.active), changes: incoming.changes });
+    // Each set of changes once, as it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming?.n]);
   // One index per folder, shared with any other view of this file (an embed of it).
   const sharedOpen = useMemo(() => sharedIndexHosts(openIndex), [openIndex]);
   const indexed = useIndexedTables({
@@ -134,6 +150,27 @@ function Opened({
   // Read into memory with nowhere to be written (no path): to look at.
   const fromArchive = shown.library.paths[bundleOf(shown.key)] === undefined;
   const lookOnly = readOnly || fromArchive;
+  // Looking only, a cell's note is still read from its row's menu, not only by hovering (D57).
+  // The table and view last looked at in this file, on this device (never in the file), back
+  // before the first paint; then kept as they change. table-app's tableFileView does the same.
+  const memoryKey = tableViewKey(shown.library.paths[bundleOf(shown.key)] ?? shown.key);
+  const restoredView = useRef(false);
+  useLayoutEffect(() => {
+    if (shown.viewId) return;
+    try {
+      const last = JSON.parse(remembered(memoryKey) ?? "null") as { table?: string; view?: string } | null;
+      if (last?.table && state.tables[last.table]) {
+        if (last.table !== state.active) dispatch({ type: "showTable", key: last.table });
+        if (last.view) dispatch({ type: "showView", key: last.table, viewId: last.view });
+      }
+    } catch {
+      // Nothing usable kept: it opens as it would.
+    }
+    // Once, as the file opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [readingNote, setReadingNote] = useState<string | null>(null);
+  const readNote = { onAskCellNote: (_rowId: string, _field: string, note?: string) => note !== undefined && setReadingNote(note) };
 
   // The file's tables, and the views of the one on screen.
   const keys = Object.keys(bundleTables(state.tables, bundleOf(state.active))).map((name) => `${bundleOf(state.active)}/${name}`);
@@ -142,6 +179,13 @@ function Opened({
   const views = table.views;
   const viewAt = Math.max(0, views.findIndex((v) => v.id === view.id));
   const viewsPicker = useSelected<Gtk.DropDown>(viewAt, views.map((v) => v.id).join("\u0000"));
+  useEffect(() => {
+    if (!restoredView.current) {
+      restoredView.current = true;
+      return;
+    }
+    remember(memoryKey, JSON.stringify({ table: state.active, view: view.id }));
+  }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
   const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
@@ -263,7 +307,7 @@ function Opened({
         cells={table.cells}
             tableKey={tableName}
             sheet={derived.shown.sheet}
-            {...(lookOnly ? {} : callbacks)}
+            {...(lookOnly ? readNote : callbacks)}
             {...(cellFiles.onAttachFile ? { onAttachFile: cellFiles.onAttachFile } : {})}
             onOpenRelation={followLink}
             restorePlace={select}
@@ -287,12 +331,15 @@ function Opened({
       ) : null}
       <TableDialogs state={state} dispatch={dispatch} table={table} />
       {cellFiles.dialog}
+      {readingNote !== null ? (
+        <AdwAlertDialog heading="Note" body={readingNote} closeResponse="close" responses={[{ id: "close", label: "Close" }]} onResponse={() => setReadingNote(null)} />
+      ) : null}
      </AttachmentsProvider>
     </DisplaySettingsProvider>
   );
 }
 
-export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile, onNavigation }: TableFileProps) {
+export function TableFile({ path, readOnly = false, locale, at, store, openIndex = openWorkerIndexHost, onOpenLink, chooseFile, onNavigation, incoming }: TableFileProps) {
   const [read, setRead] = useState<EmbedRead | null>(null);
   useEffect(() => {
     let current = true;
@@ -304,7 +351,7 @@ export function TableFile({ path, readOnly = false, locale, at, store, openIndex
       current = false;
     };
   }, [path]);
-  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} onNavigation={onNavigation} />;
+  if (read?.kind === "shown") return <Opened key={path} shown={read} readOnly={readOnly} locale={locale} at={at} store={store ?? null} openIndex={openIndex} onOpenLink={onOpenLink} chooseFile={chooseFile} onNavigation={onNavigation} incoming={incoming} />;
   if (read?.kind === "problem") {
     return (
       <GtkBox name="table-file-problem" vexpand valign={Gtk.Align.START} marginStart={12} marginEnd={12} marginTop={12} cssClasses={[styles.embedProblem]}>

@@ -4,6 +4,7 @@ import { existsSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { bundlesIn, copiesOf, jsonFileStore, loadLibrary } from "@workspace.sh/table-app/node";
+import { setViewMemory } from "@workspace.sh/table-ui/shared";
 import { loadClosed } from "./closedFiles.js";
 import { INDEXED_FROM } from "@workspace.sh/table-app";
 import { App } from "./App.js";
@@ -56,6 +57,8 @@ const dataHome = join(process.env["XDG_DATA_HOME"] || join(homedir(), ".local", 
 const examples = join(dataHome, "examples");
 // This viewer's own settings (display language, dates, formula syntax).
 const settings = jsonFileStore(join(dataHome, "settings.json"));
+// What was last looked at (a table's view, a calendar's range): this device's, kept with its settings, never in a file.
+setViewMemory({ get: (key) => settings.getItem(key) ?? undefined, set: (key, value) => settings.setItem(key, value) });
 const fixtures = fixturesDir();
 // The examples: each copied once, but for the ones closed here, and with them whatever else was made
 // or opened into their folder (a new file, an archive), which is the app's to keep.

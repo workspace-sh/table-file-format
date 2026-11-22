@@ -109,6 +109,57 @@ export function formatValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** How many positions a GeoJSON geometry's coordinates hold, however deeply nested. */
+function positionsIn(coordinates: unknown): number {
+  if (!Array.isArray(coordinates)) return 0;
+  if (typeof coordinates[0] === "number") return 1;
+  return coordinates.reduce((sum: number, part) => sum + positionsIn(part), 0);
+}
+
+/** A map shape in words: `2.35, 48.85`, `Line · 4 points`, `Polygon · 5 points`. Null if it isn't GeoJSON. */
+export function mapShapeText(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const shape = value as { type?: unknown; coordinates?: unknown; geometry?: unknown; features?: unknown; geometries?: unknown };
+  const points = () => plural(positionsIn(shape.coordinates), "point");
+  const parts = () => (Array.isArray(shape.coordinates) ? shape.coordinates.length : 0);
+  switch (shape.type) {
+    case "Point":
+      return Array.isArray(shape.coordinates) && shape.coordinates.length >= 2 ? shape.coordinates.slice(0, 2).join(", ") : null;
+    case "MultiPoint":
+      return points();
+    case "LineString":
+      return `Line · ${points()}`;
+    case "MultiLineString":
+      return `${plural(parts(), "line")} · ${points()}`;
+    case "Polygon":
+      return `Polygon · ${points()}`;
+    case "MultiPolygon":
+      return `${plural(parts(), "polygon")} · ${points()}`;
+    case "GeometryCollection":
+      return Array.isArray(shape.geometries) ? plural(shape.geometries.length, "shape") : null;
+    case "Feature":
+      return shape.geometry === null ? "No shape" : mapShapeText(shape.geometry);
+    case "FeatureCollection":
+      return Array.isArray(shape.features) ? plural(shape.features.length, "feature") : null;
+    default:
+      return null;
+  }
+}
+
+/** An object's values for its pills, in order: a nested object or list reads in words. */
+export function objectParts(value: Record<string, unknown>): string[] {
+  return Object.values(value).map((part) => {
+    if (part === null || part === undefined || part === "") return EMPTY_TEXT;
+    if (Array.isArray(part)) return plural(part.length, "item");
+    if (typeof part === "object") {
+      return Object.entries(part).map(([key, inner]) => `${key}: ${typeof inner === "object" && inner !== null ? "…" : String(inner)}`).join(", ") || EMPTY_TEXT;
+    }
+    return String(part);
+  });
+}
+
 export function bodyExcerpt(body: string | undefined, title?: string, max = 160): string | undefined {
   if (!body) return undefined;
   // A page that starts with its row's title as a heading: the card already shows that title.
@@ -362,10 +413,19 @@ export function describeCell(
   // What was kept as typed and can't be used as it is (D65): the cell says so, rather than standing empty.
   const kept = keptAsTyped(field, value);
   if (kept) return { kind: "error", ...kept };
+  // An empty list reads as empty, a list of links included.
+  if (Array.isArray(value) && value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
   // A list: each item a pill, in its choice's colour for a multi-select (D35).
   if (Array.isArray(value) && !field?.relation) {
-    if (value.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
     return { kind: "pills", pills: value.map((item) => pillFor(field, item)) };
+  }
+  // A map shape in words, an object as a pill per value. Its full form is what opening the cell shows.
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const shape = field?.type === "geojson" ? mapShapeText(value) : null;
+    if (shape) return { kind: "text", text: shape, oneToken: false };
+    const parts = objectParts(value as Record<string, unknown>);
+    if (parts.length === 0) return { kind: "text", text: EMPTY_TEXT, oneToken: false };
+    return { kind: "pills", pills: parts.map((part) => pillFor(undefined, part)) };
   }
   const isEnum = hasChoices(field);
   if (isEnum && value !== undefined && value !== null && value !== "") {
@@ -392,7 +452,9 @@ export function describeCell(
   const isDate = field?.type === "date" || field?.type === "datetime";
   const oneToken = isDate || field?.type === "number" || field?.type === "integer" || field?.type === "year";
   if ((displayOf(field) || isDate) && value !== undefined && value !== null && value !== "") {
-    return { kind: "text", text: formatWithFieldFormat(field, value, display), oneToken };
+    // A date and time with no format anywhere still reads as one, not as its stored form.
+    const shownAs = field?.type === "datetime" && !displayOf(field) && !display.dateFormat ? { ...display, dateFormat: "short" } : display;
+    return { kind: "text", text: formatWithFieldFormat(field, value, shownAs), oneToken };
   }
   return { kind: "text", text: formatValue(value), oneToken };
 }
