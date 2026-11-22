@@ -1238,7 +1238,7 @@ const styles = css.create({
   },
   calendarNow: { position: "absolute", left: 0, right: 0, height: 2, backgroundColor: "#ff3b30" },
   calendarJump: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
-  calendarJumpTrigger: { display: "flex", flexDirection: "row", alignItems: "center", gap: 9, cursor: "pointer" },
+  calendarJumpTrigger: { display: "flex", flexDirection: "row", alignItems: "center", gap: 9, padding: 0, borderWidth: 0, backgroundColor: "transparent", cursor: "pointer" },
   // A chevron drawn from two edges of a turned square, centred on the heading.
   calendarJumpChevron: {
     width: 7, height: 7, marginTop: -3, transform: "rotate(45deg)",
