@@ -3,6 +3,7 @@ import { html, css } from "react-strict-dom";
 import { Sheet, usePlatformControls } from "./PlatformControls";
 import { confirmDestructive } from "./internal/confirm";
 import { PanelSurface } from "./panelSurface";
+import { PLATFORM_OS } from "./internal/platformOS";
 import { useEscape } from "./internal/useEscape";
 import { pageSave } from "./pageEdit";
 import { bodyFileName } from "@workspace.sh/table-core";
@@ -116,14 +117,23 @@ function PageEditor({ rowId, rowTitle, content, onSave, onClose }: BodyEditorPro
   // web, the text input on macOS, nothing on touch screens).
   const escape = useEscape(close);
 
+  const status = next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved";
+
   return (
     // The platform's sheet (PlatformControls): a card over the page on the
     // web and macOS, the system's sheet on a phone.
     <Sheet
       title={rowTitle || rowId}
-      subtitle={`bodies/${pageFile}${isNew ? " · new" : ""}`}
+      // The file it's kept in, for those working on the format. In a host's own
+      // editor, what a reader wants to know: that it's saved. A Mac's sheet says
+      // that at its foot, so it has no line here.
+      {...(HostEditor
+        ? PLATFORM_OS === "ios"
+          ? { subtitle: status ?? "New page" }
+          : {}
+        : { subtitle: `bodies/${pageFile}${isNew ? " · new" : ""}` })}
       confirm={{ label: "Done", onPress: close }}
-      status={next === "save" ? "Saving…" : next === "ask" ? "Empty, not saved" : saved === "" ? undefined : "Saved"}
+      {...(status ? { status } : {})}
       // A swipe or a tap outside closes it, saving, unless it would delete
       // the page: then it stays, and a swipe asks (onDismiss).
       dismissible={next !== "ask"}
