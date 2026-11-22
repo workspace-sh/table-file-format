@@ -6423,7 +6423,18 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const { register: registerDay, hitTest: dayAt, remeasure, rectOf: dayRect } = useDropTargets<string>();
   const lastClick = useRef<{ day: string; at: number } | null>(null);
   const barClicked = useRef(false);
-  useEffect(() => remeasure(), [rows, cursor, range, containerWidth, remeasure]);
+  // The page's height, so a month or a week fits the window as it changes.
+  const pageScroll = useContext(PageScrollContext);
+  const [pageHeight, setPageHeight] = useState(() => pageScroll?.now().height ?? 0);
+  useEffect(() => {
+    if (!pageScroll) return;
+    const read = () => setPageHeight(pageScroll.now().height);
+    read();
+    return pageScroll.subscribe((what) => {
+      if (what === "resize") read();
+    });
+  }, [pageScroll]);
+  useEffect(() => remeasure(), [rows, cursor, range, containerWidth, pageHeight, showUndated, remeasure]);
 
   if (!calField) {
     return (
@@ -6477,8 +6488,19 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const dayWidth = containerWidth > 0 ? Math.floor((containerWidth - 2) / 7) : 0;
   const share = (days: number) => `${(days / 7) * 100}%`;
   const hours = hourWindow(entries, thisWeek);
+  const hourHeight =
+    pageHeight > 0
+      ? Math.max(28, Math.min(CALENDAR_HOUR, Math.floor((pageHeight - 290) / (hours.last - hours.first))))
+      : CALENDAR_HOUR;
   const isDatetime = schema.fields.find((f) => f.name === calField)?.type === "datetime";
-  const weekHeight = Math.max(104, Math.min(136, Math.round(dayWidth * 0.72)));
+  // What's above and below the grid: the title, the controls, the weekdays,
+  // the page's margin, and No Date (with its chips when it's open).
+  const aroundGrid = 172 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
+  const weeksShown = monthGrid(cursorDate, weekStart)[35]!.inMonth ? 6 : 5;
+  const weekHeight =
+    pageHeight > 0
+      ? Math.max(84, Math.min(168, Math.floor((pageHeight - aroundGrid) / weeksShown)))
+      : Math.max(104, Math.min(136, Math.round(dayWidth * 0.72)));
   const maxLanes = Math.max(1, Math.floor((weekHeight - CALENDAR_DAY_HEAD - CALENDAR_MORE) / CALENDAR_LANE));
 
   const valueOn = (day: string) => {
@@ -6526,7 +6548,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
             const hit = dayAt(e.pageX, e.pageY);
             if (hit?.startsWith("t:")) {
               const rect = dayRect(hit);
-              const raw = rect ? hours.first * 60 + ((e.pageY - rect.y) / CALENDAR_HOUR) * 60 : hours.first * 60;
+              const raw = rect ? hours.first * 60 + ((e.pageY - rect.y) / hourHeight) * 60 : hours.first * 60;
               drop(id, end, hit.slice(2), Math.max(0, Math.min(1425, Math.round(raw / 15) * 15)));
             } else if (hit) drop(id, end, hit);
             setDragged(null);
@@ -6709,7 +6731,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
         <html.div style={styles.calendarTimeGrid}>
           <html.div style={styles.calendarGutter}>
             {hourList.map((hour) => (
-              <html.div key={hour} style={styles.calendarWeekHeight(CALENDAR_HOUR)}>
+              <html.div key={hour} style={styles.calendarWeekHeight(hourHeight)}>
                 <html.span style={styles.calendarHourLabel}>{`${String(hour).padStart(2, "0")}:00`}</html.span>
               </html.div>
             ))}
@@ -6722,14 +6744,14 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
                 key={day}
                 ref={target?.ref}
                 onClick={() => clickDay(day, 0)}
-                style={[styles.calendarColumn, styles.calendarGridColumn, styles.calendarWeekHeight(hourList.length * CALENDAR_HOUR), column === 6 && styles.noRightBorder, hoverDay === key && styles.calendarCellDrop]}
+                style={[styles.calendarColumn, styles.calendarGridColumn, styles.calendarWeekHeight(hourList.length * hourHeight), column === 6 && styles.noRightBorder, hoverDay === key && styles.calendarCellDrop]}
               >
                 {hourList.map((hour, i) => (
-                  <html.div key={hour} style={[styles.calendarHourLine, styles.calendarLineAt(i * CALENDAR_HOUR)]} />
+                  <html.div key={hour} style={[styles.calendarHourLine, styles.calendarLineAt(i * hourHeight)]} />
                 ))}
                 {dayTimeline(entries, day).map((t) => {
-                  const top = ((Math.max(t.from, hours.first * 60) - hours.first * 60) / 60) * CALENDAR_HOUR;
-                  const height = Math.max(22, ((t.to - t.from) / 60) * CALENDAR_HOUR - 2);
+                  const top = ((Math.max(t.from, hours.first * 60) - hours.first * 60) / 60) * hourHeight;
+                  const height = Math.max(22, ((t.to - t.from) / 60) * hourHeight - 2);
                   return (
                     <html.div key={t.entry.row.id} style={[styles.calendarEventPlace, styles.calendarEventAt(top, height, `${(t.column / t.columns) * 100}%`, `${100 / t.columns}%`)]}>
                       <DragHandle {...dragProps(t.entry.row.id)}>
@@ -6745,7 +6767,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
                   );
                 })}
                 {day === todayKey && nowMinutes >= hours.first * 60 && nowMinutes < hours.last * 60 ? (
-                  <html.div style={[styles.calendarNow, styles.calendarLineAt(((nowMinutes - hours.first * 60) / 60) * CALENDAR_HOUR)]} />
+                  <html.div style={[styles.calendarNow, styles.calendarLineAt(((nowMinutes - hours.first * 60) / 60) * hourHeight)]} />
                 ) : null}
               </html.div>
             );
