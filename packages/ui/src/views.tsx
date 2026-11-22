@@ -6588,7 +6588,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
 
   const agendaOf = (from: string, to: string) => {
     const days = agendaDays(entries, from, to);
-    if (days.length === 0) return <html.div style={styles.calendarEmpty}>Nothing in this period.</html.div>;
+    if (days.length === 0) return <html.div style={styles.calendarEmpty}><html.span>Nothing in this period.</html.span></html.div>;
     return days.map(({ day, entries: on }) => (
       <html.div key={day} style={styles.calendarAgendaDay}>
         <html.span style={[styles.calendarAgendaHead, day === todayKey && styles.calendarAgendaToday]}>{longDay(day)}</html.span>
@@ -6597,7 +6597,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     ));
   };
 
-  const weekColumns = (
+  const weekColumns = () => (
     <html.div style={styles.calendarWeekColumns}>
       {thisWeek.map((day, column) => {
         const on = entriesOn(entries, day);
@@ -6643,7 +6643,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
       ) : (
         <html.div style={styles.calendar}>
           {weekdayRow}
-          {range === "week" ? weekColumns : monthWeeks()}
+          {range === "week" ? weekColumns() : monthWeeks()}
         </html.div>
       )}
 
