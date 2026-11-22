@@ -100,7 +100,7 @@ const SPRING_MS = 400;
 const secondary = foregroundStyle({ type: "hierarchical", style: "secondary" });
 type Symbol = NonNullable<ComponentProps<typeof Image>["systemName"]>;
 
-function glass(shape: "circle" | "capsule" | "roundedRectangle", interactive = true) {
+function glass(shape: "circle" | "roundedRectangle", interactive = true) {
   return glassEffect({ glass: { variant: "regular", interactive }, shape, cornerRadius: shape === "roundedRectangle" ? SIZE / 2 : undefined });
 }
 
@@ -314,6 +314,7 @@ function Lead(props: Part) {
   }
   if (state.kind === "searching") return null; // absorbed into the search field
   if (state.kind === "rest" && restNotice) return <LeadWithNotice state={state} ns={ns} onFilter={onFilter} restLead={restLead} restNotice={restNotice} />;
+  if (state.kind === "rest" && props.restChoice) return <LeadWithChoice {...props} />;
   // Expanded, ✕ is inside the capsule. This circle stays, shrunk to nothing
   // at the capsule's corner, so collapsing grows it back out of that corner:
   // a glass piece that appears afresh grows out of the whole capsule instead.
@@ -382,6 +383,39 @@ function LeadWithNotice({ ns, onFilter, restLead, restNotice }: Pick<Part, "stat
         </VStack>
         <Spacer />
       </HStack>
+    </HStack>
+  );
+}
+
+/**
+ * At rest with a choice: the lead's button and what's chosen in one capsule
+ * (the lead's glass identity, as with a notice), sized to what it holds.
+ */
+function LeadWithChoice({ ns, onFilter, restLead, restChoice }: Part) {
+  const choice = restChoice!;
+  return (
+    <HStack spacing={0} modifiers={[frame({ height: SIZE }), fixedSize({ horizontal: true }), glass("roundedRectangle"), glassEffectId("lead", ns)]}>
+      <Image
+        systemName={(restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease"}
+        size={19}
+        onPress={onFilter}
+        modifiers={[frame({ width: SIZE, height: SIZE }), contentShape(shapes.rectangle()), accessibilityLabel(restLead?.label ?? "Filter")]}
+      />
+      <Divider modifiers={[frame({ height: 26 })]} />
+      <Menu
+        label={
+          <HStack spacing={5} modifiers={[padding({ leading: 13, trailing: 16 }), frame({ height: SIZE }), contentShape(shapes.rectangle())]}>
+            <Text modifiers={[font({ size: 15, weight: "medium" }), foregroundStyle("primary"), lineLimit(1)]}>{choice.label}</Text>
+            <Image systemName="chevron.up.chevron.down" size={10} color={systemColor("secondaryLabel")} />
+          </HStack>
+        }
+        modifiers={[accessibilityLabel(choice.label)]}
+      >
+        {/* At the foot of the screen a menu's first item is nearest its button: given in reverse, it reads top to bottom. */}
+        {[...choice.options].reverse().map((o) => (
+          <Button key={o.id} label={o.label} systemImage={(o.on ? "checkmark" : o.symbol) as Symbol} onPress={() => choice.onChoose(o.id)} />
+        ))}
+      </Menu>
     </HStack>
   );
 }
@@ -648,24 +682,6 @@ function Capsule(props: Part) {
           <HStack spacing={0}>
             {/* A notice beside the lead takes the room instead. */}
             {props.restNotice ? null : <Spacer />}
-            {props.restChoice ? (
-              <>
-                <Menu
-                  label={
-                    <HStack spacing={5} modifiers={[padding({ horizontal: 16 }), frame({ height: SIZE })]}>
-                      <Text modifiers={[font({ size: 16, weight: "medium" }), foregroundStyle("primary")]}>{props.restChoice.label}</Text>
-                      <Image systemName="chevron.up.chevron.down" size={11} modifiers={[secondary]} />
-                    </HStack>
-                  }
-                  modifiers={[glass("capsule"), glassEffectId("choice", ns), contentShape(shapes.capsule()), accessibilityLabel(props.restChoice.label)]}
-                >
-                  {props.restChoice.options.map((o) => (
-                    <Button key={o.id} label={o.label} systemImage={(o.on ? "checkmark" : o.symbol) as Symbol} onPress={() => props.restChoice?.onChoose(o.id)} />
-                  ))}
-                </Menu>
-                <Spacer />
-              </>
-            ) : null}
             <Image
               systemName="magnifyingglass"
               size={18}
