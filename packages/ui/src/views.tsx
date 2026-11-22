@@ -85,6 +85,7 @@ import {
   type CalendarRange,
   type WeekSegment,
 } from "./calendar";
+import { CalendarJump } from "./internal/CalendarJump";
 import { CalendarRangeInBar, setCalendarRange, useCalendarRange } from "./viewMemory";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
@@ -1283,6 +1284,9 @@ const styles = css.create({
     width: 34, height: 34, lineHeight: "34px", borderRadius: 17, overflow: "hidden", textAlign: "center", fontSize: 20, fontWeight: "500",
     color: { default: "#000000", "@media (prefers-color-scheme: dark)": "#ffffff" },
   },
+  phoneDayTurned: { flexDirection: "row", justifyContent: "center", gap: 5, paddingTop: 0 },
+  phoneNumberTurned: { width: 28, height: 28, lineHeight: "28px", borderRadius: 14, fontSize: 16 },
+  phoneMarksTurned: { marginTop: 0, maxWidth: "42%" },
   phoneToday: { fontWeight: "700", color: { default: "#007aff", "@media (prefers-color-scheme: dark)": "#0a84ff" } },
   phoneChosen: {
     fontWeight: "700",
@@ -6437,11 +6441,13 @@ const CALENDAR_HOUR = 44;
  * it. Where the table can be edited, an entry drags to another day, its end
  * drags to change its length, and a double click adds a row on a day.
  */
-export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
+export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
-  const { ChooseOne, CalendarControls, DateInput: DateInputControl, Sheet: CalendarSheet } = usePlatformControls();
-  const [jumping, setJumping] = useState(false);
+  const { ChooseOne, CalendarControls, DateInput: DateInputControl } = usePlatformControls();
+  const searching = !!searchQuery;
+  // A phone on its side keeps the grid clear of the Dynamic Island: the page's margin holds the safe area.
+  const turned = useViewportWidth() > useCompactSide();
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
@@ -6541,13 +6547,16 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
   const hours = hourWindow(entries, thisWeek);
   const hourHeight =
     pageHeight > 0
-      ? Math.max(28, Math.min(CALENDAR_HOUR, Math.floor((pageHeight - 290) / (hours.last - hours.first))))
+      ? Math.max(28, Math.min(CALENDAR_HOUR, Math.floor((pageHeight - (turned ? 170 : 290)) / (hours.last - hours.first))))
       : CALENDAR_HOUR;
   const isDatetime = schema.fields.find((f) => f.name === calField)?.type === "datetime";
   // What's above and below the grid: the title, the controls, the weekdays,
   // the page's margin, and No Date (with its chips when it's open).
   const aroundGrid = 186 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
   const weeksShown = monthGrid(cursorDate, weekStart)[35]!.inMonth ? 6 : 5;
+  // A phone on its side: the month's rows share the height there is.
+  const phoneRow = turned && pageHeight > 0 ? Math.max(36, Math.min(58, Math.floor((pageHeight - 176) / weeksShown))) : 58;
+  const GridEdges = turned ? Fragment : Bleed;
   const weekHeight =
     pageHeight > 0
       ? Math.max(88, Math.min(190, Math.floor((pageHeight - aroundGrid) / weeksShown)))
@@ -6711,15 +6720,16 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       Array.from({ length: 7 }, (_, i) => calendarDate(1970, 0, 4 + i).toLocaleDateString(undefined, { weekday: "narrow" })),
       weekStart,
     );
+    const PhoneEdges = turned ? Fragment : Bleed;
     return (
-      <Bleed>
+      <PhoneEdges>
         <html.div style={styles.phoneWeekdays}>
           {letters.map((letter, i) => (
             <html.span key={i} style={[styles.phoneWeekday, styles.calendarColumn, offDay(i) && styles.phoneOffDay]}>{letter}</html.span>
           ))}
         </html.div>
         {Array.from({ length: weeks }, (_, week) => (
-          <html.div key={week} style={styles.phoneWeek}>
+          <html.div key={week} style={[styles.phoneWeek, styles.calendarWeekHeight(phoneRow)]}>
             {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
               const key = dateKey(cell.date);
               if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
@@ -6733,11 +6743,12 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                   ref={target?.ref}
                   aria-label={longDay(key)}
                   onClick={() => clickDay(key, 0)}
-                  style={[styles.calendarColumn, styles.phoneDay, hoverDay === key && styles.calendarCellDrop]}
+                  style={[styles.calendarColumn, styles.phoneDay, turned && styles.phoneDayTurned, hoverDay === key && styles.calendarCellDrop]}
                 >
                   <html.span
                     style={[
                       styles.phoneNumber,
+                      turned && styles.phoneNumberTurned,
                       offDay(column) && styles.phoneOffDay,
                       isToday && styles.phoneToday,
                       isChosen && styles.phoneChosen,
@@ -6746,7 +6757,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
                   >
                     {cell.date.getDate()}
                   </html.span>
-                  <html.div style={styles.phoneMarks}>
+                  <html.div style={[styles.phoneMarks, turned && styles.phoneMarksTurned]}>
                     {on.slice(0, 5).map((entry) => (
                       <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
                     ))}
@@ -6756,7 +6767,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
             })}
           </html.div>
         ))}
-      </Bleed>
+      </PhoneEdges>
     );
   };
 
@@ -6904,6 +6915,37 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
     );
   };
 
+  // Searching: what it found, wherever it is in time, each once, under its day.
+  const searchResults = () => {
+    if (entries.length === 0 && undated.length === 0) {
+      return <html.div style={styles.calendarEmpty}><html.span>No matches.</html.span></html.div>;
+    }
+    const days = [...new Set(entries.map((e) => e.start))];
+    return (
+      <html.div style={styles.calendarAgenda}>
+        {days.map((day) => (
+          <html.div key={day} style={styles.calendarAgendaDay}>
+            <html.span style={[styles.calendarAgendaHead, day === todayKey && styles.calendarAgendaToday]}>
+              {localDay(day)!.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </html.span>
+            {entries.filter((e) => e.start === day).map((entry) => entryLine(entry, day))}
+          </html.div>
+        ))}
+        {undated.length > 0 ? (
+          <html.div style={styles.calendarAgendaDay}>
+            <html.span style={styles.calendarAgendaHead}>No Date</html.span>
+            {undated.map((row) => (
+              <html.button key={row.id} onClick={() => onOpenBody?.(row.id)} style={styles.calendarRow}>
+                <html.span style={[styles.calendarRowDot, styles.calendarMark(markOf(row))]} />
+                <html.span dir="auto" style={[styles.calendarLineTitle, styles.calendarRowTitle]}>{labelOf(row)}</html.span>
+              </html.button>
+            ))}
+          </html.div>
+        ) : null}
+      </html.div>
+    );
+  };
+
   const listedRows = listedDay ? entriesOn(entries, listedDay) : [];
   const draggedRow = dragged ? rows.find((r) => r.id === dragged.id) : undefined;
 
@@ -6913,10 +6955,12 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
         <html.div style={styles.phoneHead}>
           <html.div style={styles.phoneTitleRow}>
             {PLATFORM_OS === "ios" ? (
-              <html.button aria-label={`${heading}. Go to date`} onClick={() => setJumping(true)} style={styles.calendarJumpTrigger}>
-                {headingLine(styles.phoneHeading)}
-                <html.div style={styles.calendarJumpChevron} />
-              </html.button>
+              <CalendarJump
+                title={range === "week" ? heading : monthNameLong(cursorDate)}
+                {...(range === "week" ? {} : { detail: String(cursorDate.getFullYear()) })}
+                value={chosenInView}
+                onChange={jumpTo}
+              />
             ) : DateInputControl.available ? (
               <DateInputControl
                 kind="date"
@@ -6998,28 +7042,22 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
       </html.div>
       )}
 
-      {jumping ? (
-        <CalendarSheet size="settings" title="Go to Date" dismissible onDismiss={() => setJumping(false)} confirm={{ label: "Done", onPress: () => setJumping(false) }}>
-          <DateInputControl kind="date" graphical label="Go to date" value={chosenInView} onChange={jumpTo} trigger={<></>} />
-        </CalendarSheet>
-      ) : null}
-
-      {range === "agenda" || (range === "week" && isCompact) ? (
+      {searching ? searchResults() : range === "agenda" || (range === "week" && isCompact && !turned) ? (
         <html.div style={styles.calendarAgenda}>
           {range === "week" ? agendaOf(thisWeek[0]!, thisWeek[6]!) : agendaOf(firstOfCursor, lastOfCursor)}
         </html.div>
-      ) : isCompact ? (
+      ) : isCompact && range === "month" ? (
         phoneMonth()
       ) : (
-        <Bleed>
+        <GridEdges>
           <html.div style={styles.calendar}>
             {range === "week" ? weekColumns() : weekdayRow}
             {range === "week" ? null : monthWeeks()}
           </html.div>
-        </Bleed>
+        </GridEdges>
       )}
 
-      {range === "month" && isCompact ? (
+      {!searching && range === "month" && isCompact ? (
         <html.div style={styles.calendarAgendaDay}>
           <html.span style={styles.calendarAgendaHead}>{longDay(chosenDay)}</html.span>
           {entriesOn(entries, chosenDay).length === 0 ? (
@@ -7030,7 +7068,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, on
         </html.div>
       ) : null}
 
-      {undated.length > 0 ? (
+      {!searching && undated.length > 0 ? (
         <html.div style={styles.calendarUndated}>
           <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
             <html.div style={styles.calendarDisclosureTitle}>

@@ -427,6 +427,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
         cells={table.cells}
         tableKey={tableName}
         sheet={derived.shown.sheet}
+        {...(state.search ? { searchQuery: state.search } : {})}
         // A large table's rows: from its index, or as many as are read so far while it's made.
         {...(indexed.source ?? indexed.reading ? { source: (indexed.source ?? indexed.reading)! } : {})}
         {...(lookOnly ? {} : callbacks)}
