@@ -50,6 +50,7 @@ import {
   boardColumns,
   boardCardMove,
   calendarBounds,
+  calendarDate,
   cardFields,
   columnOf,
   columnValue,
@@ -6397,7 +6398,7 @@ const CALENDAR_HOUR = 44;
  * it. Where the table can be edited, an entry drags to another day, its end
  * drags to change its length, and a double click adds a row on a day.
  */
-export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
+export function CalendarView({ view, rows, schema, bodies, cells, onOpenBody, onUpdateRow, onAddRow }: ViewProps) {
   const colorsOf = useRowColors(view, schema);
   const calField = view.calendar_field;
   const { ChooseOne, CalendarControls, DateInput: DateInputControl } = usePlatformControls();
@@ -6452,14 +6453,18 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const weekdayNames = rotateWeekdays(weekdayNamesShort(), weekStart);
   const cursorDate = localDay(cursor)!;
   const firstOfCursor = `${cursor.slice(0, 7)}-01`;
-  const lastOfCursor = dateKey(new Date(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0));
+  const lastOfCursor = dateKey(calendarDate(cursorDate.getFullYear(), cursorDate.getMonth() + 1, 0));
   const thisWeek = weekDays(cursor, weekStart);
   const { start: minMonth, end: maxMonth } = calendarBounds(view);
   const inBounds = (key: string) => {
     const month = localDay(`${key.slice(0, 7)}-01`)!;
     return (!minMonth || month >= minMonth) && (!maxMonth || month <= maxMonth);
   };
-  const canGo = (by: number) => inBounds(stepRange(range, range === "week" ? cursor : firstOfCursor, by));
+  const canGo = (by: number) => {
+    const from = range === "week" ? cursor : firstOfCursor;
+    const next = stepRange(range, from, by);
+    return next !== from && inBounds(next);
+  };
   const go = (by: number) => {
     if (canGo(by)) setCursor(stepRange(range, range === "week" ? cursor : firstOfCursor, by));
   };
@@ -6508,7 +6513,7 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     return type === "datetime" ? `${day}T09:00:00` : day;
   };
   const addOn = (day: string) => {
-    if (!onAddRow || !onUpdateRow) return;
+    if (!onAddRow || !onUpdateRow || schema.fields.find((f) => f.name === calField)?.computed) return;
     const id = onAddRow();
     if (typeof id === "string") onUpdateRow(id, calField, valueOn(day));
   };
@@ -6530,8 +6535,23 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
     animateNextLayout();
     for (const [field, value] of Object.entries(patch)) onUpdateRow(id, field, value);
   };
+  // A date worked out by a formula isn't moved, and a value that isn't a
+  // real date (in No Date) isn't overwritten by a drag: its text is kept.
+  const worksOut = (id: string, field: string | undefined) =>
+    !!field &&
+    (!!schema.fields.find((f) => f.name === field)?.computed || !!cells?.some((c) => c.id === id && c.field === field && c.expr));
+  const canDrag = (id: string, end: boolean) => {
+    if (!canEdit) return false;
+    const row = rows.find((r) => r.id === id);
+    if (!row) return false;
+    const held = row[calField];
+    const dated = entries.some((e) => e.row.id === id);
+    if (!dated && held !== undefined && held !== null && held !== "") return false;
+    if (end) return !worksOut(id, view.calendar_end_field);
+    return !worksOut(id, calField) && !(dated && row[view.calendar_end_field ?? ""] && worksOut(id, view.calendar_end_field));
+  };
   const dragProps = (id: string, end = false) =>
-    canEdit
+    canDrag(id, end)
       ? {
           longPressMs: isCompact ? 300 : undefined,
           onDragStart: (e: DragEvent) => {

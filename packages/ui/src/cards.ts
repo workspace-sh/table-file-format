@@ -117,17 +117,24 @@ export const CALENDAR_CHIPS_PER_DAY = 3;
 export function localDay(value: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (!m) return null;
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = calendarDate(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** A local day. `new Date(99, 0, 1)` means 1999; a `.table` can hold the year 0099 (D42). */
+export function calendarDate(year: number, month: number, day: number): Date {
+  const d = new Date(2000, 0, 1);
+  d.setFullYear(year, month, day);
+  return d;
 }
 
 /** A day's key, `YYYY-MM-DD`, as rows are bucketed by it. */
 export function dateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${String(d.getFullYear()).padStart(4, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function firstOfMonth(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+  return calendarDate(d.getFullYear(), d.getMonth(), 1);
 }
 
 /**
@@ -174,12 +181,12 @@ export function initialMonth(view: View, rows: Row[], now = new Date()): Date {
 export function monthGrid(month: Date, weekStart: number): { date: Date; inMonth: boolean }[] {
   const year = month.getFullYear();
   const m = month.getMonth();
-  const leading = (new Date(year, m, 1).getDay() - weekStart + 7) % 7;
-  const days = new Date(year, m + 1, 0).getDate();
+  const leading = (calendarDate(year, m, 1).getDay() - weekStart + 7) % 7;
+  const days = calendarDate(year, m + 1, 0).getDate();
   const cells: { date: Date; inMonth: boolean }[] = [];
-  for (let i = leading; i > 0; i--) cells.push({ date: new Date(year, m, 1 - i), inMonth: false });
-  for (let d = 1; d <= days; d++) cells.push({ date: new Date(year, m, d), inMonth: true });
-  for (let d = 1; cells.length < 42; d++) cells.push({ date: new Date(year, m + 1, d), inMonth: false });
+  for (let i = leading; i > 0; i--) cells.push({ date: calendarDate(year, m, 1 - i), inMonth: false });
+  for (let d = 1; d <= days; d++) cells.push({ date: calendarDate(year, m, d), inMonth: true });
+  for (let d = 1; cells.length < 42; d++) cells.push({ date: calendarDate(year, m + 1, d), inMonth: false });
   return cells;
 }
 

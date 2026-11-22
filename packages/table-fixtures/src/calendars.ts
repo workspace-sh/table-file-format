@@ -169,7 +169,7 @@ export const calendarsBundle: ParsedBundle = {
           "start": "2026-11-27T08:00:00+09:00",
           "end": "2026-11-27T09:00:00+09:00",
           "place": "Video",
-          "case": "A written offset, shown as written"
+          "case": "An instant with an offset, on the reader's clock"
         },
         {
           "id": "9j5wsx67nm47r3juw4f51sqjfa",
@@ -178,7 +178,7 @@ export const calendarsBundle: ParsedBundle = {
           "start": "2026-11-27T15:00:00Z",
           "end": "2026-11-27T15:30:00Z",
           "place": "Video",
-          "case": "A UTC time"
+          "case": "An instant in UTC, on the reader's clock"
         },
         {
           "id": "x8kdn6a8aa4t3kceysrkty9zne",
