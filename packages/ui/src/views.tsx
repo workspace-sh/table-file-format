@@ -84,6 +84,7 @@ import {
   type CalendarRange,
   type WeekSegment,
 } from "./calendar";
+import { calendarRangeKey, remember, remembered } from "./viewMemory";
 import type { CellCheck } from "./cellCheck";
 import { useDirection, useDisplaySettings } from "./DisplaySettings";
 import { useHaptics } from "./Haptics";
@@ -1239,8 +1240,14 @@ const styles = css.create({
   },
   calendarNow: { position: "absolute", left: 0, right: 0, height: 2, backgroundColor: "#ff3b30" },
   calendarJump: { display: "flex", flexDirection: "row", alignItems: "center", gap: 8 },
-  calendarJumpTrigger: { display: "flex", flexDirection: "row", alignItems: "center", gap: 6, cursor: "pointer" },
-  calendarJumpChevron: { fontSize: 15, marginTop: -5, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" } },
+  calendarJumpTrigger: { display: "flex", flexDirection: "row", alignItems: "center", gap: 9, cursor: "pointer" },
+  // A chevron drawn from two edges of a turned square, centred on the heading.
+  calendarJumpChevron: {
+    width: 7, height: 7, marginTop: -3, transform: "rotate(45deg)",
+    borderRightWidth: 1.75, borderBottomWidth: 1.75, borderRightStyle: "solid", borderBottomStyle: "solid",
+    borderRightColor: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
+    borderBottomColor: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#a1a1a8" },
+  },
   calendarJumpInput: { fontSize: 13 },
   calendarUndatedList: { display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 6 },
   calendarUndatedChip: {
@@ -6397,7 +6404,14 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
   const dayAnchor = `day-${useId()}`;
   const isCompact = useCompactViewport(TOUCH_VIEWPORT_MAX);
   const { measureProps, width: containerWidth } = useContainerWidth();
-  const [range, setRange] = useState<CalendarRange>("month");
+  const [range, setShownRange] = useState<CalendarRange>(() => {
+    const kept = remembered(calendarRangeKey(view.id));
+    return kept === "week" || kept === "agenda" ? kept : "month";
+  });
+  const setRange = (next: CalendarRange) => {
+    setShownRange(next);
+    remember(calendarRangeKey(view.id), next);
+  };
   const [cursor, setCursor] = useState(() => dateKey(initialMonth(view, rows)));
   const todayKey = dateKey(new Date());
   const [chosenDay, setChosenDay] = useState<string>(todayKey);
@@ -6757,10 +6771,10 @@ export function CalendarView({ view, rows, schema, bodies, onOpenBody, onUpdateR
               value={chosenInView}
               onChange={jumpTo}
               trigger={
-                <html.span style={styles.calendarJumpTrigger}>
+                <html.div style={styles.calendarJumpTrigger}>
                   <html.span style={styles.calendarHeading}>{heading}</html.span>
-                  <html.span style={styles.calendarJumpChevron}>⌄</html.span>
-                </html.span>
+                  <html.div style={styles.calendarJumpChevron} />
+                </html.div>
               }
             />
           </html.div>

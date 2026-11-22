@@ -13,6 +13,7 @@ export {
 export { BodyEditor } from "./BodyEditor";
 export { DisplaySettingsProvider, useDirection, useDisplaySettings } from "./DisplaySettings";
 export type { DisplaySettings } from "./DisplaySettings";
+export { remember, remembered, setViewMemory, tableViewKey, type ViewMemory } from "./viewMemory";
 export { Hinted } from "./FieldHint";
 export { AttachmentsProvider, isImageFile, type AttachmentUrl } from "./Attachments";
 export { PortalHost } from "./internal/PortalHost";
