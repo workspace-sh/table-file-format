@@ -4,7 +4,7 @@
 // Android, a pointer menu on the web and macOS), and an app passes its
 // own where it wants something else. Free of any renderer, as shared.ts.
 
-import type { ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
+import type { ComponentType, ForwardRefExoticComponent, ReactElement, ReactNode, RefAttributes } from "react";
 import type { AnchorRect } from "./internal/anchorRect";
 
 /** An entry of a menu the platform draws: a row's, or a column's. */
@@ -300,6 +300,18 @@ export interface CalendarControlsProps {
   part?: "range" | "navigate";
 }
 
+/**
+ * How a row's page is written, where the host has an editor of its own (a
+ * Markdown editor). The library depends on none: without one, a plain text
+ * area. It holds its own text from `initialText`, and says each change.
+ */
+export interface PageEditorProps {
+  initialText: string;
+  onChange: (text: string) => void;
+}
+
+export type PageEditorSlot = ComponentType<PageEditorProps>;
+
 /** A calendar's heading, which opens the platform's own way to go to a date. */
 export interface CalendarJumpProps {
   title: string;
@@ -317,6 +329,8 @@ export type CalendarControlsSlot = (props: CalendarControlsProps) => ReactElemen
 export interface PlatformControls {
   /** The range and Previous, Today and Next: the system's segmented control and buttons. */
   CalendarControls: CalendarControlsSlot;
+  /** A row's page, in the host's own editor. Absent: a plain text area. */
+  PageEditor?: PageEditorSlot | null;
   RowActions: RowActionsSlot;
   Select: SelectSlot;
   DateInput: DateInputSlot;
