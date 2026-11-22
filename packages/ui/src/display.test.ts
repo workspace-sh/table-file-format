@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { mapShapeText, objectText, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { mapShapeText, objectParts, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -323,11 +323,13 @@ test("a map shape reads in words", () => {
   assert.equal(mapShapeText({ type: "FeatureCollection", features: [{}, {}] }), "2 features");
   assert.equal(mapShapeText({ city: "not a shape" }), null);
 });
-test("an object reads a part at a time", () => {
+test("an object shows a pill per value", () => {
   const f = { name: "details", type: "object" } as const;
-  assert.deepEqual(describeCell(f, { city: "Paris", priority: 3, nested: { ok: true } }, {}), { kind: "text", text: "city: Paris · priority: 3 · nested: 1 item", oneToken: false });
-  assert.equal(objectText({ list: [1, 2], none: null }), "list: 2 items · none: —");
-  assert.equal(objectText({}), "—");
+  const shown = describeCell(f, { city: "Paris", priority: 3, nested: { ok: true } }, {});
+  assert.equal(shown.kind, "pills");
+  assert.deepEqual(shown.kind === "pills" && shown.pills.map((pill) => pill.label), ["Paris", "3", "ok: true"]);
+  assert.deepEqual(objectParts({ list: [1, 2], none: null }), ["2 items", "—"]);
+  assert.deepEqual(describeCell(f, {}, {}), { kind: "text", text: "—", oneToken: false });
 });
 
 test("an empty list of links reads as empty", () => {
@@ -342,4 +344,11 @@ test("a date and time with no format reads as one, and a chosen format still sta
   assert.notEqual((shown as { text: string }).text, raw);
   assert.match((shown as { text: string }).text, /01\/11\/26|1\/11\/26/);
   assert.match((describeCell(f, raw, { dateFormat: "iso" }) as { text: string }).text, /^2026-11-01 /);
+});
+
+test("a list of links reads as its links, not as an object", () => {
+  const f = { name: "reviewers", type: "array", relation: { table: "people", field: "id", cardinality: "many" } } as const;
+  const shown = describeCell(f, ["p1", "p2"], {});
+  assert.equal(shown.kind, "relations");
+  assert.deepEqual(shown.kind === "relations" ? shown.links.map((l) => l.id) : [], ["p1", "p2"]);
 });
