@@ -82,7 +82,7 @@ export const MacSelect = Object.assign(SelectView, { opensFromTrigger: true }) a
  * selected cell opens it in a popover pointing at the cell. Typing on the
  * cell still opens its text editor, so a typed or pasted date still parses.
  */
-function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps): ReactElement {
+function DateInputView({ kind, value, onChange, label, trigger, fit }: DateInputProps): ReactElement {
   const anchor = useRef<View | null>(null);
   // The cell's view, found by this id: the popover points at it wherever it has scrolled.
   const id = `date-${useId()}`;
@@ -95,7 +95,7 @@ function DateInputView({ kind, value, onChange, label, trigger }: DateInputProps
       });
     });
   return (
-    <Pressable ref={anchor} nativeID={id} onPress={open} accessibilityRole="button" accessibilityLabel={label} style={{ alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
+    <Pressable ref={anchor} nativeID={id} onPress={open} accessibilityRole="button" accessibilityLabel={label} style={fit ? { flexDirection: "row" } : { alignSelf: "stretch", flexDirection: "row", flex: 1 }}>
       {trigger}
     </Pressable>
   );

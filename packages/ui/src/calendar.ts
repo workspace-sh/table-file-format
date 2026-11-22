@@ -15,6 +15,17 @@ export interface CalendarEntry {
   end: string;
   /** `HH:MM` as written, for a datetime; null for an all-day entry. */
   time: string | null;
+  /** The end's `HH:MM`, for a datetime end. */
+  endTime: string | null;
+}
+
+/** A timed entry placed in a day's grid: minutes from midnight, and its share of the day's width. */
+export interface TimedEntry {
+  entry: CalendarEntry;
+  from: number;
+  to: number;
+  column: number;
+  columns: number;
 }
 
 export interface WeekSegment {
@@ -82,6 +93,7 @@ export function calendarEntries(view: View, rows: Row[]): { entries: CalendarEnt
       start,
       end: end !== null && end >= start ? end : start,
       time: timeOf(value as string),
+      endTime: end !== null && end >= start ? timeOf(row[endField!] as string) : null,
     });
   }
   // Stable: rows at the same moment keep the view's order.
@@ -153,6 +165,85 @@ export function agendaDays(
     for (let d = first; d <= last; d = addDays(d, 1)) days.add(d);
   }
   return [...days].sort().map((day) => ({ day, entries: entriesOn(entries, day) }));
+}
+
+function minutesOf(time: string): number {
+  return Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+}
+
+function clock(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+/** Whether an entry belongs in a day's time grid, rather than the all-day line. */
+export function isTimed(entry: CalendarEntry): boolean {
+  return entry.time !== null && entry.start === entry.end;
+}
+
+/**
+ * A day's timed entries, an hour long when no end says otherwise. Those that
+ * overlap share the width side by side.
+ */
+export function dayTimeline(entries: CalendarEntry[], day: string): TimedEntry[] {
+  const timed = entries
+    .filter((e) => isTimed(e) && e.start === day)
+    .map((entry) => {
+      const from = minutesOf(entry.time!);
+      const end = entry.endTime ? minutesOf(entry.endTime) : from + 60;
+      return { entry, from, to: Math.min(1440, end > from ? Math.max(end, from + 15) : from + 60), column: 0, columns: 1 };
+    })
+    .sort((a, b) => a.from - b.from || b.to - a.to);
+  let cluster: TimedEntry[] = [];
+  let clusterEnd = -1;
+  const close = () => {
+    const columns = Math.max(1, ...cluster.map((t) => t.column + 1));
+    for (const t of cluster) t.columns = columns;
+    cluster = [];
+  };
+  for (const t of timed) {
+    if (t.from >= clusterEnd) close();
+    const taken = new Set(cluster.filter((o) => o.to > t.from).map((o) => o.column));
+    while (taken.has(t.column)) t.column++;
+    cluster.push(t);
+    clusterEnd = Math.max(clusterEnd, t.to);
+  }
+  close();
+  return timed;
+}
+
+/** The hours a week's grid shows: the working day, widened to hold what's in it. */
+export function hourWindow(entries: CalendarEntry[], days: string[]): { first: number; last: number } {
+  let first = 8;
+  let last = 18;
+  for (const day of days) {
+    for (const t of dayTimeline(entries, day)) {
+      first = Math.min(first, Math.floor(t.from / 60));
+      last = Math.max(last, Math.ceil(t.to / 60));
+    }
+  }
+  return { first, last };
+}
+
+/** The cells a drop at `minutes` on `day` changes: the start, and a datetime end by as much. */
+export function retimeEntry(view: View, entry: CalendarEntry, day: string, minutes: number): Record<string, string> {
+  const field = view.calendar_field;
+  if (!field) return {};
+  const value = String(entry.row[field]);
+  const tail = value.length > 16 ? value.slice(16) : ":00";
+  const patch: Record<string, string> = { [field]: `${day}T${clock(minutes)}${tail}` };
+  const endField = view.calendar_end_field;
+  const end = endField ? entry.row[endField] : undefined;
+  if (endField && typeof end === "string" && realDay(end) !== null) {
+    const days = daysBetween(entry.start, day);
+    if (entry.endTime === null || entry.time === null) {
+      patch[endField] = onDay(end, addDays(entry.end, days));
+    } else {
+      const moved = dayNumber(entry.end) * 1440 + minutesOf(entry.endTime) + days * 1440 + minutes - minutesOf(entry.time);
+      const endDay = Math.floor(moved / 1440);
+      patch[endField] = `${keyOf(endDay)}T${clock(moved - endDay * 1440)}${end.slice(16)}`;
+    }
+  }
+  return patch;
 }
 
 /** The date `value` falls on moved to `day`, its time and offset kept. */

@@ -7,9 +7,12 @@ import {
   addDays,
   agendaDays,
   calendarEntries,
+  dayTimeline,
   hiddenOnDay,
+  hourWindow,
   moveEntry,
   resizeEntry,
+  retimeEntry,
   stepRange,
   weekDays,
   weekSegments,
@@ -94,4 +97,31 @@ test("a step goes by week or by month, past a short month", () => {
   assert.equal(stepRange("week", "2026-03-04", -1), "2026-02-25");
   assert.equal(stepRange("month", "2026-01-31", 1), "2026-02-01");
   assert.equal(stepRange("agenda", "2026-12-15", 1), "2027-01-01");
+});
+
+test("overlapping timed entries share the width; the next free time doesn't", () => {
+  const { entries } = calendarEntries(view, [
+    row("a", "2026-03-02T09:00:00", "2026-03-02T10:30:00"),
+    row("b", "2026-03-02T10:00:00"),
+    row("c", "2026-03-02T11:00:00"),
+  ]);
+  const of = (id: string) => dayTimeline(entries, "2026-03-02").find((t) => t.entry.row.id === id)!;
+  assert.deepEqual([of("a").column, of("a").columns], [0, 2]);
+  assert.deepEqual([of("b").column, of("b").columns], [1, 2]);
+  assert.deepEqual([of("c").column, of("c").columns], [0, 1]);
+  assert.equal(of("b").to, 660);
+});
+
+test("the hours widen to hold what's in the week", () => {
+  const { entries } = calendarEntries(view, [row("a", "2026-03-02T06:30:00", "2026-03-02T20:15:00")]);
+  assert.deepEqual(hourWindow(entries, weekDays("2026-03-02", 1)), { first: 6, last: 21 });
+  assert.deepEqual(hourWindow([], weekDays("2026-03-02", 1)), { first: 8, last: 18 });
+});
+
+test("a drop at a time keeps the offset and the length, across midnight too", () => {
+  const e = entry("2026-03-02T22:00:00+01:00", "2026-03-02T23:30:00+01:00");
+  assert.deepEqual(retimeEntry(view, e, "2026-03-03", 23 * 60), {
+    from: "2026-03-03T23:00:00+01:00",
+    to: "2026-03-04T00:30:00+01:00",
+  });
 });
