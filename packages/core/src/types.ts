@@ -326,6 +326,11 @@ export interface View {
    * range).
    */
   calendar_range?: { start: string; end: string };
+  /**
+   * The `date` or `datetime` field an entry ends on, for entries that span
+   * days. Without it, or with an end before the start, an entry is one day.
+   */
+  calendar_end_field?: string;
   [key: string]: unknown;
 }
 

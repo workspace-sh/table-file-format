@@ -27,6 +27,10 @@ const AHEAD_SCREENS = 6;
 /** How long the page holds still after a scroll before a table off screen is drawn. */
 export const STILL_MS = 250;
 
+/** With tables waiting and the page saying nothing, how often and how many times it's looked at again. */
+const LOOK_AGAIN_MS = 250;
+const LOOK_AGAIN_TIMES = 8;
+
 /** How long the page's width holds still, while a window is resized, before a drawn table takes the new one. */
 const RESIZE_QUIET_MS = 300;
 
@@ -65,11 +69,18 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
   let offset = page.now().offset;
   let movedAt = -Infinity;
   let whenStill: ReturnType<typeof setTimeout> | null = null;
+  // A page still settling may move an embed on screen without saying so: what
+  // waits is looked at a few more times, rather than until the next scroll.
+  let lookAgain: ReturnType<typeof setTimeout> | null = null;
+  let looks = 0;
   const stopListening = () => {
     listening?.();
     listening = null;
     if (whenStill) clearTimeout(whenStill);
     whenStill = null;
+    if (lookAgain) clearTimeout(lookAgain);
+    lookAgain = null;
+    looks = 0;
   };
   // Scrolled since last seen. A jump (the page put back where the reader
   // left it, a link followed) is not scrolling: the reader waits where it
@@ -136,8 +147,16 @@ export function embedQueue(page: EmbedPage | null): EmbedQueue {
             void take();
           }, STILL_MS - held + 1);
         }
+        if (waiting.size > 0 && !lookAgain && looks < LOOK_AGAIN_TIMES) {
+          looks++;
+          lookAgain = setTimeout(() => {
+            lookAgain = null;
+            void take();
+          }, LOOK_AGAIN_MS);
+        }
         return;
       }
+      looks = 0;
       waiting.delete(next);
       if (waiting.size === 0) stopListening();
       // The next is started once this one has settled: started a frame
