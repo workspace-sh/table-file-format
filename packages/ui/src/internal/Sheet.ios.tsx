@@ -82,12 +82,13 @@ function NativeSheet({ size, title, subtitle, cancel, confirm, dismissible, onDi
         // the sheet and reports the attempt, for the caller to ask.
         {...(page ? { preventNativeDismiss: !dismissible, onNativeDismissCancelled: onDismiss } : {})}
         // A page in a host's editor is a Liquid Glass sheet too: half way up,
-        // and docked full height if it's pulled or written in.
+        // and nearly the whole screen if it's pulled up or written in.
         {...(page && !fill
           ? { stackPresentation: "pageSheet" as const }
           : {
               stackPresentation: "formSheet" as const,
-              sheetAllowedDetents: [0.5, 1],
+              // A page stops just short of full height: iOS draws a sheet at full height opaque.
+              sheetAllowedDetents: page ? [0.5, 0.94] : [0.5, 1],
               sheetGrabberVisible: true,
               sheetExpandsWhenScrolledToEdge: true,
             })}
