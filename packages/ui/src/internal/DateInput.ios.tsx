@@ -10,7 +10,7 @@ import { datePickerStyle, labelsHidden } from "@expo/ui/swift-ui/modifiers";
 import type { DateInputProps, DateInputSlot } from "../controlSlots";
 import { dateOfStored, storedOfDate } from "../dateEntry";
 
-function DateInputView({ kind, value, onChange, label }: DateInputProps) {
+function DateInputView({ kind, value, onChange, label, graphical }: DateInputProps) {
   const selection = dateOfStored(kind, value) ?? new Date();
   return (
     <Host matchContents>
@@ -22,7 +22,7 @@ function DateInputView({ kind, value, onChange, label }: DateInputProps) {
           const next = storedOfDate(kind, date);
           if (next !== value) onChange(next);
         }}
-        modifiers={[datePickerStyle("compact"), labelsHidden()]}
+        modifiers={[datePickerStyle(graphical ? "graphical" : "compact"), labelsHidden()]}
       />
     </Host>
   );
