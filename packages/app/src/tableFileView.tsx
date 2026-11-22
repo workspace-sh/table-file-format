@@ -18,6 +18,7 @@ import { css, html } from "react-strict-dom";
 import { addressedView, newViewId, parseAddress, type ParsedTable, type Row, type View } from "@workspace.sh/table-core";
 import { joinPath } from "@workspace.sh/table-core/io";
 import { BodyEditor, DisplaySettingsProvider, ViewSettings } from "@workspace.sh/table-ui";
+import { viewAddress } from "./history.ts";
 import { remember, remembered, tableViewKey } from "@workspace.sh/table-ui";
 import { LAYOUT_LABELS } from "@workspace.sh/table-ui/shared";
 
@@ -38,6 +39,8 @@ import { askName } from "./askName";
 export interface TableFileChrome {
   /** The file's tables, by key, with their titles. */
   tables: { key: string; title: string }[];
+  /** Where the reader is: the table, view and any open row page, as an address `at` can go back to. */
+  address: string;
   /** The table on screen. */
   table: string;
   showTable: (key: string) => void;
@@ -371,6 +374,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
   });
   const file: TableFileChrome = {
     tables,
+    address: viewAddress(state.active, view.id, state.openPage ?? undefined),
     table: state.active,
     showTable: (key) => key !== state.active && dispatch({ type: "showTable", key }),
     views: table.views.map((v: View) => ({ id: v.id, name: v.name, layout: LAYOUT_LABELS[v.layout] })),
