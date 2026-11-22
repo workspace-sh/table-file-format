@@ -186,6 +186,6 @@ function viewWithRename(view: View, from: string, to: string): View {
     next.merged = view.merged.map((m) => ({ from: { ...m.from, field: one(m.from.field) }, to: { ...m.to, field: one(m.to.field) } }));
   }
   if (view.calendar_range) next.calendar_range = { start: one(view.calendar_range.start), end: one(view.calendar_range.end) };
-  for (const k of ["board_field", "gallery_field", "calendar_field"] as const) if (view[k] === from) next[k] = to;
+  for (const k of ["board_field", "gallery_field", "calendar_field", "calendar_end_field"] as const) if (view[k] === from) next[k] = to;
   return next;
 }
