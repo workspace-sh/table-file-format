@@ -13,8 +13,8 @@ import type {
 import type { CellFormula } from "./types.js";
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import type { WriteBundleInput } from "./io.js";
-import { parseRowsText, parseOptionalJsonText } from "./parse-text.js";
-import { withFieldIds } from "./fieldIds.js";
+import { parseRowsText, parseOptionalJsonText, parseSchemaText } from "./parse-text.js";
+import { repeatedFieldIds, withFieldIds } from "./fieldIds.js";
 import { canonicalSchema } from "./fieldForm.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { estimateRows, FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layoutRows, ROWS_DIR, rowsFileOrder } from "./rowFiles.js";
@@ -158,6 +158,8 @@ export async function readTableArchive(
     if (schemaRaw === undefined || rowsFiles.length === 0) {
       diagnostics.push({
         rowIndex: -1,
+        code: "bundle.not-a-table",
+        file: tablePath(name),
         message: `${tablePath(name)} isn't a table: it needs ${TableEntry.schema} and ${TableEntry.rowsDir}/`,
       });
       continue;
@@ -169,7 +171,9 @@ export async function readTableArchive(
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
     // Every field has its id (D62): one written without takes the id its name derives.
-    const schema = canonicalSchema(withFieldIds(JSON.parse(schemaRaw) as TableSchema));
+    const written = parseSchemaText<TableSchema>(`${prefix}${TableEntry.schema}`, schemaRaw);
+    tableDiagnostics.push(...repeatedFieldIds(written));
+    const schema = canonicalSchema(withFieldIds(written));
     const views =
       parseOptionalJsonText<View[]>(TableEntry.views, text(`${prefix}${TableEntry.views}`), tableDiagnostics) ?? [];
     const tableMeta =

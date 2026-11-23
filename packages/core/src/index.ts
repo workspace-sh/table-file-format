@@ -2,7 +2,7 @@ export * from "./types.js";
 export { applyChanges, diffBundle, RowsNotLoadedError, type BundleChange, type TableContent } from "./changes.js";
 export { sourceOf } from "./source.js";
 export { newId, newFieldId, idNumber, ID_ALPHABET, ID_LENGTH, FIELD_ID_LENGTH, newViewId, VIEW_ID_LENGTH } from "./id.js";
-export { withFieldIds, addressedField, derivedFieldId } from "./fieldIds.js";
+export { withFieldIds, addressedField, derivedFieldId, repeatedFieldIds } from "./fieldIds.js";
 export { canonicalField, canonicalSchema, categoriesPatch, displayOf, displayPatch, hasChoices, rawChoices } from "./fieldForm.js";
 export { renameField, renameProblem } from "./renameField.js";
 export { newTable, newBundle } from "./new-table.js";
@@ -27,7 +27,7 @@ export {
   tablePath,
 } from "./layout.js";
 export { FIRST_ROWS_FILE, LEGACY_ROWS_FILE, ROWS_DIR, ROWS_FILE_BYTES, estimateRows, isRowsFileName, layoutRows, nameAfter, nameBetween, rowsFileOrder, utf8Length, type RowFile } from "./rowFiles.js";
-export { validate, validateBodies } from "./validator.js";
+export { validate, validateBodies, valueProblems, type ValueProblem } from "./validator.js";
 export {
   isDate,
   isDateTime,
@@ -102,7 +102,8 @@ export {
   type Address,
   type TableLookup,
 } from "./address.js";
-export { parseRowsText } from "./parse-text.js";
+export { parseRowsText, UnreadableSchemaError } from "./parse-text.js";
+export { tableProblems, problemsOf, type Problem, type ProblemCode, type ProblemContext, type Severity, type ProblemPlace, type Fix } from "./problems.js";
 export { serializeRows } from "./serialize.js";
 export {
   parseExpr,

@@ -40,6 +40,11 @@ export function isDuration(value: string): boolean {
   return /\d/.test(value);
 }
 
+/** A year and month, `YYYY-MM` (SPEC section 2). */
+export function isYearMonth(value: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}
+
 /**
  * The instant a datetime names, in milliseconds, for comparison. A
  * floating value (no offset) compares as if it were UTC. NaN when the
