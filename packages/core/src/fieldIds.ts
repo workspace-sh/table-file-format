@@ -3,7 +3,7 @@
 
 import { strToU8 } from "fflate";
 import { FIELD_ID_LENGTH, ID_ALPHABET } from "./id.js";
-import type { Field, TableSchema } from "./types.js";
+import type { Field, TableSchema, ValidationError } from "./types.js";
 
 /**
  * The id a field without one takes: derived from its name (FNV-1a, mixed by MurmurHash3's
@@ -53,6 +53,22 @@ export function withFieldIds(schema: TableSchema): TableSchema {
     return { id: fresh, ...rest };
   });
   return changed ? { ...schema, fields } : schema;
+}
+
+/**
+ * What a reader says of a schema as written whose fields share an id
+ * (section 9, rule 6): `withFieldIds` gives each later one a new id as it
+ * reads, so the table holds none, and this is how it's still said.
+ */
+export function repeatedFieldIds(schema: TableSchema): ValidationError[] {
+  const seen = new Set<string>();
+  const out: ValidationError[] = [];
+  for (const f of schema.fields ?? []) {
+    if (typeof f.id !== "string" || f.id === "") continue;
+    if (seen.has(f.id)) out.push({ rowIndex: -1, code: "field.id-repeated", field: f.name, message: `field ${f.name} has the id ${f.id}, which another field has; it is given a new one, kept when the table is saved` });
+    seen.add(f.id);
+  }
+  return out;
 }
 
 /** The field an address's `field=` names (SPEC section 10): by its `id`, else by its `name`. */
