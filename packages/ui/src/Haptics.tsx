@@ -7,6 +7,8 @@ import { createContext, useContext } from "react";
 export interface Haptics {
   /** One step of a continuous gesture: a light tick. */
   step?: () => void;
+  /** Something held changing place: a card picked up, passing another or landing. Firmer than a step; without it, a step. */
+  place?: () => void;
 }
 
 const Context = createContext<Haptics>({});
