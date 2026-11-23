@@ -764,6 +764,9 @@ export const EMPTY_TEXT = "—";
 /** A group, or board column, of rows with no value. */
 export const EMPTY_GROUP = "Empty";
 
+/** How far a column is dragged between haptics. Its 60pt minimum is a multiple, so reaching it is felt. */
+export const COLUMN_HAPTIC_POINTS = 20;
+
 /** A column dragged `delta` wider (narrower when negative) from `size`: whole pixels, never below MIN_RESIZED_COLUMN_WIDTH. */
 export function resizedColumnWidth(size: number, delta: number): number {
   return Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.round(size + delta));
