@@ -1,0 +1,121 @@
+/**
+ * iOS: a month's weeks in a native paging scroll view. Each month has a fixed
+ * place along it and only those around the one shown are drawn, so moving on
+ * never swaps what's under the finger.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Animated, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from "react-native";
+
+import type { MonthPagerProps } from "./MonthPager";
+
+export type { MonthPagerProps };
+
+type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
+
+const BACK_EDGE = 16;
+
+export function MonthPager(props: MonthPagerProps) {
+  const [width, setWidth] = useState(0);
+  const onLayout = (e: LayoutChangeEvent) => {
+    const next = Math.round(e.nativeEvent.layout.width);
+    if (next > 0 && next !== width) setWidth(next);
+  };
+  // Until it's measured: the month where it will be, so nothing is blank.
+  if (width === 0) {
+    return (
+      <View onLayout={onLayout} style={{ height: props.heightOf(props.month), overflow: "hidden" }}>
+        {props.renderMonth(props.month)}
+      </View>
+    );
+  }
+  // A new width (the phone turned) places every month afresh.
+  return <Pages key={`${width}:${props.first}`} {...props} width={width} onLayout={onLayout} />;
+}
+
+function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLayout }: MonthPagerProps & { width: number; onLayout: (e: LayoutChangeEvent) => void }) {
+  const scroller = useRef<ScrollView>(null);
+  const placeOf = (m: number) => (m - first) * width;
+  const opening = useRef({ x: placeOf(month), y: 0 }).current;
+  const scrollX = useRef(new Animated.Value(opening.x)).current;
+  // The month nearest the middle while it moves, and the one a button is sliding to.
+  const [near, setNear] = useState(month);
+  const nearNow = useRef(month);
+  const restingOn = useRef(month);
+  const slidingTo = useRef<number | null>(null);
+
+  const monthAt = (x: number) => Math.max(first, Math.min(last, first + Math.round(x / width)));
+  const follow = (e: ScrollEvent) => {
+    const at = monthAt(e.nativeEvent.contentOffset.x);
+    if (at !== nearNow.current) {
+      nearNow.current = at;
+      setNear(at);
+    }
+  };
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false, listener: follow }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scrollX, first, last, width],
+  );
+  const settle = (x: number) => {
+    const at = monthAt(x);
+    if (slidingTo.current !== null) {
+      if (at === slidingTo.current) slidingTo.current = null;
+      return;
+    }
+    restingOn.current = at;
+    if (at !== month) onMonth(at);
+  };
+  const endDrag = (e: ScrollEvent) => {
+    // Let go without a flick: at rest already, so no deceleration will say so.
+    const { x } = e.nativeEvent.contentOffset;
+    if (Math.abs(x / width - Math.round(x / width)) < 0.01) settle(x);
+  };
+
+  // Previous, Next, Today or the date picker: one month away slides, further is a jump.
+  useEffect(() => {
+    if (restingOn.current === month) return;
+    const by = Math.abs(month - restingOn.current);
+    restingOn.current = month;
+    nearNow.current = month;
+    setNear(month);
+    slidingTo.current = by === 1 ? month : null;
+    scroller.current?.scrollTo({ x: placeOf(month), y: 0, animated: by === 1 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month]);
+
+  const drawn = [...new Set([near - 1, near, near + 1, month])].filter((m) => m >= first && m <= last).sort((a, b) => a - b);
+  const tallest = Math.max(...drawn.map(heightOf));
+  // The grid's height moves between a month's and the next's with the finger.
+  const height =
+    drawn.length > 1
+      ? scrollX.interpolate({ inputRange: drawn.map(placeOf), outputRange: drawn.map(heightOf), extrapolate: "clamp" })
+      : heightOf(month);
+
+  return (
+    <Animated.View onLayout={onLayout} style={{ height, overflow: "hidden" }}>
+      <Animated.ScrollView
+        ref={scroller}
+        horizontal
+        pagingEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollsToTop={false}
+        scrollEventThrottle={16}
+        contentOffset={opening}
+        onScroll={onScroll}
+        onScrollEndDrag={endDrag}
+        onMomentumScrollEnd={(e: ScrollEvent) => settle(e.nativeEvent.contentOffset.x)}
+      >
+        <View style={{ width: (last - first + 1) * width, height: tallest }}>
+          {drawn.map((m) => (
+            <View key={m} style={{ position: "absolute", top: 0, left: placeOf(m), width }}>
+              {renderMonth(m)}
+            </View>
+          ))}
+        </View>
+      </Animated.ScrollView>
+      {/* The screen's left edge stays the system's Back gesture: a touch here never reaches the pager. */}
+      <View collapsable={false} style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: BACK_EDGE }} />
+    </Animated.View>
+  );
+}
