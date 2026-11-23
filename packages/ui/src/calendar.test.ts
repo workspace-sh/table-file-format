@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { monthGrid, monthGridWeeks } from "./cards";
+
 import type { Row, View } from "@workspace.sh/table-core";
 
 import {
@@ -178,4 +180,13 @@ test("a swipe's range stays inside the calendar's bounds", () => {
   assert.deepEqual(monthsAround(centre), { first: centre - MONTHS_EITHER_SIDE, last: centre + MONTHS_EITHER_SIDE });
   assert.deepEqual(monthsAround(centre, centre - 2, centre + 3), { first: centre - 2, last: centre + 3 });
   assert.deepEqual(monthsAround(centre, centre, centre), { first: centre, last: centre });
+});
+
+test("a month's week count is the one its grid shows, for any first day of the week", () => {
+  for (let weekStart = 0; weekStart < 7; weekStart++) {
+    for (let position = monthPosition("2000-01-01"); position < monthPosition("2040-01-01"); position++) {
+      const month = new Date(Math.floor(position / 12), position % 12, 1);
+      assert.equal(monthGridWeeks(month, weekStart), monthGrid(month, weekStart)[35]!.inMonth ? 6 : 5);
+    }
+  }
 });
