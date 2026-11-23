@@ -4,13 +4,16 @@
  * never swaps what's under the finger.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent, type ScrollView } from "react-native";
+import { Animated, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
-import type { MonthPagerProps } from "./MonthPager";
-
-export type { MonthPagerProps };
+import type { MonthPagerProps } from "../controlSlots";
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
+
+/** What the pager asks of its scroll view; the React Native versions it builds against type the ref differently. */
+interface Scroller {
+  scrollTo(to: { x: number; y: number; animated: boolean }): void;
+}
 
 const BACK_EDGE = 16;
 
@@ -33,7 +36,7 @@ export function MonthPager(props: MonthPagerProps) {
 }
 
 function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLayout }: MonthPagerProps & { width: number; onLayout: (e: LayoutChangeEvent) => void }) {
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<Scroller | null>(null);
   const placeOf = (m: number) => (m - first) * width;
   const opening = useRef({ x: placeOf(month), y: 0 }).current;
   const scrollX = useRef(new Animated.Value(opening.x)).current;
@@ -94,7 +97,9 @@ function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLa
   return (
     <Animated.View onLayout={onLayout} style={{ height, overflow: "hidden" }}>
       <Animated.ScrollView
-        ref={scroller}
+        ref={(view: unknown) => {
+          scroller.current = view as Scroller | null;
+        }}
         horizontal
         pagingEnabled
         directionalLockEnabled
