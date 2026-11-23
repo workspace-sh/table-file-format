@@ -1486,7 +1486,10 @@ const styles = css.create({
   // the frozen and scrolling panes stay in line).
   groupRow: {
     display: "flex",
-    height: GROUP_ROW_HEIGHT,
+    // It's given a row's width: its padding is inside that, so it ends where the rows do.
+    // Its line is inside too, so the height counts it and the rows below stay where they're measured.
+    boxSizing: "border-box",
+    height: GROUP_ROW_HEIGHT + ROW_BORDER,
     alignItems: "center",
     paddingInline: 16,
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#141417" },
