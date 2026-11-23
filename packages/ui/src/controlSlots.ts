@@ -321,9 +321,19 @@ export interface MonthPagerProps {
   last: number;
   /** How tall a month's weeks are. */
   heightOf: (month: number) => number;
+  /** The room kept for the tallest month, so a swipe never changes the page's layout. */
+  tallest: number;
+  /** How far what's under the grid moves from that room, as the swipe goes: `FollowsMonth` takes it. */
+  onShift?: (shift: unknown) => void;
   renderMonth: (month: number) => ReactNode;
   /** A swipe came to rest on another month. */
   onMonth: (month: number) => void;
+}
+
+export interface FollowsMonthProps {
+  /** From `MonthPager`'s `onShift`, or a number until it's measured. */
+  shift: unknown;
+  children: ReactNode;
 }
 
 export interface CalendarJumpProps {
