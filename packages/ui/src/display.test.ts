@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { computeRows, FormulaError, type Field, type ParsedTable } from "@workspace.sh/table-core";
-import { mapShapeText, objectParts, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
+import { FIT_READ_ROWS, fittedColumnWidth, longestOf, shownLength, spreadPlaces, mapShapeText, objectParts, ROW_NUMBER_WIDTH, SQUEEZED_CELL_WIDTH, bodyExcerpt, columnWidths, squeezedWidthOf, roomiestWidthOf, columnsFill, describeCell, formulaErrorShow, relationLabel, rowNumberWidth, totalFor } from "./display.ts";
 
 const plain = {};
 const status: Field = {
@@ -351,4 +351,29 @@ test("a list of links reads as its links, not as an object", () => {
   const shown = describeCell(f, ["p1", "p2"], {});
   assert.equal(shown.kind, "relations");
   assert.deepEqual(shown.kind === "relations" ? shown.links.map((l) => l.id) : [], ["p1", "p2"]);
+});
+
+test("a fitted column is whole points, within its cap and the minimum", () => {
+  assert.equal(fittedColumnWidth(120.2, 400, false), 121);
+  assert.equal(fittedColumnWidth(900, 400, false), 300);
+  assert.equal(fittedColumnWidth(900, 1200, true), 400);
+  assert.equal(fittedColumnWidth(12, 400, false), 60);
+  assert.equal(fittedColumnWidth(12, 40, false), 60);
+});
+
+test("a fit reads places spread through a table, and all of a small one", () => {
+  assert.deepEqual(spreadPlaces(4), [0, 1, 2, 3]);
+  assert.deepEqual(spreadPlaces(0), []);
+  const large = spreadPlaces(1_000_000);
+  assert.equal(large.length, FIT_READ_ROWS);
+  assert.equal(large[0], 0);
+  assert.ok(large[large.length - 1]! > 999_000);
+  assert.equal(new Set(large).size, large.length);
+});
+
+test("a fit measures the values drawn longest", () => {
+  assert.equal(shownLength({ kind: "text", text: "ab\nabcdef\nabc", oneToken: false }), 6);
+  assert.equal(shownLength({ kind: "attachment", fileName: "a.png" }), 5);
+  assert.ok(shownLength({ kind: "pills", pills: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }] }) > 9);
+  assert.deepEqual(longestOf(["a", "abc", "ab"], (s) => s.length, 2), ["abc", "ab"]);
 });

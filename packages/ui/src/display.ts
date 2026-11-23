@@ -777,6 +777,57 @@ export function resizedRowHeight(size: number, delta: number): number {
   return Math.min(MAX_ROW_HEIGHT, Math.max(MIN_ROW_HEIGHT, Math.round(size + delta)));
 }
 
+/** The most rows a column's fit reads, spread through the table. */
+export const FIT_READ_ROWS = 2000;
+/** Of those, how many of the longest values are measured as they are drawn. */
+export const FIT_MEASURED_VALUES = 24;
+/** The widest a fit makes a column with a pointer. */
+export const FIT_MOST_WIDTH = 400;
+/** The widest a fit makes a column on a phone, as a share of the visible table. */
+export const FIT_MOST_SHARE = 0.75;
+
+/** Up to `most` places out of `count`, evenly spread and starting at the first. */
+export function spreadPlaces(count: number, most: number = FIT_READ_ROWS): number[] {
+  const n = Math.max(0, Math.min(count, most));
+  return Array.from({ length: n }, (_, i) => Math.floor((i * count) / n));
+}
+
+/** How many characters wide a cell is drawn on one line, to find its longest values cheaply. */
+export function shownLength(show: CellShow): number {
+  const longestLine = (text: string) => text.split("\n").reduce((most, line) => Math.max(most, line.length), 0);
+  switch (show.kind) {
+    case "text":
+    case "link":
+    case "error":
+      return longestLine(show.text);
+    case "attachment":
+      return show.fileName.length;
+    case "pills":
+      return show.pills.reduce((sum, p) => sum + (p.label ?? "").length + 3, 0);
+    case "relations":
+      return show.links.reduce((sum, l) => sum + String(l.label ?? l.id).length + 2, 0);
+  }
+}
+
+/** The `most` items that `lengthOf` says are longest, longest first. */
+export function longestOf<T>(items: readonly T[], lengthOf: (item: T) => number, most: number = FIT_MEASURED_VALUES): T[] {
+  return items
+    .map((item) => ({ item, length: lengthOf(item) }))
+    .sort((a, b) => b.length - a.length)
+    .slice(0, most)
+    .map((entry) => entry.item);
+}
+
+/**
+ * A column's width for content measured `measured` wide: whole points, up
+ * to the cap (`FIT_MOST_WIDTH` with a pointer, `FIT_MOST_SHARE` of the
+ * visible table on a phone), never under MIN_RESIZED_COLUMN_WIDTH.
+ */
+export function fittedColumnWidth(measured: number, visibleWidth: number, pointer: boolean): number {
+  const cap = pointer ? FIT_MOST_WIDTH : Math.floor(visibleWidth * FIT_MOST_SHARE);
+  return Math.max(MIN_RESIZED_COLUMN_WIDTH, Math.min(Math.ceil(measured), cap));
+}
+
 /** The most lines a row can be resized to show, within MAX_ROW_HEIGHT. */
 export const MAX_ROW_LINES = Math.floor((MAX_ROW_HEIGHT - DEFAULT_ROW_HEIGHT) / CELL_LINE_HEIGHT) + 1;
 

@@ -23,6 +23,11 @@ import {
   linesFor,
   columnWidths,
   COLUMN_HAPTIC_POINTS,
+  FIT_READ_ROWS,
+  fittedColumnWidth,
+  longestOf,
+  shownLength,
+  spreadPlaces,
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
@@ -311,6 +316,27 @@ const styles = css.create({
   measureRow: {
     height: 0,
     overflow: "hidden",
+  },
+  // Where a column's fit is measured: laid out, never seen or touched.
+  fitClip: {
+    position: "absolute",
+    width: 0,
+    height: 0,
+    overflow: "hidden",
+    opacity: 0,
+    pointerEvents: "none",
+  },
+  fitRoom: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    flexShrink: 0,
+    width: 4000,
+  },
+  fitColumn: {
+    display: "flex",
+    flexDirection: "column",
+    flexShrink: 0,
   },
   /** "+ Field" under an edge-to-edge grid. */
   addFieldBelow: {
@@ -2132,6 +2158,72 @@ function CellValue({ field, value, relatedTables, onOpenRelation, lines, inColum
   }
 }
 
+/**
+ * A column's header and longest values, drawn out of sight on one line
+ * each as the table draws them: the widest is what the column needs. Says
+ * so once, or null if it could not be measured.
+ */
+function ColumnFitMeasure({
+  title,
+  letter,
+  field,
+  values,
+  relatedTables,
+  onMeasured,
+}: {
+  title: string;
+  letter?: string;
+  field: Field | undefined;
+  values: unknown[];
+  relatedTables?: Record<string, ParsedTable>;
+  onMeasured: (width: number | null) => void;
+}) {
+  const said = useRef(onMeasured);
+  said.current = onMeasured;
+  const node = useRef<unknown>(null);
+  useEffect(() => {
+    let stopped = false;
+    let tries = 0;
+    const read = () => {
+      if (stopped) return;
+      void measureAnchor(node.current).then((rect) => {
+        if (stopped) return;
+        if (rect && rect.width > 0) said.current(rect.width);
+        else if (++tries < 8) setTimeout(read, 16);
+        else said.current(null);
+      });
+    };
+    const first = setTimeout(read, 0);
+    return () => {
+      stopped = true;
+      clearTimeout(first);
+    };
+  }, []);
+  return (
+    <html.div aria-hidden={true} style={styles.fitClip}>
+      <html.div style={styles.fitRoom}>
+        <html.div
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ref={(el: any) => {
+            node.current = el;
+          }}
+          style={styles.fitColumn}
+        >
+          <html.div style={[styles.tableCell, styles.tableHeaderCell]}>
+            {letter !== undefined && <html.span style={[styles.columnLetter, PLATFORM_OS !== "web" && styles.columnLetterStacked]}>{letter}</html.span>}
+            <html.span>{title}</html.span>
+          </html.div>
+          {values.map((value, i) => (
+            <html.div key={i} style={styles.tableCell}>
+              <CellValue field={field} value={value} relatedTables={relatedTables} />
+            </html.div>
+          ))}
+        </html.div>
+      </html.div>
+    </html.div>
+  );
+}
+
 const PILL_COLORS = {
   gray: styles.pillGray,
   brown: styles.pillBrown,
@@ -3358,6 +3450,9 @@ export function TableView({
   // Resizing: live values while a handle is dragged, committed to the
   // view (columnWidths / rowHeights, SPEC section 4) when it's let go.
   const [liveWidths, setLiveWidths] = useState<Record<string, number>>({});
+  // The column being fitted, and the values read to measure it.
+  const [fitting, setFitting] = useState<{ name: string; values: unknown[] } | null>(null);
+  const fitAsked = useRef(false);
   const [liveRow, setLiveRow] = useState<{ rowId: string; h: number; by: "grip" | "line" } | null>(null);
   const resizeStart = useRef<{ at: number; size: number } | null>(null);
   // Each row's own height, else the view's default; the row being
@@ -3959,11 +4054,51 @@ export function TableView({
   // layout that's the left, so dragging leftwards widens it.
   const widen = (start: { at: number }, pageX: number) => (rtl ? start.at - pageX : pageX - start.at);
   // Back to an even share of the width: what a dragged column had before.
-  const resetWidth = (name: string) => {
-    if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
+  const dropWidth = (name: string) => {
+    if (!onUpdateView || view.columnWidths?.[name] === undefined) return false;
     const { [name]: _gone, ...rest } = view.columnWidths;
     onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+    return true;
+  };
+  const resetWidth = (name: string) => {
+    if (dropWidth(name)) haptics.step?.();
+  };
+  // The rows a fit looks through: spread across the table, so a long value
+  // anywhere in it is likely seen, without reading all of a large one.
+  const rowsToFit = async (): Promise<Row[]> => {
+    if (!indexed) return spreadPlaces(total).flatMap((at) => (inMemory[at] ? [inMemory[at]!.row] : []));
+    const slices = 5;
+    const size = Math.floor(FIT_READ_ROWS / slices);
+    const starts = spreadPlaces(Math.max(1, total - size + 1), slices);
+    const read = await Promise.all(starts.map((at) => given.rows(at, Math.min(total, at + size))));
+    return [...new Map(read.flat().map((row) => [row.id, row])).values()];
+  };
+  // A double tap on a column's edge: fits it to what it holds, and on a
+  // column already fitted, puts it back to its share.
+  const fitOrResetWidth = (name: string) => {
+    if (!onUpdateView || fitAsked.current) return;
+    fitAsked.current = true;
     haptics.step?.();
+    const field = fieldMap.get(name);
+    void rowsToFit().then(
+      (found) => {
+        const values = longestOf(found, (row) => shownLength(describeCell(field, row[name], display, relatedTables))).map((row) => row[name]);
+        setFitting({ name, values });
+      },
+      () => {
+        fitAsked.current = false;
+      },
+    );
+  };
+  const finishFit = (name: string, measured: number | null) => {
+    setFitting(null);
+    fitAsked.current = false;
+    if (measured === null || !onUpdateView) return;
+    // The column's line is inside its width.
+    const fitted = fittedColumnWidth(measured + 1, containerWidth, byLines);
+    const set = view.columnWidths?.[name];
+    if (set === fitted) dropWidth(name);
+    else if (set !== undefined || fitted !== colWidth(name)) onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: fitted } });
   };
   // A column has no lines to pass, so a drag is felt every so many points of width.
   const feelColumnWidth = (width: number) => {
@@ -3976,7 +4111,7 @@ export function TableView({
   const byLines = RESIZE_BY_LINES && !!onUpdateView;
   // The lines of `names`' columns, as strips over a pane, each at the end of
   // its column: it shows a line on hover, drags to resize, and a double
-  // click puts the column back to its share. In a row laid out as the
+  // click fits the column, a second putting it back to its share. In a row laid out as the
   // pane's rows are (`from` before the columns, `end` after them), whose
   // clicks pass through, so only the strips take the pointer.
   const columnLines = (names: string[], from: number, end: number) => {
@@ -3998,8 +4133,8 @@ export function TableView({
       <DragHandle
         edge="end"
         straddle={straddle}
-        // A double click on the edge puts the column back to its share.
-        onDoubleTap={() => resetWidth(name)}
+        // A double click on the edge fits the column, and a second puts it back.
+        onDoubleTap={() => fitOrResetWidth(name)}
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
           lastStep.current = Math.floor(colWidth(name) / COLUMN_HAPTIC_POINTS);
@@ -4128,8 +4263,8 @@ export function TableView({
   // A selected cell's column grip, on touch: the row's grip turned on its
   // side, on the cell's end edge at the middle of the row. Dragging resizes
   // the column, as dragging a header's edge does with a pointer (where a
-  // column's lines do it, there's no grip: columnLines); a double tap puts
-  // the column back to its share.
+  // column's lines do it, there's no grip: columnLines); a double tap fits
+  // it to what it holds, and a second puts it back to its share.
   const columnGrip = (name: string, cellEnd: number, rowHeight: number) => {
     if (byLines || !onUpdateView) return null;
     return (
@@ -4154,7 +4289,7 @@ export function TableView({
             onUpdateView({ columnWidths: { ...(view.columnWidths ?? {}), [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) } });
             setLiveWidths({});
           }}
-          onDoubleTap={() => resetWidth(name)}
+          onDoubleTap={() => fitOrResetWidth(name)}
         >
           <html.div role="button" aria-label="Resize column" style={styles.columnGripHit}>
             {grabbers ? (
@@ -5392,6 +5527,17 @@ export function TableView({
       <html.div aria-hidden={true} style={[styles.tableWithAdd, styles.measureRow]}>
         <html.div {...measureProps} style={styles.tableGrow} />
       </html.div>
+    )}
+    {fitting && (
+      <ColumnFitMeasure
+        key={fitting.name}
+        title={fieldMap.get(fitting.name)?.title ?? fitting.name}
+        letter={coords ? columnLetter(fields.indexOf(fitting.name)) : undefined}
+        field={fieldMap.get(fitting.name)}
+        values={fitting.values}
+        relatedTables={relatedTables}
+        onMeasured={(width) => finishFit(fitting.name, width)}
+      />
     )}
     <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
     <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills} most={wide && !fillWidth ? frameMostWidth : undefined}>
