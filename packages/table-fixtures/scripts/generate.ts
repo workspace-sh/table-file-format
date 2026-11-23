@@ -30,24 +30,28 @@ const files: Record<string, string> = {};
 const keys: string[] = [];
 const tableOwners: Record<string, string> = {};
 
+// Examples that break their schema on purpose (SPEC section 9), for the apps to show their problems: kept with what the reader said.
+const PROBLEM_FIXTURES = new Set(["schema-errors"]);
+
 for (const dir of names) {
   const key = dir.slice(0, -".table".length);
   const bundle = await parseBundle(resolve(fixturesDir, dir));
-  if (bundle.diagnostics?.length) throw new Error(`fixtures/${dir} doesn't read cleanly: ${JSON.stringify(bundle.diagnostics)}`);
+  const problems = PROBLEM_FIXTURES.has(key);
+  if (!problems && bundle.diagnostics?.length) throw new Error(`fixtures/${dir} doesn't read cleanly: ${JSON.stringify(bundle.diagnostics)}`);
   const tables: Record<string, unknown> = {};
   for (const name of tableOrder(bundle)) {
     const { diagnostics, ...clean } = bundle.tables[name]!;
-    if (diagnostics?.length) throw new Error(`fixtures/${dir}/tables/${name} doesn't read cleanly: ${JSON.stringify(diagnostics)}`);
+    if (!problems && diagnostics?.length) throw new Error(`fixtures/${dir}/tables/${name} doesn't read cleanly: ${JSON.stringify(diagnostics)}`);
     if (tableOwners[name]) throw new Error(`table name ${name} is in both ${tableOwners[name]} and ${key}: the flat \`tables\` map needs them unique`);
     tableOwners[name] = key;
-    tables[name] = { ...clean, path: `fixtures/${dir}/tables/${name}` };
+    tables[name] = { ...(problems ? bundle.tables[name]! : clean), path: `fixtures/${dir}/tables/${name}` };
   }
   keys.push(key);
   files[`${key}.ts`] =
     `// Generated from fixtures/${dir} by scripts/generate.ts. Don't edit: change\n` +
     `// the fixture and run \`npm run generate -w @workspace.sh/table-fixtures\`.\n` +
     `import type { ParsedBundle } from "@workspace.sh/table-core";\n\n` +
-    `export const ${exportName(key)}: ParsedBundle = ${JSON.stringify({ meta: bundle.meta, tables, path: `fixtures/${dir}` }, null, 2)};\n`;
+    `export const ${exportName(key)}: ParsedBundle = ${JSON.stringify({ meta: bundle.meta, tables, ...(problems && bundle.diagnostics ? { diagnostics: bundle.diagnostics } : {}), path: `fixtures/${dir}` }, null, 2)};\n`;
 }
 
 files["index.ts"] =
