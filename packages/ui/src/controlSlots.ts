@@ -313,6 +313,19 @@ export interface PageEditorProps {
 export type PageEditorSlot = ComponentType<PageEditorProps>;
 
 /** A calendar's heading, which opens the platform's own way to go to a date. */
+export interface MonthPagerProps {
+  /** The month shown, as a `monthPosition`. */
+  month: number;
+  /** The first and last months it can reach. */
+  first: number;
+  last: number;
+  /** How tall a month's weeks are. */
+  heightOf: (month: number) => number;
+  renderMonth: (month: number) => ReactNode;
+  /** A swipe came to rest on another month. */
+  onMonth: (month: number) => void;
+}
+
 export interface CalendarJumpProps {
   title: string;
   /** Beside the title, lighter: the year. */
