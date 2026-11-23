@@ -4,11 +4,14 @@
  */
 import { useRef, useState } from "react";
 import { Button, DatePicker, Host, HStack, Image, Popover, Text } from "@expo/ui/swift-ui";
-import { buttonStyle, datePickerStyle, font, foregroundStyle, frame, labelsHidden, lineLimit, padding } from "@expo/ui/swift-ui/modifiers";
+import { buttonStyle, contentShape, datePickerStyle, font, foregroundStyle, frame, labelsHidden, lineLimit, padding, shapes } from "@expo/ui/swift-ui/modifiers";
 
 import { choseADay } from "../calendar";
 import type { CalendarJumpProps } from "../controlSlots";
 import { dateOfStored, storedOfDate } from "../dateEntry";
+
+/** How far the heading takes a tap beyond what it draws, about 45pt tall in all. Its margins take the room back. */
+const TAP_MARGIN = 8;
 
 export function CalendarJump({ title, detail, small, value, onChange }: CalendarJumpProps) {
   const [open, setOpen] = useState(false);
@@ -28,11 +31,11 @@ export function CalendarJump({ title, detail, small, value, onChange }: Calendar
   };
   const size = small ? 20 : 24;
   return (
-    <Host matchContents>
+    <Host matchContents style={{ marginVertical: -TAP_MARGIN, marginRight: -TAP_MARGIN }}>
       <Popover isPresented={open} onIsPresentedChange={presented} attachmentAnchor="bottom" arrowEdge="top">
         <Popover.Trigger>
           <Button onPress={() => setOpen(true)} modifiers={[buttonStyle("plain")]}>
-            <HStack spacing={6}>
+            <HStack spacing={6} modifiers={[padding({ vertical: TAP_MARGIN, trailing: TAP_MARGIN }), contentShape(shapes.rectangle())]}>
               <Text modifiers={[font({ size, weight: "bold" }), foregroundStyle("primary"), lineLimit(1)]}>{title}</Text>
               {detail ? <Text modifiers={[font({ size }), foregroundStyle("primary"), lineLimit(1)]}>{detail}</Text> : null}
               <Image systemName="chevron.down" size={13} modifiers={[foregroundStyle({ type: "hierarchical", style: "secondary" })]} />
