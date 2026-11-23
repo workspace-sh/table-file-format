@@ -8,8 +8,11 @@
 import { createContext } from "react";
 
 export interface PageScroll {
-  /** How far down the page is scrolled, and how tall the part of it on screen is. */
-  now(): { offset: number; height: number };
+  /**
+   * How far down the page is scrolled, how tall the part of it on screen is,
+   * and how much of that top is under a bar (where its offset starts, negative).
+   */
+  now(): { offset: number; height: number; inset?: number };
   /**
    * Told when the page is scrolled ("scroll"), and when its size or the
    * size of what's in it changes ("resize": things in it may have moved).
@@ -55,15 +58,15 @@ export function pageScrollOver(
   options: { lock?: (on: boolean) => void } = {},
 ) {
   const listeners = new Set<(what: "scroll" | "resize") => void>();
-  const at = { offset: 0, height: 0, top: 0 };
+  const at = { offset: 0, height: 0, top: 0, inset: 0 };
   const tell = (what: "scroll" | "resize") => listeners.forEach((listener) => listener(what));
   const pageScroll: PageScroll = {
-    now: () => ({ offset: at.offset, height: at.height }),
+    now: () => ({ offset: at.offset, height: at.height, inset: at.inset }),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => void listeners.delete(listener);
     },
-    scrollBy: (dy) => scroller.current?.scrollTo({ y: Math.max(0, at.offset + dy), animated: false }),
+    scrollBy: (dy) => scroller.current?.scrollTo({ y: Math.max(-at.inset, at.offset + dy), animated: false }),
     topOf: (view) =>
       new Promise((done) => {
         const inner = scroller.current?.getInnerViewRef?.();
@@ -84,8 +87,9 @@ export function pageScrollOver(
     setWindowTop: (top: number) => {
       at.top = top;
     },
-    onScroll: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+    onScroll: (e: { nativeEvent: { contentOffset: { y: number }; contentInset?: { top: number } } }) => {
       at.offset = e.nativeEvent.contentOffset.y;
+      at.inset = e.nativeEvent.contentInset?.top ?? 0;
       tell("scroll");
     },
     /** Also measures where the ScrollView is in the window (setWindowTop), so a screen needn't. */
