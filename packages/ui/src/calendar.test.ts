@@ -5,7 +5,7 @@ import { monthGrid, monthGridWeeks } from "./cards";
 
 import type { Row, View } from "@workspace.sh/table-core";
 
-import {
+import { choseADay,
   addDays,
   agendaDays,
   calendarEntries,
@@ -189,4 +189,14 @@ test("a month's week count is the one its grid shows, for any first day of the w
       assert.equal(monthGridWeeks(month, weekStart), monthGrid(month, weekStart)[35]!.inMonth ? 6 : 5);
     }
   }
+});
+
+test("a picker's wheel turning is not a day being chosen", () => {
+  assert.equal(choseADay("2026-11-23", "2940-11-23"), false);
+  assert.equal(choseADay("2026-11-23", "2026-06-23"), false);
+  assert.equal(choseADay("2026-01-31", "2026-02-28"), false);
+  assert.equal(choseADay("2028-01-31", "2028-02-29"), false);
+  assert.equal(choseADay("2026-11-23", "2026-11-24"), true);
+  assert.equal(choseADay("2026-11-23", "2026-12-05"), true);
+  assert.equal(choseADay("2026-01-31", "2026-02-27"), true);
 });
