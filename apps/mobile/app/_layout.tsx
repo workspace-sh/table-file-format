@@ -63,6 +63,16 @@ export default function Layout() {
                 headerLargeTitleEnabled: false,
               }}
             />
+            <Stack.Screen
+              name="repair"
+              options={{
+                title: "Review Problems",
+                presentation: "formSheet",
+                sheetAllowedDetents: [0.75, 1],
+                sheetGrabberVisible: true,
+                headerLargeTitleEnabled: false,
+              }}
+            />
           </Stack>
         </Providers>
       </TableAppProvider>
