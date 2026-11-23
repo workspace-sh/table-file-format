@@ -73,7 +73,10 @@ export default function Layout() {
 
 // The views' ticks (a resized row passing a line) as the system's
 // selection feedback, the light click a picker wheel gives.
-const haptics: Haptics = { step: () => void ExpoHaptics.selectionAsync() };
+const haptics: Haptics = {
+  step: () => void ExpoHaptics.selectionAsync(),
+  place: () => void ExpoHaptics.impactAsync(ExpoHaptics.ImpactFeedbackStyle.Light),
+};
 
 /**
  * What every screen draws in: the viewer's display settings, haptics, and

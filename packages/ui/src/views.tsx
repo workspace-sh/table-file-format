@@ -221,6 +221,13 @@ const CAROUSEL_EMPTY_COLUMN_SHOWN = 120;
 // A dragged card or row's floating copy.
 const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
+// A dragged card scrolls the page within this far of its top (under the
+// navigation bar) or bottom (under the toolbar), this far each frame, and
+// the cards are measured again every so many frames.
+const PAGE_EDGE_TOP = 150;
+const PAGE_EDGE_BOTTOM = 130;
+const PAGE_EDGE_STEP = 5;
+const PAGE_EDGE_MEASURE_EVERY = 8;
 
 // CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
 // because StyleX compiles css.create from values in this file only.
@@ -5789,6 +5796,30 @@ export function BoardView({
     return { id, after: r ? y > r.y + r.height / 2 : false };
   };
 
+  // The column at (x, y), or the one above or below it: a column can end
+  // above the finger, and a card let go under its last card belongs at its end.
+  const columnAt = (x: number, y: number) =>
+    hitTest(x, y) ??
+    columnKeys.find((key) => {
+      const r = columnRect(key);
+      return r !== null && x >= r.x && x <= r.x + r.width;
+    }) ??
+    null;
+  const feelPlace = () => (haptics.place ?? haptics.step)?.();
+  /** Show where a card held at (x, y) would land, felt when that changes. Returns the column it's over. */
+  const markDrop = (x: number, y: number, dragged: string) => {
+    const hit = columnAt(x, y);
+    setHoveredColumn((prev) => (prev === hit ? prev : hit));
+    const slot = slotAt(x, y, hit, dragged);
+    if (hit !== null) {
+      const spot = `${hit}\n${slot?.id ?? ""}\n${slot?.after ?? ""}`;
+      if (feltSpot.current !== null && spot !== feltSpot.current) feelPlace();
+      feltSpot.current = spot;
+    }
+    setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+    return hit;
+  };
+
   /** The whole view's row order with `dragged` moved into `column` at `slot`. */
   const orderAfterDropHere = (dragged: string, column: string, slot: { id: string; after: boolean } | null) =>
     orderAfterDrop(rows, board, dragged, column, slot);
@@ -5821,6 +5852,37 @@ export function BoardView({
     edgePaging.current = { direction: 0, timer: null };
   };
   useEffect(() => stopEdgePaging, []);
+  // A card held near the page's top or bottom scrolls it, so a place in a
+  // column longer than the screen can be reached though the page is held.
+  const edgeScroll = useRef<{ direction: -1 | 0 | 1; timer: ReturnType<typeof setInterval> | null }>({ direction: 0, timer: null });
+  const stopEdgeScroll = () => {
+    if (edgeScroll.current.timer) clearInterval(edgeScroll.current.timer);
+    edgeScroll.current = { direction: 0, timer: null };
+  };
+  useEffect(() => stopEdgeScroll, []);
+  const scrollAtEdge = (y: number) => {
+    if (!pageScroll || !isTouchViewport || PLATFORM_OS === "web") return;
+    const { offset, height } = pageScroll.now();
+    const top = pageScroll.windowTop() + offset;
+    const direction = y > top + height - PAGE_EDGE_BOTTOM ? 1 : y < top + PAGE_EDGE_TOP ? -1 : 0;
+    if (direction === edgeScroll.current.direction) return;
+    stopEdgeScroll();
+    if (direction === 0) return;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      pageScroll.scrollBy(direction * PAGE_EDGE_STEP);
+      if (++ticks % PAGE_EDGE_MEASURE_EVERY !== 0) return;
+      // Where the cards are now, then what's under the finger.
+      remeasureColumns();
+      remeasureCards();
+      setTimeout(() => {
+        const at = lastPointer.current;
+        const dragged = draggedRef.current;
+        if (at && dragged) markDrop(at.x, at.y, dragged);
+      }, CAROUSEL_MEASURED_MS);
+    }, 16);
+    edgeScroll.current = { direction, timer };
+  };
   /**
    * A page turned to a column shorter than the one it left, with the page
    * scrolled down, showed an empty column: its cards were above what's on
@@ -5862,10 +5924,7 @@ export function BoardView({
             const at = lastPointer.current;
             const dragged = draggedRef.current;
             if (!at || !dragged) return;
-            const hit = hitTest(at.x, at.y);
-            setHoveredColumn((prev) => (prev === hit ? prev : hit));
-            const slot = slotAt(at.x, at.y, hit, dragged);
-            setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+            const hit = markDrop(at.x, at.y, dragged);
             if (hit && bringColumnIntoView(hit, dragged)) {
               // Scrolled: where everything is now, and what's under the finger.
               setTimeout(() => {
@@ -5874,10 +5933,7 @@ export function BoardView({
                 setTimeout(() => {
                   const now = lastPointer.current;
                   if (!now || !draggedRef.current) return;
-                  const over = hitTest(now.x, now.y);
-                  setHoveredColumn((prev) => (prev === over ? prev : over));
-                  const gap = slotAt(now.x, now.y, over, draggedRef.current);
-                  setDropSlot((prev) => (prev?.id === gap?.id && prev?.after === gap?.after ? prev : gap));
+                  markDrop(now.x, now.y, draggedRef.current);
                 }, CAROUSEL_MEASURED_MS);
               }, CAROUSEL_SETTLE_MS);
             }
@@ -5930,6 +5986,25 @@ export function BoardView({
     },
   });
 
+  // One ref for each card, kept between renders. A new one each render made
+  // React detach the old, which dropped the card's measured place until it was
+  // measured again, so a drop right after a move missed it and went to the column's end.
+  const cardRefNow = useRef({ cardRef: cards.cardRef, canDrag });
+  cardRefNow.current = { cardRef: cards.cardRef, canDrag };
+  const cardRefs = useRef(new Map<string, (el: unknown) => void>());
+  const cardRefOf = (id: string) => {
+    let ref = cardRefs.current.get(id);
+    if (!ref) {
+      ref = (el: unknown) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cardRefNow.current.cardRef(id)(el as any);
+        if (cardRefNow.current.canDrag) registerCard(id).ref(el);
+      };
+      cardRefs.current.set(id, ref);
+    }
+    return ref;
+  };
+
   const columnsContent = columnKeys.map((key) => {
     const groupRows = groups[key] ?? [];
     const dropReg = canDrag ? registerColumn(key) : undefined;
@@ -5954,12 +6029,13 @@ export function BoardView({
             onDragStart={
               canDrag
                 ? (e: DragEvent) => {
-                    haptics.step?.();
+                    feelPlace();
                     feltSpot.current = null;
                     setDraggedRowId(row.id);
                     setHoveredColumn(key);
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     remeasureColumns();
+                    remeasureCards();
                   }
                 : undefined
             }
@@ -5968,17 +6044,8 @@ export function BoardView({
                 ? (e: DragEvent) => {
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     pageAtEdge(e.pageX);
-                    const hit = hitTest(e.pageX, e.pageY);
-                    setHoveredColumn((prev) => (prev === hit ? prev : hit));
-                    const slot = slotAt(e.pageX, e.pageY, hit, row.id);
-                    if (hit !== null) {
-                      const spot = `${hit}\n${slot?.id ?? ""}\n${slot?.after ?? ""}`;
-                      if (feltSpot.current !== null && spot !== feltSpot.current) haptics.step?.();
-                      feltSpot.current = spot;
-                    }
-                    setDropSlot((prev) =>
-                      prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot,
-                    );
+                    scrollAtEdge(e.pageY);
+                    markDrop(e.pageX, e.pageY, row.id);
                   }
                 : undefined
             }
@@ -5986,13 +6053,17 @@ export function BoardView({
               canDrag
                 ? (e: DragEvent) => {
                     stopEdgePaging();
-                    const target = hitTest(e.pageX, e.pageY);
+                    stopEdgeScroll();
+                    const target = columnAt(e.pageX, e.pageY);
                     // Let go over itself, the card goes back where it was: a long
                     // press that didn't move (it starts a drag on a phone) moved
                     // it to the end of its column, as a drop on no card does.
                     const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
                     if (target && onUpdateRow && !backWhereItWas) {
-                      haptics.step?.();
+                      // Felt only if it's somewhere new: a drop in the gap it came from isn't.
+                      const here = (groups[target] ?? []).map((r) => r.id);
+                      const order = onUpdateView ? orderAfterDropHere(row.id, target, slotAt(e.pageX, e.pageY, target, row.id)) : null;
+                      if (columnOf(row, groupField) !== target || order?.filter((id) => here.includes(id)).join("\n") !== here.join("\n")) feelPlace();
                       // The card slides into its place and the columns to their heights.
                       animateNextLayout();
                       const source = rows.find((r) => r.id === row.id);
@@ -6015,11 +6086,7 @@ export function BoardView({
             }
           >
             <html.div
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ref={(el: any) => {
-                cards.cardRef(row.id)(el);
-                if (canDrag) registerCard(row.id).ref(el);
-              }}
+              ref={cardRefOf(row.id)}
               onClick={() => {
                 cards.setFocusId(row.id);
                 onOpenBody?.(row.id);
