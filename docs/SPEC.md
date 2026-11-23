@@ -1272,8 +1272,9 @@ For shorter inline markdown content (a description, a one-paragraph
 summary), use a string field with `display: "markdown"` instead.
 
 Rules:
-- A body file MUST have a corresponding row in the table. Orphan
-  body files (file present, no row) are a validator warning.
+- A body file MUST have a corresponding row in the table. A body
+  file without one (an orphaned page) makes the table invalid
+  (section 9, rule 4); a writer keeps it until a person resolves it.
 - A row WITHOUT a body file is valid; bodies are optional per row.
 - Writers wholesale-replace `bodies/` on `writeTable`: bodies not
   present in the input are removed from disk, as is a page under its
@@ -1538,6 +1539,44 @@ A `.table/` is **valid** when:
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
 None of these block validity.
+
+### Showing a table's problems (guidance)
+
+How an application tells a person what is wrong with a table, and
+helps them mend it. Not a validity rule: a table is valid or not by the
+list above, however it's shown. (Reference: `tableProblems()` in
+`@workspace.sh/table-core` returns each problem with a stable code, its
+place, its severity and the fixes that apply, as data.)
+
+- **The table stays open.** A table with problems is read and shown as
+  well as it can be, and stays editable. Only an unreadable
+  `schema.json` (section 3) has no table to show; the application says
+  so plainly, names the file and why it couldn't be read, and changes
+  nothing.
+- **Each problem has a severity.** An *error* is a rule above that the
+  table breaks, or a line the reader kept and couldn't use (section 3),
+  which a person has to resolve. A *warning* is one of the optional
+  warnings above: nothing is invalid or lost, but something points
+  nowhere. A *notice* is something the reader did and lost nothing by,
+  such as leaving out a line that repeats a row exactly. A table is
+  called valid only when it has no errors.
+- **Plain words, at the place.** A problem is said in the reader's
+  language and in the terms they see (a column's title, a row's name),
+  not as a rule's key or a file's path, and it leads to the row, cell
+  or line it is about.
+- **Fixes in order.** Safe fixes come first: those that change one
+  value and lose nothing, such as making "12" the number 12. Next come
+  decisions, where the right answer can't be known: both sides of a
+  merge conflict, or two rows with one key, shown in full for a person
+  to choose between. Changes to the schema come last, such as adding a
+  choice or lowering a minimum, because they apply to every row. A
+  fix that changes the schema says so.
+- **Nothing changes until a person chooses.** No fix is applied on
+  opening, on saving or in the background. Each one is a single edit
+  that can be undone, and it is saved and synced like any other.
+- **A value can be right and its rule wrong.** Where it could be
+  either, both kinds of fix are offered: correct the value, or widen
+  the rule.
 
 ## 10. Addressing
 
