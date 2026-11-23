@@ -60,6 +60,7 @@ import {
   initialMonth,
   localDay,
   monthGrid,
+  monthGridWeeks,
   orderAfterDrop,
   orderMovedTo,
   orderSwapped,
@@ -150,7 +151,7 @@ import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
-import { MonthPager } from "./internal/MonthPager";
+import { FollowsMonth, MonthPager } from "./internal/MonthPager";
 import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
 import { PageScrollContext } from "./pageScroll";
 import { animateNextLayout } from "./internal/animateNextLayout";
@@ -6463,6 +6464,8 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   // The middle of the months a swipe can reach, moved when a date beyond them is chosen.
   const [pagerCentre, setPagerCentre] = useState(() => monthPosition(cursor));
   if (Math.abs(monthPosition(cursor) - pagerCentre) >= MONTHS_EITHER_SIDE) setPagerCentre(monthPosition(cursor));
+  // How far what's under a phone's month has moved, from the pager, once it's measured.
+  const [belowShift, setBelowShift] = useState<unknown>(null);
   const todayKey = dateKey(new Date());
   const [chosenDay, setChosenDay] = useState<string>(todayKey);
   const [listedDay, setListedDay] = useState<string | null>(null);
@@ -6728,7 +6731,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
 
   // A phone's month, as the system's Calendar lays one out: edge to edge with
   // no box, only the month's own days, and a mark under each for what's on it.
-  const phoneWeeksIn = (position: number) => (monthGrid(localDay(monthAtPosition(position))!, weekStart)[35]!.inMonth ? 6 : 5);
+  const phoneWeeksIn = (position: number) => monthGridWeeks(localDay(monthAtPosition(position))!, weekStart);
+  const phoneMonthHeight = (position: number) => phoneWeeksIn(position) * phoneRowFor(phoneWeeksIn(position));
+  const phoneTallest = Math.max(5 * phoneRowFor(5), 6 * phoneRowFor(6));
   /** One month's weeks on a phone. */
   const phoneWeeks = (position: number) => {
     const cells = monthGrid(localDay(monthAtPosition(position))!, weekStart);
@@ -6797,7 +6802,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
         <MonthPager
           month={monthPosition(cursor)}
           {...monthsAround(pagerCentre, minMonth ? monthPosition(dateKey(minMonth)) : undefined, maxMonth ? monthPosition(dateKey(maxMonth)) : undefined)}
-          heightOf={(position) => phoneWeeksIn(position) * phoneRowFor(phoneWeeksIn(position))}
+          heightOf={phoneMonthHeight}
+          tallest={phoneTallest}
+          onShift={setBelowShift}
           renderMonth={phoneWeeks}
           onMonth={(position) => setCursor(monthAtPosition(position))}
         />
@@ -6983,6 +6990,29 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const listedRows = listedDay ? entriesOn(entries, listedDay) : [];
   const draggedRow = dragged ? rows.find((r) => r.id === dragged.id) : undefined;
 
+  const undatedSection = () => (
+        <html.div style={styles.calendarUndated}>
+          <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
+            <html.div style={styles.calendarDisclosureTitle}>
+              <html.div style={[styles.calendarDisclosure, showUndated && styles.calendarDisclosureOpen]} />
+              <html.span style={styles.calendarAgendaHead}>No Date</html.span>
+            </html.div>
+            <html.span style={styles.calendarMore}>{undated.length}</html.span>
+          </html.button>
+          {showUndated ? (
+            <html.div style={styles.calendarUndatedList}>
+              {undated.map((row) => (
+                <DragHandle key={row.id} {...dragProps(row.id)}>
+                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarUndatedChip, tintOf(colorsOf(row).row), dragged?.id === row.id && styles.cardDragging]}>
+                    <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(row)}</html.span>
+                  </html.button>
+                </DragHandle>
+              ))}
+            </html.div>
+          ) : null}
+        </html.div>
+  );
+
   return (
     <html.div {...measureProps} style={styles.calendarPage}>
       {isCompact ? (
@@ -7093,6 +7123,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
       )}
 
       {!searching && range === "month" && isCompact ? (
+        <FollowsMonth shift={belowShift ?? phoneMonthHeight(monthPosition(cursor)) - phoneTallest}>
         <html.div style={styles.calendarAgendaDay}>
           <html.span style={styles.calendarAgendaHead}>{longDay(chosenDay)}</html.span>
           {entriesOn(entries, chosenDay).length === 0 ? (
@@ -7101,29 +7132,15 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
             entriesOn(entries, chosenDay).map((entry) => entryLine(entry, chosenDay))
           )}
         </html.div>
+        </FollowsMonth>
       ) : null}
 
       {!searching && undated.length > 0 ? (
-        <html.div style={styles.calendarUndated}>
-          <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
-            <html.div style={styles.calendarDisclosureTitle}>
-              <html.div style={[styles.calendarDisclosure, showUndated && styles.calendarDisclosureOpen]} />
-              <html.span style={styles.calendarAgendaHead}>No Date</html.span>
-            </html.div>
-            <html.span style={styles.calendarMore}>{undated.length}</html.span>
-          </html.button>
-          {showUndated ? (
-            <html.div style={styles.calendarUndatedList}>
-              {undated.map((row) => (
-                <DragHandle key={row.id} {...dragProps(row.id)}>
-                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarUndatedChip, tintOf(colorsOf(row).row), dragged?.id === row.id && styles.cardDragging]}>
-                    <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(row)}</html.span>
-                  </html.button>
-                </DragHandle>
-              ))}
-            </html.div>
-          ) : null}
-        </html.div>
+        range === "month" && isCompact ? (
+          <FollowsMonth shift={belowShift ?? phoneMonthHeight(monthPosition(cursor)) - phoneTallest}>{undatedSection()}</FollowsMonth>
+        ) : (
+          undatedSection()
+        )
       ) : null}
 
       {draggedRow && pointerPos ? (

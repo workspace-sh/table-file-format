@@ -1,12 +1,15 @@
 /**
  * iOS: a month's weeks in a native paging scroll view. Each month has a fixed
  * place along it and only those around the one shown are drawn, so moving on
- * never swaps what's under the finger.
+ * never swaps what's under the finger. A month's height is shown by moving
+ * things, on the native thread with the scroll, and never by laying the page
+ * out again: the room for the tallest month stays, a clip's edge rises to the
+ * month's foot, and what's under the grid rises with it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, View, type LayoutChangeEvent, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 
-import type { MonthPagerProps } from "../controlSlots";
+import type { FollowsMonthProps, MonthPagerProps } from "../controlSlots";
 
 type ScrollEvent = NativeSyntheticEvent<NativeScrollEvent>;
 
@@ -26,8 +29,8 @@ export function MonthPager(props: MonthPagerProps) {
   // Until it's measured: the month where it will be, so nothing is blank.
   if (width === 0) {
     return (
-      <View onLayout={onLayout} style={{ height: props.heightOf(props.month), overflow: "hidden" }}>
-        {props.renderMonth(props.month)}
+      <View onLayout={onLayout} style={{ height: props.tallest }}>
+        <View style={{ height: props.heightOf(props.month), overflow: "hidden" }}>{props.renderMonth(props.month)}</View>
       </View>
     );
   }
@@ -35,7 +38,7 @@ export function MonthPager(props: MonthPagerProps) {
   return <Pages key={`${width}:${props.first}`} {...props} width={width} onLayout={onLayout} />;
 }
 
-function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLayout }: MonthPagerProps & { width: number; onLayout: (e: LayoutChangeEvent) => void }) {
+function Pages({ month, first, last, heightOf, tallest, onShift, renderMonth, onMonth, width, onLayout }: MonthPagerProps & { width: number; onLayout: (e: LayoutChangeEvent) => void }) {
   const scroller = useRef<Scroller | null>(null);
   const placeOf = (m: number) => (m - first) * width;
   const opening = useRef({ x: placeOf(month), y: 0 }).current;
@@ -55,7 +58,7 @@ function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLa
     }
   };
   const onScroll = useMemo(
-    () => Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: false, listener: follow }),
+    () => Animated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], { useNativeDriver: true, listener: follow }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [scrollX, first, last, width],
   );
@@ -87,15 +90,24 @@ function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLa
   }, [month]);
 
   const drawn = [...new Set([near - 1, near, near + 1, month])].filter((m) => m >= first && m <= last).sort((a, b) => a - b);
-  const tallest = Math.max(...drawn.map(heightOf));
-  // The grid's height moves between a month's and the next's with the finger.
-  const height =
-    drawn.length > 1
-      ? scrollX.interpolate({ inputRange: drawn.map(placeOf), outputRange: drawn.map(heightOf), extrapolate: "clamp" })
-      : heightOf(month);
+  // Every month's place once, so the native animation is never replaced during a swipe.
+  const shift = useMemo(() => {
+    if (last === first) return new Animated.Value(heightOf(first) - tallest);
+    const months = Array.from({ length: last - first + 1 }, (_, i) => first + i);
+    return scrollX.interpolate({ inputRange: months.map(placeOf), outputRange: months.map((m) => heightOf(m) - tallest), extrapolate: "clamp" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollX, first, last, width, tallest]);
+  const unshift = useMemo(() => Animated.multiply(shift, -1), [shift]);
+  useEffect(() => {
+    onShift?.(shift);
+    return () => onShift?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shift]);
 
   return (
-    <Animated.View onLayout={onLayout} style={{ height, overflow: "hidden" }}>
+    <View onLayout={onLayout} style={{ height: tallest }}>
+      <Animated.View style={{ height: tallest, overflow: "hidden", transform: [{ translateY: shift }] }}>
+      <Animated.View style={{ height: tallest, transform: [{ translateY: unshift }] }}>
       <Animated.ScrollView
         ref={(view: unknown) => {
           scroller.current = view as Scroller | null;
@@ -121,6 +133,13 @@ function Pages({ month, first, last, heightOf, renderMonth, onMonth, width, onLa
       </Animated.ScrollView>
       {/* The screen's left edge stays the system's Back gesture: a touch here never reaches the pager. */}
       <View collapsable={false} style={{ position: "absolute", top: 0, bottom: 0, left: 0, width: BACK_EDGE }} />
-    </Animated.View>
+      </Animated.View>
+      </Animated.View>
+    </View>
   );
+}
+
+/** What's under the grid, moved with the swipe. */
+export function FollowsMonth({ shift, children }: FollowsMonthProps) {
+  return <Animated.View style={{ transform: [{ translateY: shift as Animated.Value }] }}>{children}</Animated.View>;
 }
