@@ -190,6 +190,14 @@ export function monthGrid(month: Date, weekStart: number): { date: Date; inMonth
   return cells;
 }
 
+/** How many of `monthGrid`'s weeks a month is shown in: five, or six when it runs into the sixth. */
+export function monthGridWeeks(month: Date, weekStart: number): 5 | 6 {
+  const year = month.getFullYear();
+  const m = month.getMonth();
+  const leading = (calendarDate(year, m, 1).getDay() - weekStart + 7) % 7;
+  return leading + calendarDate(year, m + 1, 0).getDate() > 35 ? 6 : 5;
+}
+
 /** Rows by the day in `field` (`YYYY-MM-DD`), in the order given. Undated rows are left out. */
 export function rowsByDay(rows: Row[], field: string): Map<string, Row[]> {
   const out = new Map<string, Row[]>();
