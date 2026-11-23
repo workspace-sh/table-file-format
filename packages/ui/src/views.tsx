@@ -79,6 +79,10 @@ import {
   resizeEntry,
   retimeEntry,
   stepRange,
+  monthAtPosition,
+  monthPosition,
+  monthsAround,
+  MONTHS_EITHER_SIDE,
   weekDays,
   weekSegments,
   type CalendarEntry,
@@ -146,6 +150,7 @@ import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
 import { HScroll } from "./internal/HScroll";
+import { MonthPager } from "./internal/MonthPager";
 import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
 import { PageScrollContext } from "./pageScroll";
 import { animateNextLayout } from "./internal/animateNextLayout";
@@ -6455,6 +6460,9 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const setRange = (next: CalendarRange) => setCalendarRange(view.id, next);
   const rangeInBar = useContext(CalendarRangeInBar);
   const [cursor, setCursor] = useState(() => dateKey(initialMonth(view, rows)));
+  // The middle of the months a swipe can reach, moved when a date beyond them is chosen.
+  const [pagerCentre, setPagerCentre] = useState(() => monthPosition(cursor));
+  if (Math.abs(monthPosition(cursor) - pagerCentre) >= MONTHS_EITHER_SIDE) setPagerCentre(monthPosition(cursor));
   const todayKey = dateKey(new Date());
   const [chosenDay, setChosenDay] = useState<string>(todayKey);
   const [listedDay, setListedDay] = useState<string | null>(null);
@@ -6562,7 +6570,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const aroundGrid = 186 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
   const weeksShown = monthGrid(cursorDate, weekStart)[35]!.inMonth ? 6 : 5;
   // A phone on its side: the month's rows share the height there is.
-  const phoneRow = turned && pageHeight > 0 ? Math.max(36, Math.min(58, Math.floor((pageHeight - 176) / weeksShown))) : 58;
+  const phoneRowFor = (weeks: number) => (turned && pageHeight > 0 ? Math.max(36, Math.min(58, Math.floor((pageHeight - 176) / weeks))) : 58);
   const GridEdges = turned ? Fragment : Bleed;
   const weekHeight =
     pageHeight > 0
@@ -6720,9 +6728,60 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
 
   // A phone's month, as the system's Calendar lays one out: edge to edge with
   // no box, only the month's own days, and a mark under each for what's on it.
+  const phoneWeeksIn = (position: number) => (monthGrid(localDay(monthAtPosition(position))!, weekStart)[35]!.inMonth ? 6 : 5);
+  /** One month's weeks on a phone. */
+  const phoneWeeks = (position: number) => {
+    const cells = monthGrid(localDay(monthAtPosition(position))!, weekStart);
+    const weeks = phoneWeeksIn(position);
+    const row = phoneRowFor(weeks);
+    const live = position === monthPosition(cursor);
+    return (
+      <>
+        {Array.from({ length: weeks }, (_, week) => (
+      <html.div key={week} style={[styles.phoneWeek, styles.calendarWeekHeight(row)]}>
+        {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
+          const key = dateKey(cell.date);
+          if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
+          const on = entriesOn(entries, key);
+          // Only the month at rest takes a dragged row.
+          const target = canEdit && live ? registerDay(key) : undefined;
+          const isToday = key === todayKey;
+          const isChosen = key === chosenDay;
+          return (
+            <html.button
+              key={key}
+              ref={target?.ref}
+              aria-label={longDay(key)}
+              onClick={() => clickDay(key, 0)}
+              style={[styles.calendarColumn, styles.phoneDay, turned && styles.phoneDayTurned, hoverDay === key && styles.calendarCellDrop]}
+            >
+              <html.span
+                style={[
+                  styles.phoneNumber,
+                  turned && styles.phoneNumberTurned,
+                  offDay(column) && styles.phoneOffDay,
+                  isToday && styles.phoneToday,
+                  isChosen && styles.phoneChosen,
+                  isChosen && isToday && styles.phoneChosenToday,
+                ]}
+              >
+                {cell.date.getDate()}
+              </html.span>
+              <html.div style={[styles.phoneMarks, turned && styles.phoneMarksTurned]}>
+                {on.slice(0, 5).map((entry) => (
+                  <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
+                ))}
+              </html.div>
+            </html.button>
+          );
+        })}
+      </html.div>
+    ))}
+      </>
+    );
+  };
+
   const phoneMonth = () => {
-    const cells = monthGrid(cursorDate, weekStart);
-    const weeks = cells[35]!.inMonth ? 6 : 5;
     const letters = rotateWeekdays(
       Array.from({ length: 7 }, (_, i) => calendarDate(1970, 0, 4 + i).toLocaleDateString(undefined, { weekday: "narrow" })),
       weekStart,
@@ -6735,45 +6794,13 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
             <html.span key={i} style={[styles.phoneWeekday, styles.calendarColumn, offDay(i) && styles.phoneOffDay]}>{letter}</html.span>
           ))}
         </html.div>
-        {Array.from({ length: weeks }, (_, week) => (
-          <html.div key={week} style={[styles.phoneWeek, styles.calendarWeekHeight(phoneRow)]}>
-            {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
-              const key = dateKey(cell.date);
-              if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
-              const on = entriesOn(entries, key);
-              const target = canEdit ? registerDay(key) : undefined;
-              const isToday = key === todayKey;
-              const isChosen = key === chosenDay;
-              return (
-                <html.button
-                  key={key}
-                  ref={target?.ref}
-                  aria-label={longDay(key)}
-                  onClick={() => clickDay(key, 0)}
-                  style={[styles.calendarColumn, styles.phoneDay, turned && styles.phoneDayTurned, hoverDay === key && styles.calendarCellDrop]}
-                >
-                  <html.span
-                    style={[
-                      styles.phoneNumber,
-                      turned && styles.phoneNumberTurned,
-                      offDay(column) && styles.phoneOffDay,
-                      isToday && styles.phoneToday,
-                      isChosen && styles.phoneChosen,
-                      isChosen && isToday && styles.phoneChosenToday,
-                    ]}
-                  >
-                    {cell.date.getDate()}
-                  </html.span>
-                  <html.div style={[styles.phoneMarks, turned && styles.phoneMarksTurned]}>
-                    {on.slice(0, 5).map((entry) => (
-                      <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
-                    ))}
-                  </html.div>
-                </html.button>
-              );
-            })}
-          </html.div>
-        ))}
+        <MonthPager
+          month={monthPosition(cursor)}
+          {...monthsAround(pagerCentre, minMonth ? monthPosition(dateKey(minMonth)) : undefined, maxMonth ? monthPosition(dateKey(maxMonth)) : undefined)}
+          heightOf={(position) => phoneWeeksIn(position) * phoneRowFor(phoneWeeksIn(position))}
+          renderMonth={phoneWeeks}
+          onMonth={(position) => setCursor(monthAtPosition(position))}
+        />
       </PhoneEdges>
     );
   };
