@@ -22,6 +22,7 @@ import {
   type RelationLink,
   linesFor,
   columnWidths,
+  COLUMN_HAPTIC_POINTS,
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
@@ -3942,6 +3943,13 @@ export function TableView({
     if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
     const { [name]: _gone, ...rest } = view.columnWidths;
     onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+    haptics.step?.();
+  };
+  // A column has no lines to pass, so a drag is felt every so many points of width.
+  const feelColumnWidth = (width: number) => {
+    const step = Math.floor(width / COLUMN_HAPTIC_POINTS);
+    if (step !== lastStep.current) haptics.step?.();
+    lastStep.current = step;
   };
   // With a pointer, a column resizes from its line anywhere down the table
   // (columnLines), as in Numbers or Sheets; on touch, from the header's edge.
@@ -3974,11 +3982,13 @@ export function TableView({
         onDoubleTap={() => resetWidth(name)}
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
+          lastStep.current = Math.floor(colWidth(name) / COLUMN_HAPTIC_POINTS);
         }}
         onDragMove={(e) => {
           const start = resizeStart.current;
           if (!start) return;
           const w = resizedColumnWidth(start.size, widen(start, e.pageX));
+          feelColumnWidth(w);
           setLiveWidths((prev) => ({ ...prev, [name]: w }));
         }}
         onDragEnd={(e) => {
@@ -4108,11 +4118,14 @@ export function TableView({
           grabOnTouch
           onDragStart={(e) => {
             resizeStart.current = { at: e.pageX, size: colWidth(name) };
+            lastStep.current = Math.floor(colWidth(name) / COLUMN_HAPTIC_POINTS);
           }}
           onDragMove={(e) => {
             const start = resizeStart.current;
             if (!start) return;
-            setLiveWidths((prev) => ({ ...prev, [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) }));
+            const w = resizedColumnWidth(start.size, widen(start, e.pageX));
+            feelColumnWidth(w);
+            setLiveWidths((prev) => ({ ...prev, [name]: w }));
           }}
           onDragEnd={(e) => {
             const start = resizeStart.current;
