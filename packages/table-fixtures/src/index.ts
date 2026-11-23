@@ -6,6 +6,7 @@ import { formulaErrorsBundle } from "./formula-errors";
 import { householdBudgetBundle } from "./household-budget";
 import { libraryBundle } from "./library";
 import { projectsBundle } from "./projects";
+import { schemaErrorsBundle } from "./schema-errors";
 import { shopBundle } from "./shop";
 
 export { calendarsBundle } from "./calendars";
@@ -14,6 +15,7 @@ export { formulaErrorsBundle } from "./formula-errors";
 export { householdBudgetBundle } from "./household-budget";
 export { libraryBundle } from "./library";
 export { projectsBundle } from "./projects";
+export { schemaErrorsBundle } from "./schema-errors";
 export { shopBundle } from "./shop";
 
 /** Every fixture bundle, keyed by its name: the directory's name without `.table` (D37). */
@@ -24,6 +26,7 @@ export const bundles: Record<string, ParsedBundle> = {
   "household-budget": householdBudgetBundle,
   "library": libraryBundle,
   "projects": projectsBundle,
+  "schema-errors": schemaErrorsBundle,
   "shop": shopBundle,
 };
 
