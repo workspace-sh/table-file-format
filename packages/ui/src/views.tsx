@@ -6918,7 +6918,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
           // Only the month at rest takes a dragged row.
           const target = canEdit && live ? registerDay(key) : undefined;
           const isToday = key === todayKey;
-          const isChosen = key === chosenDay;
+          const isChosen = key === chosenInView;
           return (
             <html.button
               key={key}
@@ -7008,7 +7008,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
                   !isCompact && styles.calendarCellWide,
                   offDay(column) && styles.calendarCellOffDay,
                   !cell.inMonth && styles.calendarCellOther,
-                  isCompact && chosenDay === key && styles.calendarCellChosen,
+                  isCompact && chosenInView === key && styles.calendarCellChosen,
                   hoverDay === key && styles.calendarCellDrop,
                 ]}
               >
@@ -7292,11 +7292,11 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
       {!searching && range === "month" && isCompact ? (
         <FollowsMonth shift={belowShift ?? phoneMonthHeight(monthPosition(cursor)) - phoneTallest}>
         <html.div style={styles.calendarAgendaDay}>
-          <html.span style={styles.calendarAgendaHead}>{longDay(chosenDay)}</html.span>
-          {entriesOn(entries, chosenDay).length === 0 ? (
+          <html.span style={styles.calendarAgendaHead}>{longDay(chosenInView)}</html.span>
+          {entriesOn(entries, chosenInView).length === 0 ? (
             <html.span style={styles.daySheetEmpty}>Nothing on this day.</html.span>
           ) : (
-            entriesOn(entries, chosenDay).map((entry) => entryLine(entry, chosenDay))
+            entriesOn(entries, chosenInView).map((entry) => entryLine(entry, chosenInView))
           )}
         </html.div>
         </FollowsMonth>

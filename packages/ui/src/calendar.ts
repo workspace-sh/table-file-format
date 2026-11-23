@@ -330,6 +330,19 @@ export function stepRange(range: CalendarRange, key: string, by: number): string
   return year < 0 || year > 9999 ? key : next.toISOString().slice(0, 10);
 }
 
+/**
+ * Whether a date picker's change from `from` to `to` is a day being chosen,
+ * rather than its month or year wheel turning. A wheel keeps the day of the
+ * month, or the month's last day when it has fewer.
+ */
+export function choseADay(from: string, to: string): boolean {
+  if (from.slice(0, 7) === to.slice(0, 7)) return from !== to;
+  const m = DAY.exec(to);
+  if (!m) return true;
+  const lastDay = utcDay(Number(m[1]), Number(m[2]), 0).getUTCDate();
+  return Number(to.slice(8, 10)) !== Math.min(Number(from.slice(8, 10)), lastDay);
+}
+
 /** A month as a count of months, so months next to each other are one apart. Takes a `YYYY-MM…` key. */
 export function monthPosition(key: string): number {
   return Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7)) - 1;
