@@ -13,6 +13,7 @@ import {
   orderAfterDrop,
   orderMovedTo,
   orderSwapped,
+  slotNear,
   rowsByDay,
 } from "./cards.ts";
 
@@ -97,3 +98,16 @@ test("Alt+arrows on a board card: to the next column, or swapped in its own; not
   assert.equal(boardCardMove(columns, keys, "zz", "ArrowDown"), null);
 });
 
+
+test("slotNear: a card let go in a column lands at the place nearest it", () => {
+  const cards = [
+    { id: "a", y: 100, height: 100 },
+    { id: "b", y: 210, height: 100 },
+  ];
+  assert.deepEqual(slotNear(cards, 20), { id: "a", after: false }, "on the header, above every card");
+  assert.deepEqual(slotNear(cards, 120), { id: "a", after: false }, "a card's top half");
+  assert.deepEqual(slotNear(cards, 180), { id: "a", after: true }, "a card's bottom half");
+  assert.deepEqual(slotNear(cards, 205), { id: "b", after: false }, "between two cards");
+  assert.deepEqual(slotNear(cards, 900), { id: "b", after: true }, "below them all");
+  assert.equal(slotNear([], 120), null, "an empty column");
+});

@@ -2,7 +2,7 @@ import { categoriesPatch, displayOf, rawChoices } from "@workspace.sh/table-core
 import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { KeyboardOnShow } from "./keyboardOnShow";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Tooltip } from "./internal/Tooltip";
 import { Portal } from "./internal/Portal";
@@ -67,6 +67,7 @@ import {
   orderSwapped,
   rowTitle,
   columnLabel,
+  slotNear,
 } from "./cards";
 import {
   agendaDays,
@@ -151,6 +152,7 @@ const FORMULA_INPUT: InputHints = { kind: "text", autocapitalize: "none", autoco
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
+import { edgeSpeed } from "./internal/edgeSpeed";
 import { HScroll } from "./internal/HScroll";
 import { FollowsMonth, MonthPager } from "./internal/MonthPager";
 import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
@@ -228,6 +230,9 @@ const PAGE_EDGE_TOP = 150;
 const PAGE_EDGE_BOTTOM = 130;
 const PAGE_EDGE_STEP = 5;
 const PAGE_EDGE_MEASURE_EVERY = 8;
+// A card held at an edge on a Mac: how often it scrolls, and how many of those between measuring.
+const EDGE_HOLD_MS = 16;
+const EDGE_HOLD_MEASURE_EVERY = 4;
 
 // CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
 // because StyleX compiles css.create from values in this file only.
@@ -3210,8 +3215,16 @@ function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolea
 const PANE_CONTENT = { flexGrow: 1 };
 
 /** A board's columns, side by side: a sideways scroller of their own on React Native; the web's board scrolls itself. */
-function BoardScroll({ children, snapTo }: { children: ReactNode; snapTo?: readonly number[] }) {
-  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo}>{children}</HScroll>;
+function BoardScroll({
+  children,
+  snapTo,
+  scrollProps,
+}: {
+  children: ReactNode;
+  snapTo?: readonly number[];
+  scrollProps?: ComponentProps<typeof HScroll>["scrollProps"];
+}) {
+  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo} scrollProps={scrollProps}>{children}</HScroll>;
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
@@ -5786,14 +5799,12 @@ export function BoardView({
 
   /** The card slot under the pointer, if it's in `column` and isn't the dragged card. */
   const slotAt = (x: number, y: number, column: string | null, dragged: string) => {
-    if (!column) return null;
-    const id = hitTestCard(x, y);
-    if (!id || id === dragged) return null;
-    const target = rows.find((r) => r.id === id);
-    const key = target ? columnOf(target, groupField) : null;
-    if (key !== column) return null;
-    const r = cardRect(id);
-    return { id, after: r ? y > r.y + r.height / 2 : false };
+    if (!column || hitTestCard(x, y) === dragged) return null;
+    const others = (board.groups[column] ?? []).flatMap((r) => {
+      const at = r.id === dragged ? null : cardRect(r.id);
+      return at ? [{ id: r.id, y: at.y, height: at.height }] : [];
+    });
+    return slotNear(others, y);
   };
 
   // The column at (x, y), or the one above or below it: a column can end
@@ -5944,6 +5955,66 @@ export function BoardView({
     };
     after(CAROUSEL_PAGE_FIRST_MS);
   };
+  // On a Mac, a card held near the edge of what's showing scrolls the page or
+  // the columns, as the web's board does (edgeSpeed).
+  const boardScroller = useRef<{
+    scrollTo(to: { x: number; animated: boolean }): void;
+    measure(done: (x: number, y: number, width: number, height: number, pageX: number) => void): void;
+  } | null>(null);
+  const boardAt = useRef({ x: 0, left: 0, width: 0, content: 0 });
+  const edgeHold = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopEdgeHold = () => {
+    if (edgeHold.current) clearInterval(edgeHold.current);
+    edgeHold.current = null;
+  };
+  useEffect(() => stopEdgeHold, []);
+  const startEdgeHold = () => {
+    if (PLATFORM_OS !== "macos" || isTouchViewport || edgeHold.current) return;
+    const frame = boardAt.current;
+    boardScroller.current?.measure((_x, _y, width, _height, pageX) => {
+      frame.left = pageX;
+      frame.width = width;
+    });
+    let ticks = 0;
+    edgeHold.current = setInterval(() => {
+      const at = lastPointer.current;
+      const dragged = draggedRef.current;
+      if (!at || !dragged) return;
+      if (pageScroll) {
+        const { offset, height, inset = 0 } = pageScroll.now();
+        const top = pageScroll.windowTop() + offset;
+        const dy = (edgeSpeed(at.y, top + inset, top + height) * EDGE_HOLD_MS) / 1000;
+        if (dy !== 0) pageScroll.scrollBy(dy);
+      }
+      const dx = (edgeSpeed(at.x, frame.left, frame.left + frame.width) * EDGE_HOLD_MS) / 1000;
+      const x = Math.min(Math.max(0, frame.content - frame.width), Math.max(0, frame.x + dx));
+      if (x !== frame.x) {
+        frame.x = x;
+        boardScroller.current?.scrollTo({ x, animated: false });
+      }
+      if (++ticks % EDGE_HOLD_MEASURE_EVERY !== 0) return;
+      remeasureColumns();
+      remeasureCards();
+      setTimeout(() => {
+        const now = lastPointer.current;
+        if (now && draggedRef.current) markDrop(now.x, now.y, draggedRef.current);
+      }, EDGE_HOLD_MS);
+    }, EDGE_HOLD_MS);
+  };
+  const boardScrollProps = {
+    ref: boardScroller,
+    scrollEventThrottle: 16,
+    onScroll: (e: { nativeEvent: { contentOffset: { x: number }; contentSize: { width: number } } }) => {
+      boardAt.current.x = e.nativeEvent.contentOffset.x;
+      boardAt.current.content = e.nativeEvent.contentSize.width;
+    },
+    onContentSizeChange: (width: number) => {
+      boardAt.current.content = width;
+    },
+    // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+
   // Carousel column width: the screen's shorter side (as the layout is
   // chosen, so a turned phone keeps its columns' width and shows more of
   // them, rather than one column as wide as the screen) minus 16pt side
@@ -6036,6 +6107,7 @@ export function BoardView({
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     remeasureColumns();
                     remeasureCards();
+                    startEdgeHold();
                   }
                 : undefined
             }
@@ -6054,6 +6126,7 @@ export function BoardView({
                 ? (e: DragEvent) => {
                     stopEdgePaging();
                     stopEdgeScroll();
+                    stopEdgeHold();
                     const target = columnAt(e.pageX, e.pageY);
                     // Let go over itself, the card goes back where it was: a long
                     // press that didn't move (it starts a drag on a phone) moved
@@ -6163,7 +6236,7 @@ export function BoardView({
     <>
       <Bleed>
         {/* The web's board scrolls itself (overflowX); React Native's needs a scroller. */}
-        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))}>
+        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))} scrollProps={boardScrollProps}>
           <html.div {...cards.containerProps} style={styles.board}>
             <GutterSpacer gap={BOARD_GAP} />
             {columnsContent}

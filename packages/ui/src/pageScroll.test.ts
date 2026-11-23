@@ -24,5 +24,13 @@ test("laid out, the page measures where its scroll view is in the window itself"
   page.onLayout({ nativeEvent: { layout: { height: 600 } } });
   page.onScroll({ nativeEvent: { contentOffset: { y: 40 } } });
   assert.equal(page.pageScroll.windowTop(), 80, "its top in the window, less what's scrolled");
-  assert.deepEqual(page.pageScroll.now(), { offset: 40, height: 600 });
+  assert.deepEqual(page.pageScroll.now(), { offset: 40, height: 600, inset: 0 });
+});
+
+test("scrolled up, a page stops where its top sits under a bar", () => {
+  const to: number[] = [];
+  const page = pageScrollOver({ current: { scrollTo: ({ y }: { y: number }) => void to.push(y) } });
+  page.onScroll({ nativeEvent: { contentOffset: { y: 10 }, contentInset: { top: 52 } } });
+  page.pageScroll.scrollBy(-200);
+  assert.deepEqual(to, [-52]);
 });
