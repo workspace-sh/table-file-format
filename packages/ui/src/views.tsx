@@ -5744,6 +5744,9 @@ export function BoardView({
   const groupField = board.field;
   const fields = cardFields(view, schema, groupField);
   const fieldMap = fieldsByName(schema);
+  const haptics = useHaptics();
+  // Where a dragged card would land, so it's felt only when that changes.
+  const feltSpot = useRef<string | null>(null);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
@@ -5951,6 +5954,8 @@ export function BoardView({
             onDragStart={
               canDrag
                 ? (e: DragEvent) => {
+                    haptics.step?.();
+                    feltSpot.current = null;
                     setDraggedRowId(row.id);
                     setHoveredColumn(key);
                     setPointerPos({ x: e.pageX, y: e.pageY });
@@ -5966,6 +5971,11 @@ export function BoardView({
                     const hit = hitTest(e.pageX, e.pageY);
                     setHoveredColumn((prev) => (prev === hit ? prev : hit));
                     const slot = slotAt(e.pageX, e.pageY, hit, row.id);
+                    if (hit !== null) {
+                      const spot = `${hit}\n${slot?.id ?? ""}\n${slot?.after ?? ""}`;
+                      if (feltSpot.current !== null && spot !== feltSpot.current) haptics.step?.();
+                      feltSpot.current = spot;
+                    }
                     setDropSlot((prev) =>
                       prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot,
                     );
@@ -5982,6 +5992,7 @@ export function BoardView({
                     // it to the end of its column, as a drop on no card does.
                     const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
                     if (target && onUpdateRow && !backWhereItWas) {
+                      haptics.step?.();
                       // The card slides into its place and the columns to their heights.
                       animateNextLayout();
                       const source = rows.find((r) => r.id === row.id);
