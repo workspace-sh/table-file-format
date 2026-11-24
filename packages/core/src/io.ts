@@ -6,8 +6,8 @@
 
 import type { BundleMeta, CellFormula, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
-import { parseOptionalJsonText, parseRowsText } from "./parse-text.js";
-import { withFieldIds } from "./fieldIds.js";
+import { parseOptionalJsonText, parseRowsText, parseSchemaText, UnreadableSchemaError } from "./parse-text.js";
+import { repeatedFieldIds, withFieldIds } from "./fieldIds.js";
 import { canonicalSchema } from "./fieldForm.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
 import { isTableName, tableOrder } from "./bundle.js";
@@ -164,7 +164,7 @@ export async function readBundle(fs: TableFs, dir: string, options: ReadOptions 
     const listed = (await fs.list(tableDir)) ?? [];
     const has = (name: string, directory: boolean) => listed.some((e) => e.name === name && e.directory === directory);
     if (!has(TableEntry.schema, false) || !(has(ROWS_DIR, true) || has(LEGACY_ROWS_FILE, false))) {
-      diagnostics.push({ rowIndex: -1, message: `${tablePath(entry.name)} isn't a table: it needs ${TableEntry.schema} and ${ROWS_DIR}/` });
+      diagnostics.push({ rowIndex: -1, code: "bundle.not-a-table", file: tablePath(entry.name), message: `${tablePath(entry.name)} isn't a table: it needs ${TableEntry.schema} and ${ROWS_DIR}/` });
       continue;
     }
     tables[entry.name] = await readTable(fs, tableDir, options);
@@ -194,9 +194,11 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   // Fatal by design — do not wrap.
   const schemaPath = joinPath(dir, TableEntry.schema);
   const schemaRaw = await fs.readText(schemaPath);
-  if (schemaRaw === null) throw new Error(`${schemaPath}: no ${TableEntry.schema}, so this isn't a table`);
+  if (schemaRaw === null) throw new UnreadableSchemaError(schemaPath, `there's no ${TableEntry.schema}`);
+  const written = parseSchemaText<TableSchema>(schemaPath, schemaRaw);
+  diagnostics.push(...repeatedFieldIds(written));
   // Every field has its id (D62): one written without takes the id its name derives.
-  const schema = canonicalSchema(withFieldIds(JSON.parse(schemaRaw) as TableSchema));
+  const schema = canonicalSchema(withFieldIds(written));
 
   const later = options.rows === "later";
   const elsewhere = !later && (await options.rowsElsewhere?.(dir)) === true;

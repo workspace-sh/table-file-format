@@ -33,7 +33,7 @@ export function parseCellsText(raw: string, diagnostics: ValidationError[], unre
     // A cell's formula, its note, or both (D52, D57).
     const what = c !== null && typeof c === "object" && !Array.isArray(c) && (typeof c.expr === "string" || typeof c.note === "string") && (c.expr === undefined || typeof c.expr === "string") && (c.note === undefined || typeof c.note === "string");
     if (!what || typeof c!.id !== "string" || c!.id === "" || typeof c!.field !== "string" || c!.field === "") {
-      diagnostics.push({ rowIndex: i, message: `${file}: line ${i + 1} isn't a cell's formula or note, and is kept as it is: ${line.slice(0, 60)}` });
+      diagnostics.push({ rowIndex: i, code: "cell.line-unreadable", file, text: line, message: `${file}: line ${i + 1} isn't a cell's formula or note, and is kept as it is: ${line.slice(0, 60)}` });
       unread.push(line);
       continue;
     }
@@ -81,10 +81,10 @@ export function cellDiagnostics(schema: TableSchema, rows: readonly Row[], cells
     const field = fields.get(c.field);
     const row = byId.get(c.id);
     const where = `the formula of ${c.field} in row ${c.id}`;
-    if (!row) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is kept, but there's no row ${c.id}` });
-    else if (!field || c.field === "id") out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is kept, but there's no field ${c.field}` });
-    else if (seen.has(cellKey(c.id, c.field))) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} is there twice; the first is used, and line ${i + 1} is kept` });
-    else if (c.expr !== undefined && !field.computed && !isEmptyValue(row[c.field])) out.push({ rowIndex: -1, rowId: c.id, field: c.field, message: `${where} has a value typed over it, which is used; the formula goes when the table is saved` });
+    if (!row) out.push({ rowIndex: -1, code: "cell.no-row", rowId: c.id, field: c.field, message: `${where} is kept, but there's no row ${c.id}` });
+    else if (!field || c.field === "id") out.push({ rowIndex: -1, code: "cell.no-field", rowId: c.id, field: c.field, message: `${where} is kept, but there's no field ${c.field}` });
+    else if (seen.has(cellKey(c.id, c.field))) out.push({ rowIndex: -1, code: "cell.repeated", rowId: c.id, field: c.field, message: `${where} is there twice; the first is used, and line ${i + 1} is kept` });
+    else if (c.expr !== undefined && !field.computed && !isEmptyValue(row[c.field])) out.push({ rowIndex: -1, code: "cell.typed-over", rowId: c.id, field: c.field, message: `${where} has a value typed over it, which is used; the formula goes when the table is saved` });
     seen.add(cellKey(c.id, c.field));
   });
   return out;

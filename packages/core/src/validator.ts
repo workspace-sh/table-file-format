@@ -1,7 +1,7 @@
 import type { CellFormula, Field, Row, TableSchema, ValidationError } from "./types.js";
 import { cellFormulas } from "./cells.js";
 import { enumValues } from "./types.js";
-import { isDate, isDateTime, isDuration, isGeoJSON, isGeopoint, isTime } from "./encoding.js";
+import { instantOf, isDate, isDateTime, isDuration, isGeoJSON, isGeopoint, isTime, isYearMonth } from "./encoding.js";
 
 export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -10,6 +10,7 @@ export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]
   const seenIds = new Set<string>();
   const pkSeen = new Map<string, number>();
   // `unique` fields: each value held, and the first row that held it. Empty values don't count (SPEC section 2).
+  const uniqueKeys = (schema.uniqueKeys ?? []).filter((k) => Array.isArray(k) && k.length > 0).map((fields) => ({ fields, seen: new Map<string, number>() }));
   const uniques = schema.fields.filter((f) => f.constraints?.unique && !f.computed).map((f) => ({ name: f.name, seen: new Map<string, number>() }));
 
   for (let i = 0; i < rows.length; i++) {
@@ -35,6 +36,16 @@ export function validate(schema: TableSchema, rows: Row[], cells?: CellFormula[]
       const prior = u.seen.get(key);
       if (prior !== undefined) errors.push({ rowIndex: i, rowId: row.id, field: u.name, message: `${u.name} must be unique: row ${prior} has the same value` });
       else u.seen.set(key, i);
+    }
+
+    // uniqueKeys (D67): as primaryKey, but a row with any of the fields empty isn't checked.
+    for (const k of uniqueKeys) {
+      const values = k.fields.map((f) => row[f]);
+      if (values.some((v) => v === undefined || v === null || v === "")) continue;
+      const key = values.map((v) => JSON.stringify(v)).join("\u0000");
+      const prior = k.seen.get(key);
+      if (prior !== undefined) errors.push({ rowIndex: i, rowId: row.id, message: `unique key collision with row ${prior} on [${k.fields.join(", ")}]` });
+      else k.seen.set(key, i);
     }
 
     if (schema.primaryKey && schema.primaryKey.length > 0) {
@@ -94,7 +105,7 @@ function fieldErrorsOf(schema: TableSchema, row: Row): { field: string; message:
     const errors: { field: string; message: string }[] = [];
     for (const field of schema.fields) {
       if (field.computed) continue; // derived on read, never stored — nothing to validate
-      for (const message of validateField(field, row[field.name])) errors.push({ field: field.name, message });
+      for (const p of valueProblems(field, row[field.name])) errors.push({ field: field.name, message: p.message });
     }
     rows.set(row, (found = errors.length === 0 ? NO_ERRORS : errors));
   }
@@ -125,52 +136,90 @@ export function validateBodies(
   return errors;
 }
 
-function validateField(field: Field, value: unknown): string[] {
-  const errors: string[] = [];
+/** One thing wrong with a value, by its code (a `ProblemCode`), with what it was checked against. */
+export interface ValueProblem {
+  code: "value.required" | "value.type" | "value.choice" | "value.minimum" | "value.maximum" | "value.exclusive-minimum" | "value.exclusive-maximum" | "value.min-length" | "value.max-length" | "value.pattern";
+  message: string;
+  details: Record<string, string | number | boolean | null>;
+}
+
+/** What is wrong with `value` in `field` by its type and constraints (SPEC section 9, rule 2). */
+export function valueProblems(field: Field, value: unknown): ValueProblem[] {
+  const out: ValueProblem[] = [];
   const c = field.constraints;
   const isMissing = value === undefined || value === null || value === "";
 
   if (isMissing) {
-    if (c?.required) errors.push("required field is missing");
-    return errors;
+    if (c?.required) out.push({ code: "value.required", message: "required field is missing", details: {} });
+    return out;
   }
 
   // Multi-target relation (cardinality "many"): the value is an array
   // of target ids. Validate each entry as a string; skip the scalar
   // type/enum/range checks below (they assume a single value).
   if (field.relation?.cardinality === "many") {
-    if (!Array.isArray(value)) {
-      errors.push("expected an array of relation ids (cardinality: many)");
-    } else if (!value.every((v) => typeof v === "string")) {
-      errors.push("relation array must contain only string ids");
-    }
-    return errors;
+    if (!Array.isArray(value)) out.push({ code: "value.type", message: "expected an array of relation ids (cardinality: many)", details: { expected: "array" } });
+    else if (!value.every((v) => typeof v === "string")) out.push({ code: "value.type", message: "relation array must contain only string ids", details: { expected: "array" } });
+    return out;
   }
 
   if (!typeMatches(field.type, value)) {
-    errors.push(`expected type ${field.type}, got ${typeof value}`);
-    return errors;
+    out.push({ code: "value.type", message: `expected type ${field.type}, got ${typeof value}`, details: { expected: field.type, got: typeof value } });
+    return out;
   }
 
-  if (c?.enum) {
-    const allowed = enumValues(field);
-    // On an array, the choice list checks each item: multi-select (D35).
+  // The choices, from `categories` or `constraints.enum` (D68). On an array, each item: multi-select (D35).
+  const allowed = enumValues(field);
+  if (allowed.length > 0) {
     const items = Array.isArray(value) ? value : [value];
     for (const item of items) {
-      if (!allowed.includes(item as string)) errors.push(`value not in enum: ${JSON.stringify(item)}`);
+      if (!allowed.includes(item as string)) out.push({ code: "value.choice", message: `value not in enum: ${JSON.stringify(item)}`, details: { value: JSON.stringify(item) } });
     }
   }
-  if (typeof value === "number") {
-    if (c?.minimum !== undefined && value < c.minimum) errors.push(`below minimum ${c.minimum}`);
-    if (c?.maximum !== undefined && value > c.maximum) errors.push(`above maximum ${c.maximum}`);
-  }
+
+  const bound = (key: "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum", code: ValueProblem["code"], fails: (order: number) => boolean, words: string) => {
+    const limit = c?.[key];
+    if (limit === undefined) return;
+    const order = compareBound(field.type, value, limit);
+    if (order !== null && fails(order)) out.push({ code, message: `${words} ${limit}`, details: { constraint: key, limit } });
+  };
+  bound("minimum", "value.minimum", (o) => o < 0, "below minimum");
+  bound("maximum", "value.maximum", (o) => o > 0, "above maximum");
+  bound("exclusiveMinimum", "value.exclusive-minimum", (o) => o <= 0, "not above exclusiveMinimum");
+  bound("exclusiveMaximum", "value.exclusive-maximum", (o) => o >= 0, "not below exclusiveMaximum");
+
   if (typeof value === "string") {
-    if (c?.minLength !== undefined && value.length < c.minLength) errors.push(`below minLength ${c.minLength}`);
-    if (c?.maxLength !== undefined && value.length > c.maxLength) errors.push(`above maxLength ${c.maxLength}`);
-    if (c?.pattern !== undefined && !new RegExp(c.pattern).test(value)) errors.push(`fails pattern ${c.pattern}`);
+    if (c?.minLength !== undefined && value.length < c.minLength) out.push({ code: "value.min-length", message: `below minLength ${c.minLength}`, details: { constraint: "minLength", limit: c.minLength, length: value.length } });
+    if (c?.maxLength !== undefined && value.length > c.maxLength) out.push({ code: "value.max-length", message: `above maxLength ${c.maxLength}`, details: { constraint: "maxLength", limit: c.maxLength, length: value.length } });
+    if (c?.pattern !== undefined && !new RegExp(c.pattern).test(value)) out.push({ code: "value.pattern", message: `fails pattern ${c.pattern}`, details: { constraint: "pattern", limit: c.pattern } });
   }
 
-  return errors;
+  return out;
+}
+
+/**
+ * How `value` stands to a bound (negative below, 0 at, positive above), for
+ * the types bounds apply to (SPEC section 2): numbers and years, dates,
+ * datetimes (as instants), times and year-months. Null when they can't be
+ * compared: another type, a bound of the wrong kind, or a duration, whose
+ * months and days have no fixed length.
+ */
+function compareBound(type: Field["type"], value: unknown, limit: number | string): number | null {
+  if (typeof value === "number" && typeof limit === "number") return value - limit;
+  if (typeof value !== "string" || typeof limit !== "string") return null;
+  switch (type) {
+    case "date":
+    case "time":
+    case "yearmonth":
+      // Fixed-width, most significant first: the text's order is the value's.
+      return value < limit ? -1 : value > limit ? 1 : 0;
+    case "datetime": {
+      const d = instantOf(value) - instantOf(limit);
+      return Number.isNaN(d) ? null : d;
+    }
+    default:
+      return null;
+  }
 }
 
 function typeMatches(type: Field["type"], value: unknown): boolean {
@@ -185,6 +234,8 @@ function typeMatches(type: Field["type"], value: unknown): boolean {
       return typeof value === "string" && isTime(value);
     case "duration":
       return typeof value === "string" && isDuration(value);
+    case "yearmonth":
+      return typeof value === "string" && isYearMonth(value);
     case "geojson":
       return isGeoJSON(value);
     case "any":

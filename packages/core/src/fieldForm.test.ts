@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { canonicalField, canonicalSchema, categoriesPatch, displayOf, displayPatch } from "./fieldForm.ts";
@@ -23,7 +23,8 @@ function fixtureSchemas(): [string, TableSchema][] {
   const out: [string, TableSchema][] = [];
   for (const bundle of readdirSync(fixturesDir).filter((n) => n.endsWith(".table") && statSync(join(fixturesDir, n)).isDirectory())) {
     const tables = join(fixturesDir, bundle, "tables");
-    for (const t of readdirSync(tables)) out.push([`${bundle}/${t}`, JSON.parse(readFileSync(join(tables, t, "schema.json"), "utf8"))]);
+    // A folder under tables/ that isn't a table (schema-errors has one) has no schema to check.
+    for (const t of readdirSync(tables).filter((t) => existsSync(join(tables, t, "schema.json")))) out.push([`${bundle}/${t}`, JSON.parse(readFileSync(join(tables, t, "schema.json"), "utf8"))]);
   }
   return out;
 }

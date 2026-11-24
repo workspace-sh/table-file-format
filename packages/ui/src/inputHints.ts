@@ -37,7 +37,8 @@ export function inputHints(field: Field | undefined, options: { then?: "next" | 
 }
 
 function hintKind(field: Field | undefined): InputHintKind {
-  const unsigned = (field?.constraints?.minimum ?? -1) >= 0;
+  const minimum = field?.constraints?.minimum;
+  const unsigned = typeof minimum === "number" && minimum >= 0;
   switch (field?.type) {
     case "integer":
     case "year":

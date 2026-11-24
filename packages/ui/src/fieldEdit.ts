@@ -38,6 +38,7 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   datetime: "Date & time",
   time: "Time",
   year: "Year",
+  yearmonth: "Month",
   array: "List",
   object: "Structured",
   duration: "Duration",

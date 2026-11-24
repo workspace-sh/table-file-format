@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import { PROBLEM_FIXTURES } from "./test-fixtures.js";
 
 // The JSON Schema for meta.json (schema/meta.schema.json) against every example's
 // manifests, and against what it must allow and refuse.
@@ -18,7 +19,8 @@ function check(meta: unknown): string | null {
 test("every example's manifest and every table's meta.json is valid", () => {
   const fixtures = join(root, "fixtures");
   let seen = 0;
-  for (const bundle of readdirSync(fixtures).filter((n) => n.endsWith(".table"))) {
+  // schema-errors' meta.json files are broken on purpose (problems.test.ts).
+  for (const bundle of readdirSync(fixtures).filter((n) => n.endsWith(".table") && !PROBLEM_FIXTURES.has(n.slice(0, -".table".length)))) {
     const dir = join(fixtures, bundle);
     let entries: string[];
     try {
