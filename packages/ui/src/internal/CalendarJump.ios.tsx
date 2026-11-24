@@ -31,7 +31,10 @@ export function CalendarJump({ title, detail, small, value, onChange }: Calendar
   };
   const size = small ? 20 : 24;
   return (
-    <Host matchContents style={{ marginVertical: -TAP_MARGIN, marginRight: -TAP_MARGIN }}>
+    // Its height set up front, its width (the month's name) matched: a host
+    // matched in height too got it a few frames late, and the calendar's
+    // heading grew under the page as it landed.
+    <Host matchContents={{ horizontal: true }} alignment="leading" style={{ height: Math.ceil(size * 1.2) + 2 * TAP_MARGIN, marginVertical: -TAP_MARGIN, marginRight: -TAP_MARGIN }}>
       <Popover isPresented={open} onIsPresentedChange={presented} attachmentAnchor="bottom" arrowEdge="top">
         <Popover.Trigger>
           <Button onPress={() => setOpen(true)} modifiers={[buttonStyle("plain")]}>
