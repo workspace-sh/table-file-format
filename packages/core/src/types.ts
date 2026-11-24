@@ -9,6 +9,8 @@ export type FieldType =
   | "datetime"
   | "time"
   | "year"
+  /** `YYYY-MM` (D67). */
+  | "yearmonth"
   | "array"
   | "object"
   | "duration"
@@ -60,8 +62,12 @@ export interface FieldConstraints {
    * rather than reading this directly.
    */
   enum?: (string | EnumOption)[];
-  minimum?: number;
-  maximum?: number;
+  /** Inclusive bounds: a number for numbers and years, a value of the field's type for dates, times, durations and year-months (SPEC section 2). */
+  minimum?: number | string;
+  maximum?: number | string;
+  /** As `minimum` and `maximum`, the bound itself excluded. */
+  exclusiveMinimum?: number | string;
+  exclusiveMaximum?: number | string;
   minLength?: number;
   maxLength?: number;
   pattern?: string;
@@ -199,6 +205,8 @@ export function effectiveAlign(field: Field | undefined): FieldAlignment {
 export interface TableSchema {
   fields: Field[];
   primaryKey?: string[];
+  /** Combinations of fields no two rows may share; a row with any of them empty isn't checked (D67). */
+  uniqueKeys?: string[][];
   missingValues?: string[];
   "schema-version"?: number;
   [key: string]: unknown;
@@ -406,6 +414,11 @@ export interface ValidationError {
   rowId?: string;
   field?: string;
   message: string;
+  /** What kind of problem it is, as `tableProblems` names it (a `ProblemCode`). */
+  code?: string;
+  /** For a line a reader couldn't use: its file, from the table's folder (`rows/0001.ndjson`), and its text. */
+  file?: string;
+  text?: string;
 }
 
 // ---- Parsed Table ----

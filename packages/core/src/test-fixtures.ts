@@ -11,9 +11,12 @@ import type { ParsedBundle, ParsedTable } from "./types.js";
 const here = dirname(fileURLToPath(import.meta.url));
 export const fixturesDir = resolve(here, "..", "..", "..", "fixtures");
 
-/** Every fixture bundle, keyed by its name: the directory's name without `.table`. */
+/** The examples that break their schema on purpose, each problem labelled (SPEC section 9): checked by problems.test.ts, not as the others are. */
+export const PROBLEM_FIXTURES = new Set(["schema-errors"]);
+
+/** Every fixture bundle that reads cleanly, keyed by its name: the directory's name without `.table`. */
 export async function fixtureBundles(): Promise<Record<string, ParsedBundle>> {
-  const names = (await readdir(fixturesDir)).filter((n) => n.endsWith(".table")).sort();
+  const names = (await readdir(fixturesDir)).filter((n) => n.endsWith(".table") && !PROBLEM_FIXTURES.has(n.slice(0, -".table".length))).sort();
   const bundles: Record<string, ParsedBundle> = {};
   for (const name of names) bundles[name.slice(0, -".table".length)] = await parseBundle(resolve(fixturesDir, name));
   return bundles;

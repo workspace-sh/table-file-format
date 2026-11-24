@@ -27,8 +27,8 @@ export function parseRowsText(
   const seen = from.seen ?? new Map<string, Row>();
   const lines = raw.split("\n");
   const where = from.file ? `${from.file}: ` : "";
-  const skip = (i: number, line: string, why: string) => {
-    diagnostics.push({ rowIndex: i, message: `${where}line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
+  const skip = (i: number, line: string, why: string, code: string) => {
+    diagnostics.push({ rowIndex: i, code, ...(from.file ? { file: from.file } : {}), text: line, message: `${where}line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
     unread?.push({ after: rows.at(-1)?.id ?? from.after ?? null, text: line });
   };
   for (let i = 0; i < lines.length; i++) {
@@ -38,23 +38,27 @@ export function parseRowsText(
     try {
       obj = JSON.parse(line) as Row;
     } catch (err) {
-      skip(i, line, `isn't JSON (${message(err)})`);
+      // A merge's conflict markers (`<<<<<<< ours`, `=======`, `>>>>>>> theirs`) are said as what they are.
+      skip(i, line, `isn't JSON (${message(err)})`, CONFLICT_MARKER.test(line) ? "line.conflict-marker" : "line.not-json");
       continue;
     }
     if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
-      skip(i, line, "isn't a row");
+      skip(i, line, "isn't a row", "line.not-row");
       continue;
     }
     if (typeof obj.id !== "string" || obj.id.length === 0) {
-      skip(i, line, "is a row without an id");
+      skip(i, line, "is a row without an id", "id.missing");
       continue;
     }
     // A row whose id an earlier line has (both sides of a merge, D54): the first is the row.
     const first = seen.get(obj.id);
     if (first) {
       // The same row again loses nothing when it goes; a different one is kept as it is.
-      if (JSON.stringify(first) === JSON.stringify(obj)) diagnostics.push({ rowIndex: i, message: `${where}line ${i + 1} repeats the row ${JSON.stringify(obj.id)} before it exactly, and is left out` });
-      else skip(i, line, `repeats the id ${JSON.stringify(obj.id)} of a row before it`);
+      if (JSON.stringify(first) === JSON.stringify(obj)) diagnostics.push({ rowIndex: i, code: "line.repeat-left-out", rowId: obj.id, ...(from.file ? { file: from.file } : {}), text: line, message: `${where}line ${i + 1} repeats the row ${JSON.stringify(obj.id)} before it exactly, and is left out` });
+      else {
+        skip(i, line, `repeats the id ${JSON.stringify(obj.id)} of a row before it`, "line.id-repeated");
+        diagnostics.at(-1)!.rowId = obj.id;
+      }
       continue;
     }
     seen.set(obj.id, obj);
@@ -80,11 +84,43 @@ export function parseOptionalJsonText<T>(
   } catch (err) {
     diagnostics.push({
       rowIndex: -1,
+      code: "file.malformed",
+      file: label,
       message: `malformed ${label}, using defaults: ${message(err)}`,
     });
     return undefined;
   }
 }
+
+/**
+ * A table whose `schema.json` is missing or isn't JSON: the one case the
+ * format makes fatal (SPEC section 3, "Reader error contract"). Thrown, so
+ * nothing reads such a table as one; its `code` lets an app say so plainly.
+ */
+export class UnreadableSchemaError extends Error {
+  readonly code = "schema.unreadable";
+  constructor(
+    /** The schema's path. */
+    readonly path: string,
+    /** Why: there's no file, or what the JSON parser said. */
+    readonly reason: string,
+  ) {
+    super(`${path}: ${reason}, so this isn't a table`);
+    this.name = "UnreadableSchemaError";
+  }
+}
+
+/** Reads a table's `schema.json`, throwing `UnreadableSchemaError` when it isn't JSON. */
+export function parseSchemaText<T>(path: string, raw: string): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    throw new UnreadableSchemaError(path, `isn't JSON (${message(err)})`);
+  }
+}
+
+/** A line git writes where a merge conflicts: seven of `<`, `=`, `|` or `>`, then a space or the line's end. */
+const CONFLICT_MARKER = /^(<{7}|={7}|\|{7}|>{7})( |$)/;
 
 export function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);

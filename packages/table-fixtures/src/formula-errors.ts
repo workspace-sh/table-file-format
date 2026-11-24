@@ -54,6 +54,51 @@ export const formulaErrorsBundle: ParsedBundle = {
             "id": "qbfq7xngcxpwf",
             "name": "point",
             "type": "geopoint"
+          },
+          {
+            "id": "tkjibqapkj37n",
+            "name": "date_time",
+            "type": "datetime"
+          },
+          {
+            "id": "oc6yet54h6zcd",
+            "name": "time_of_day",
+            "type": "time"
+          },
+          {
+            "id": "yoznc7iuobk37",
+            "name": "year",
+            "type": "year"
+          },
+          {
+            "id": "tkx1qpfe9ghx4",
+            "name": "year_month",
+            "type": "yearmonth"
+          },
+          {
+            "id": "a9jjeqhgiosjw",
+            "name": "duration",
+            "type": "duration"
+          },
+          {
+            "id": "6tqeruzw75xte",
+            "name": "list",
+            "type": "array"
+          },
+          {
+            "id": "otwf88mwb6yxh",
+            "name": "object",
+            "type": "object"
+          },
+          {
+            "id": "8cfcrd7qatbpu",
+            "name": "shape",
+            "type": "geojson"
+          },
+          {
+            "id": "onik839tsdf8c",
+            "name": "anything",
+            "type": "any"
           }
         ]
       },
@@ -152,6 +197,51 @@ export const formulaErrorsBundle: ParsedBundle = {
           "id": "cab8jj5uq3n4x83sptekxchmnf",
           "problem": "Map point column",
           "n": 3
+        },
+        {
+          "id": "kxzf315hhh8gcqux11uejmicok",
+          "problem": "Date and time column",
+          "n": 3
+        },
+        {
+          "id": "pfc6zduogry5jbse1t54ngpyen",
+          "problem": "Time column",
+          "n": 3
+        },
+        {
+          "id": "jjiqbwg5797zxu1bii61xz4iaw",
+          "problem": "Year column",
+          "n": 3
+        },
+        {
+          "id": "drhjo3m7suedue4nr5dq96fk35",
+          "problem": "Year and month column",
+          "n": 3
+        },
+        {
+          "id": "fi5s8zzakoa8a1rse6bntd9hth",
+          "problem": "Duration column",
+          "n": 3
+        },
+        {
+          "id": "jx9wqgd3rx6rp6tkdcjygmw5p6",
+          "problem": "List column",
+          "n": 3
+        },
+        {
+          "id": "i59ttntgcgfwn5ocd3eocm8kcq",
+          "problem": "Object column",
+          "n": 3
+        },
+        {
+          "id": "f6w84i7mqetst5a4s3ck4a48fq",
+          "problem": "Map shape column",
+          "n": 3
+        },
+        {
+          "id": "sbsh3j3wkpe3haesneno3tedj9",
+          "problem": "Any column, an error carried",
+          "n": 3
         }
       ],
       "views": [
@@ -166,7 +256,16 @@ export const formulaErrorsBundle: ParsedBundle = {
             "whole",
             "yes_no",
             "text",
-            "point"
+            "point",
+            "date_time",
+            "time_of_day",
+            "year",
+            "year_month",
+            "duration",
+            "list",
+            "object",
+            "shape",
+            "anything"
           ],
           "columnWidths": {
             "problem": 230,
@@ -175,7 +274,16 @@ export const formulaErrorsBundle: ParsedBundle = {
             "whole": 190,
             "yes_no": 170,
             "text": 150,
-            "point": 170
+            "point": 170,
+            "date_time": 190,
+            "time_of_day": 190,
+            "year": 190,
+            "year_month": 190,
+            "duration": 190,
+            "list": 190,
+            "object": 190,
+            "shape": 190,
+            "anything": 190
           }
         },
         {
@@ -288,6 +396,51 @@ export const formulaErrorsBundle: ParsedBundle = {
           "id": "cab8jj5uq3n4x83sptekxchmnf",
           "field": "point",
           "expr": "(+ n 1)"
+        },
+        {
+          "id": "kxzf315hhh8gcqux11uejmicok",
+          "field": "date_time",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "pfc6zduogry5jbse1t54ngpyen",
+          "field": "time_of_day",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "jjiqbwg5797zxu1bii61xz4iaw",
+          "field": "year",
+          "expr": "(/ n 2)"
+        },
+        {
+          "id": "drhjo3m7suedue4nr5dq96fk35",
+          "field": "year_month",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "fi5s8zzakoa8a1rse6bntd9hth",
+          "field": "duration",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "jx9wqgd3rx6rp6tkdcjygmw5p6",
+          "field": "list",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "i59ttntgcgfwn5ocd3eocm8kcq",
+          "field": "object",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "f6w84i7mqetst5a4s3ck4a48fq",
+          "field": "shape",
+          "expr": "(+ n 1)"
+        },
+        {
+          "id": "sbsh3j3wkpe3haesneno3tedj9",
+          "field": "anything",
+          "expr": "(/ n 0)"
         }
       ],
       "rowFiles": [
@@ -312,7 +465,16 @@ export const formulaErrorsBundle: ParsedBundle = {
             "oatbcz1bau33141odzz7gm8cte",
             "ks5oftw5yawe69icixdyz1fnht",
             "x5pqi3iomy4mfam83wxpp7shrk",
-            "cab8jj5uq3n4x83sptekxchmnf"
+            "cab8jj5uq3n4x83sptekxchmnf",
+            "kxzf315hhh8gcqux11uejmicok",
+            "pfc6zduogry5jbse1t54ngpyen",
+            "jjiqbwg5797zxu1bii61xz4iaw",
+            "drhjo3m7suedue4nr5dq96fk35",
+            "fi5s8zzakoa8a1rse6bntd9hth",
+            "jx9wqgd3rx6rp6tkdcjygmw5p6",
+            "i59ttntgcgfwn5ocd3eocm8kcq",
+            "f6w84i7mqetst5a4s3ck4a48fq",
+            "sbsh3j3wkpe3haesneno3tedj9"
           ]
         }
       ]

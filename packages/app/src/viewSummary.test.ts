@@ -101,3 +101,14 @@ test("says the count as numbers too, for an app to compare whatever the language
   const all = viewSummary(big, { shown: 1_000_000, inView: 1_000_000, searching: false });
   assert.deepEqual([all.shown, all.total], [1_000_000, 1_000_000]);
 });
+
+test("a table whose reader kept a line it couldn't read isn't called valid, whatever its rows", () => {
+  const t: ParsedTable = {
+    ...table([{ title: "a" }]),
+    diagnostics: [{ rowIndex: 1, code: "line.conflict-marker", file: "rows/0001.ndjson", text: "<<<<<<< ours", message: "rows/0001.ndjson: line 2 isn't JSON, and is kept as it is: <<<<<<< ours" }],
+  };
+  const s = viewSummary(t, { shown: 1, inView: 1, searching: false });
+  assert.equal(s.valid, false);
+  assert.equal(s.validity, "1 validation error");
+  assert.equal(s.problems[0]!.code, "line.conflict-marker");
+});
