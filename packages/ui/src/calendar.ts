@@ -329,3 +329,37 @@ export function stepRange(range: CalendarRange, key: string, by: number): string
   const year = next.getUTCFullYear();
   return year < 0 || year > 9999 ? key : next.toISOString().slice(0, 10);
 }
+
+/**
+ * Whether a date picker's change from `from` to `to` is a day being chosen,
+ * rather than its month or year wheel turning. A wheel keeps the day of the
+ * month, or the month's last day when it has fewer.
+ */
+export function choseADay(from: string, to: string): boolean {
+  if (from.slice(0, 7) === to.slice(0, 7)) return from !== to;
+  const m = DAY.exec(to);
+  if (!m) return true;
+  const lastDay = utcDay(Number(m[1]), Number(m[2]), 0).getUTCDate();
+  return Number(to.slice(8, 10)) !== Math.min(Number(from.slice(8, 10)), lastDay);
+}
+
+/** A month as a count of months, so months next to each other are one apart. Takes a `YYYY-MM…` key. */
+export function monthPosition(key: string): number {
+  return Number(key.slice(0, 4)) * 12 + Number(key.slice(5, 7)) - 1;
+}
+
+/** The first day of the month at a `monthPosition`, as a key. */
+export function monthAtPosition(position: number): string {
+  const year = Math.floor(position / 12);
+  return `${String(year).padStart(4, "0")}-${String(position - year * 12 + 1).padStart(2, "0")}-01`;
+}
+
+/** How many months a swipe can reach either side before its range is moved. */
+export const MONTHS_EITHER_SIDE = 600;
+
+/** The months a swipe can reach around `centre`, inside the calendar's own bounds. */
+export function monthsAround(centre: number, min?: number, max?: number): { first: number; last: number } {
+  const first = Math.max(centre - MONTHS_EITHER_SIDE, min ?? -Infinity);
+  const last = Math.min(centre + MONTHS_EITHER_SIDE, max ?? Infinity);
+  return { first, last: Math.max(first, last) };
+}

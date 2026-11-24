@@ -44,6 +44,22 @@ export function columnOf(row: Row, field: string): string {
 }
 
 /**
+ * Where a card let go at height `y` lands among a column's other cards, top
+ * to bottom: on a card, at its nearer side; above or between cards, before
+ * the next; below them all, after the last. Null with no other cards.
+ */
+export function slotNear(
+  cards: readonly { id: string; y: number; height: number }[],
+  y: number,
+): { id: string; after: boolean } | null {
+  for (const card of cards) {
+    if (y < card.y + card.height) return { id: card.id, after: y > card.y + card.height / 2 };
+  }
+  const last = cards[cards.length - 1];
+  return last ? { id: last.id, after: true } : null;
+}
+
+/**
  * The whole view's row order with `dragged` moved into `column`: before
  * or after the card `slot` names, or after the column's last card when
  * it was dropped on the column itself.
@@ -188,6 +204,14 @@ export function monthGrid(month: Date, weekStart: number): { date: Date; inMonth
   for (let d = 1; d <= days; d++) cells.push({ date: calendarDate(year, m, d), inMonth: true });
   for (let d = 1; cells.length < 42; d++) cells.push({ date: calendarDate(year, m + 1, d), inMonth: false });
   return cells;
+}
+
+/** How many of `monthGrid`'s weeks a month is shown in: five, or six when it runs into the sixth. */
+export function monthGridWeeks(month: Date, weekStart: number): 5 | 6 {
+  const year = month.getFullYear();
+  const m = month.getMonth();
+  const leading = (calendarDate(year, m, 1).getDay() - weekStart + 7) % 7;
+  return leading + calendarDate(year, m + 1, 0).getDate() > 35 ? 6 : 5;
 }
 
 /** Rows by the day in `field` (`YYYY-MM-DD`), in the order given. Undated rows are left out. */

@@ -2,7 +2,7 @@ import { categoriesPatch, displayOf, rawChoices } from "@workspace.sh/table-core
 import { Fragment, createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { focusInput } from "./focusInput";
 import { KeyboardOnShow } from "./keyboardOnShow";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { html, css } from "react-strict-dom";
 import { Tooltip } from "./internal/Tooltip";
 import { Portal } from "./internal/Portal";
@@ -22,6 +22,7 @@ import {
   type RelationLink,
   linesFor,
   columnWidths,
+  COLUMN_HAPTIC_POINTS,
   resizedColumnWidth,
   rowHeightOf,
   snappedRowHeight,
@@ -60,11 +61,13 @@ import {
   initialMonth,
   localDay,
   monthGrid,
+  monthGridWeeks,
   orderAfterDrop,
   orderMovedTo,
   orderSwapped,
   rowTitle,
   columnLabel,
+  slotNear,
 } from "./cards";
 import {
   agendaDays,
@@ -79,6 +82,10 @@ import {
   resizeEntry,
   retimeEntry,
   stepRange,
+  monthAtPosition,
+  monthPosition,
+  monthsAround,
+  MONTHS_EITHER_SIDE,
   weekDays,
   weekSegments,
   type CalendarEntry,
@@ -145,7 +152,9 @@ const FORMULA_INPUT: InputHints = { kind: "text", autocapitalize: "none", autoco
 import { useContainerWidth } from "./internal/useContainerWidth";
 import { useDropTargets } from "./internal/useDropTargets";
 import { DragHandle, type DragEvent } from "./internal/DragHandle";
+import { edgeSpeed } from "./internal/edgeSpeed";
 import { HScroll } from "./internal/HScroll";
+import { FollowsMonth, MonthPager } from "./internal/MonthPager";
 import { SnapHScroll, type CarouselPager } from "./internal/SnapHScroll";
 import { PageScrollContext } from "./pageScroll";
 import { animateNextLayout } from "./internal/animateNextLayout";
@@ -214,6 +223,16 @@ const CAROUSEL_EMPTY_COLUMN_SHOWN = 120;
 // A dragged card or row's floating copy.
 const GHOST_WIDTH = 240;
 const TOUCH_DRAG_LONGPRESS_MS = 300;
+// A dragged card scrolls the page within this far of its top (under the
+// navigation bar) or bottom (under the toolbar), this far each frame, and
+// the cards are measured again every so many frames.
+const PAGE_EDGE_TOP = 150;
+const PAGE_EDGE_BOTTOM = 130;
+const PAGE_EDGE_STEP = 5;
+const PAGE_EDGE_MEASURE_EVERY = 8;
+// A card held at an edge on a Mac: how often it scrolls, and how many of those between measuring.
+const EDGE_HOLD_MS = 16;
+const EDGE_HOLD_MEASURE_EVERY = 4;
 
 // CELL_LINE_HEIGHT in display.ts, which linesFor divides by. Restated here
 // because StyleX compiles css.create from values in this file only.
@@ -1480,7 +1499,10 @@ const styles = css.create({
   // the frozen and scrolling panes stay in line).
   groupRow: {
     display: "flex",
-    height: GROUP_ROW_HEIGHT,
+    // It's given a row's width: its padding is inside that, so it ends where the rows do.
+    // Its line is inside too, so the height counts it and the rows below stay where they're measured.
+    boxSizing: "border-box",
+    height: GROUP_ROW_HEIGHT + ROW_BORDER,
     alignItems: "center",
     paddingInline: 16,
     backgroundColor: { default: "#f5f5f7", "@media (prefers-color-scheme: dark)": "#141417" },
@@ -3193,8 +3215,16 @@ function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolea
 const PANE_CONTENT = { flexGrow: 1 };
 
 /** A board's columns, side by side: a sideways scroller of their own on React Native; the web's board scrolls itself. */
-function BoardScroll({ children, snapTo }: { children: ReactNode; snapTo?: readonly number[] }) {
-  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo}>{children}</HScroll>;
+function BoardScroll({
+  children,
+  snapTo,
+  scrollProps,
+}: {
+  children: ReactNode;
+  snapTo?: readonly number[];
+  scrollProps?: ComponentProps<typeof HScroll>["scrollProps"];
+}) {
+  return PLATFORM_OS === "web" ? <>{children}</> : <HScroll snapTo={snapTo} scrollProps={scrollProps}>{children}</HScroll>;
 }
 
 /** The columns beside a pinned one scroll inside the frame (`on`); edge to edge, the frame scrolls instead. */
@@ -3933,6 +3963,13 @@ export function TableView({
     if (!onUpdateView || view.columnWidths?.[name] === undefined) return;
     const { [name]: _gone, ...rest } = view.columnWidths;
     onUpdateView({ columnWidths: Object.keys(rest).length > 0 ? rest : undefined });
+    haptics.step?.();
+  };
+  // A column has no lines to pass, so a drag is felt every so many points of width.
+  const feelColumnWidth = (width: number) => {
+    const step = Math.floor(width / COLUMN_HAPTIC_POINTS);
+    if (step !== lastStep.current) haptics.step?.();
+    lastStep.current = step;
   };
   // With a pointer, a column resizes from its line anywhere down the table
   // (columnLines), as in Numbers or Sheets; on touch, from the header's edge.
@@ -3965,11 +4002,13 @@ export function TableView({
         onDoubleTap={() => resetWidth(name)}
         onDragStart={(e) => {
           resizeStart.current = { at: e.pageX, size: colWidth(name) };
+          lastStep.current = Math.floor(colWidth(name) / COLUMN_HAPTIC_POINTS);
         }}
         onDragMove={(e) => {
           const start = resizeStart.current;
           if (!start) return;
           const w = resizedColumnWidth(start.size, widen(start, e.pageX));
+          feelColumnWidth(w);
           setLiveWidths((prev) => ({ ...prev, [name]: w }));
         }}
         onDragEnd={(e) => {
@@ -4099,11 +4138,14 @@ export function TableView({
           grabOnTouch
           onDragStart={(e) => {
             resizeStart.current = { at: e.pageX, size: colWidth(name) };
+            lastStep.current = Math.floor(colWidth(name) / COLUMN_HAPTIC_POINTS);
           }}
           onDragMove={(e) => {
             const start = resizeStart.current;
             if (!start) return;
-            setLiveWidths((prev) => ({ ...prev, [name]: resizedColumnWidth(start.size, widen(start, e.pageX)) }));
+            const w = resizedColumnWidth(start.size, widen(start, e.pageX));
+            feelColumnWidth(w);
+            setLiveWidths((prev) => ({ ...prev, [name]: w }));
           }}
           onDragEnd={(e) => {
             const start = resizeStart.current;
@@ -5722,6 +5764,9 @@ export function BoardView({
   const groupField = board.field;
   const fields = cardFields(view, schema, groupField);
   const fieldMap = fieldsByName(schema);
+  const haptics = useHaptics();
+  // Where a dragged card would land, so it's felt only when that changes.
+  const feltSpot = useRef<string | null>(null);
   const [draggedRowId, setDraggedRowId] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const [pointerPos, setPointerPos] = useState<{ x: number; y: number } | null>(null);
@@ -5754,14 +5799,36 @@ export function BoardView({
 
   /** The card slot under the pointer, if it's in `column` and isn't the dragged card. */
   const slotAt = (x: number, y: number, column: string | null, dragged: string) => {
-    if (!column) return null;
-    const id = hitTestCard(x, y);
-    if (!id || id === dragged) return null;
-    const target = rows.find((r) => r.id === id);
-    const key = target ? columnOf(target, groupField) : null;
-    if (key !== column) return null;
-    const r = cardRect(id);
-    return { id, after: r ? y > r.y + r.height / 2 : false };
+    if (!column || hitTestCard(x, y) === dragged) return null;
+    const others = (board.groups[column] ?? []).flatMap((r) => {
+      const at = r.id === dragged ? null : cardRect(r.id);
+      return at ? [{ id: r.id, y: at.y, height: at.height }] : [];
+    });
+    return slotNear(others, y);
+  };
+
+  // The column at (x, y), or the one above or below it: a column can end
+  // above the finger, and a card let go under its last card belongs at its end.
+  const columnAt = (x: number, y: number) =>
+    hitTest(x, y) ??
+    columnKeys.find((key) => {
+      const r = columnRect(key);
+      return r !== null && x >= r.x && x <= r.x + r.width;
+    }) ??
+    null;
+  const feelPlace = () => (haptics.place ?? haptics.step)?.();
+  /** Show where a card held at (x, y) would land, felt when that changes. Returns the column it's over. */
+  const markDrop = (x: number, y: number, dragged: string) => {
+    const hit = columnAt(x, y);
+    setHoveredColumn((prev) => (prev === hit ? prev : hit));
+    const slot = slotAt(x, y, hit, dragged);
+    if (hit !== null) {
+      const spot = `${hit}\n${slot?.id ?? ""}\n${slot?.after ?? ""}`;
+      if (feltSpot.current !== null && spot !== feltSpot.current) feelPlace();
+      feltSpot.current = spot;
+    }
+    setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+    return hit;
   };
 
   /** The whole view's row order with `dragged` moved into `column` at `slot`. */
@@ -5796,6 +5863,37 @@ export function BoardView({
     edgePaging.current = { direction: 0, timer: null };
   };
   useEffect(() => stopEdgePaging, []);
+  // A card held near the page's top or bottom scrolls it, so a place in a
+  // column longer than the screen can be reached though the page is held.
+  const edgeScroll = useRef<{ direction: -1 | 0 | 1; timer: ReturnType<typeof setInterval> | null }>({ direction: 0, timer: null });
+  const stopEdgeScroll = () => {
+    if (edgeScroll.current.timer) clearInterval(edgeScroll.current.timer);
+    edgeScroll.current = { direction: 0, timer: null };
+  };
+  useEffect(() => stopEdgeScroll, []);
+  const scrollAtEdge = (y: number) => {
+    if (!pageScroll || !isTouchViewport || PLATFORM_OS === "web") return;
+    const { offset, height } = pageScroll.now();
+    const top = pageScroll.windowTop() + offset;
+    const direction = y > top + height - PAGE_EDGE_BOTTOM ? 1 : y < top + PAGE_EDGE_TOP ? -1 : 0;
+    if (direction === edgeScroll.current.direction) return;
+    stopEdgeScroll();
+    if (direction === 0) return;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      pageScroll.scrollBy(direction * PAGE_EDGE_STEP);
+      if (++ticks % PAGE_EDGE_MEASURE_EVERY !== 0) return;
+      // Where the cards are now, then what's under the finger.
+      remeasureColumns();
+      remeasureCards();
+      setTimeout(() => {
+        const at = lastPointer.current;
+        const dragged = draggedRef.current;
+        if (at && dragged) markDrop(at.x, at.y, dragged);
+      }, CAROUSEL_MEASURED_MS);
+    }, 16);
+    edgeScroll.current = { direction, timer };
+  };
   /**
    * A page turned to a column shorter than the one it left, with the page
    * scrolled down, showed an empty column: its cards were above what's on
@@ -5837,10 +5935,7 @@ export function BoardView({
             const at = lastPointer.current;
             const dragged = draggedRef.current;
             if (!at || !dragged) return;
-            const hit = hitTest(at.x, at.y);
-            setHoveredColumn((prev) => (prev === hit ? prev : hit));
-            const slot = slotAt(at.x, at.y, hit, dragged);
-            setDropSlot((prev) => (prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot));
+            const hit = markDrop(at.x, at.y, dragged);
             if (hit && bringColumnIntoView(hit, dragged)) {
               // Scrolled: where everything is now, and what's under the finger.
               setTimeout(() => {
@@ -5849,10 +5944,7 @@ export function BoardView({
                 setTimeout(() => {
                   const now = lastPointer.current;
                   if (!now || !draggedRef.current) return;
-                  const over = hitTest(now.x, now.y);
-                  setHoveredColumn((prev) => (prev === over ? prev : over));
-                  const gap = slotAt(now.x, now.y, over, draggedRef.current);
-                  setDropSlot((prev) => (prev?.id === gap?.id && prev?.after === gap?.after ? prev : gap));
+                  markDrop(now.x, now.y, draggedRef.current);
                 }, CAROUSEL_MEASURED_MS);
               }, CAROUSEL_SETTLE_MS);
             }
@@ -5863,6 +5955,66 @@ export function BoardView({
     };
     after(CAROUSEL_PAGE_FIRST_MS);
   };
+  // On a Mac, a card held near the edge of what's showing scrolls the page or
+  // the columns, as the web's board does (edgeSpeed).
+  const boardScroller = useRef<{
+    scrollTo(to: { x: number; animated: boolean }): void;
+    measure(done: (x: number, y: number, width: number, height: number, pageX: number) => void): void;
+  } | null>(null);
+  const boardAt = useRef({ x: 0, left: 0, width: 0, content: 0 });
+  const edgeHold = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopEdgeHold = () => {
+    if (edgeHold.current) clearInterval(edgeHold.current);
+    edgeHold.current = null;
+  };
+  useEffect(() => stopEdgeHold, []);
+  const startEdgeHold = () => {
+    if (PLATFORM_OS !== "macos" || isTouchViewport || edgeHold.current) return;
+    const frame = boardAt.current;
+    boardScroller.current?.measure((_x, _y, width, _height, pageX) => {
+      frame.left = pageX;
+      frame.width = width;
+    });
+    let ticks = 0;
+    edgeHold.current = setInterval(() => {
+      const at = lastPointer.current;
+      const dragged = draggedRef.current;
+      if (!at || !dragged) return;
+      if (pageScroll) {
+        const { offset, height, inset = 0 } = pageScroll.now();
+        const top = pageScroll.windowTop() + offset;
+        const dy = (edgeSpeed(at.y, top + inset, top + height) * EDGE_HOLD_MS) / 1000;
+        if (dy !== 0) pageScroll.scrollBy(dy);
+      }
+      const dx = (edgeSpeed(at.x, frame.left, frame.left + frame.width) * EDGE_HOLD_MS) / 1000;
+      const x = Math.min(Math.max(0, frame.content - frame.width), Math.max(0, frame.x + dx));
+      if (x !== frame.x) {
+        frame.x = x;
+        boardScroller.current?.scrollTo({ x, animated: false });
+      }
+      if (++ticks % EDGE_HOLD_MEASURE_EVERY !== 0) return;
+      remeasureColumns();
+      remeasureCards();
+      setTimeout(() => {
+        const now = lastPointer.current;
+        if (now && draggedRef.current) markDrop(now.x, now.y, draggedRef.current);
+      }, EDGE_HOLD_MS);
+    }, EDGE_HOLD_MS);
+  };
+  const boardScrollProps = {
+    ref: boardScroller,
+    scrollEventThrottle: 16,
+    onScroll: (e: { nativeEvent: { contentOffset: { x: number }; contentSize: { width: number } } }) => {
+      boardAt.current.x = e.nativeEvent.contentOffset.x;
+      boardAt.current.content = e.nativeEvent.contentSize.width;
+    },
+    onContentSizeChange: (width: number) => {
+      boardAt.current.content = width;
+    },
+    // HScroll spreads these onto its ScrollView, ref included (its type leaves the ref out).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+
   // Carousel column width: the screen's shorter side (as the layout is
   // chosen, so a turned phone keeps its columns' width and shows more of
   // them, rather than one column as wide as the screen) minus 16pt side
@@ -5905,6 +6057,25 @@ export function BoardView({
     },
   });
 
+  // One ref for each card, kept between renders. A new one each render made
+  // React detach the old, which dropped the card's measured place until it was
+  // measured again, so a drop right after a move missed it and went to the column's end.
+  const cardRefNow = useRef({ cardRef: cards.cardRef, canDrag });
+  cardRefNow.current = { cardRef: cards.cardRef, canDrag };
+  const cardRefs = useRef(new Map<string, (el: unknown) => void>());
+  const cardRefOf = (id: string) => {
+    let ref = cardRefs.current.get(id);
+    if (!ref) {
+      ref = (el: unknown) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        cardRefNow.current.cardRef(id)(el as any);
+        if (cardRefNow.current.canDrag) registerCard(id).ref(el);
+      };
+      cardRefs.current.set(id, ref);
+    }
+    return ref;
+  };
+
   const columnsContent = columnKeys.map((key) => {
     const groupRows = groups[key] ?? [];
     const dropReg = canDrag ? registerColumn(key) : undefined;
@@ -5929,10 +6100,14 @@ export function BoardView({
             onDragStart={
               canDrag
                 ? (e: DragEvent) => {
+                    feelPlace();
+                    feltSpot.current = null;
                     setDraggedRowId(row.id);
                     setHoveredColumn(key);
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     remeasureColumns();
+                    remeasureCards();
+                    startEdgeHold();
                   }
                 : undefined
             }
@@ -5941,12 +6116,8 @@ export function BoardView({
                 ? (e: DragEvent) => {
                     setPointerPos({ x: e.pageX, y: e.pageY });
                     pageAtEdge(e.pageX);
-                    const hit = hitTest(e.pageX, e.pageY);
-                    setHoveredColumn((prev) => (prev === hit ? prev : hit));
-                    const slot = slotAt(e.pageX, e.pageY, hit, row.id);
-                    setDropSlot((prev) =>
-                      prev?.id === slot?.id && prev?.after === slot?.after ? prev : slot,
-                    );
+                    scrollAtEdge(e.pageY);
+                    markDrop(e.pageX, e.pageY, row.id);
                   }
                 : undefined
             }
@@ -5954,12 +6125,18 @@ export function BoardView({
               canDrag
                 ? (e: DragEvent) => {
                     stopEdgePaging();
-                    const target = hitTest(e.pageX, e.pageY);
+                    stopEdgeScroll();
+                    stopEdgeHold();
+                    const target = columnAt(e.pageX, e.pageY);
                     // Let go over itself, the card goes back where it was: a long
                     // press that didn't move (it starts a drag on a phone) moved
                     // it to the end of its column, as a drop on no card does.
                     const backWhereItWas = hitTestCard(e.pageX, e.pageY) === row.id;
                     if (target && onUpdateRow && !backWhereItWas) {
+                      // Felt only if it's somewhere new: a drop in the gap it came from isn't.
+                      const here = (groups[target] ?? []).map((r) => r.id);
+                      const order = onUpdateView ? orderAfterDropHere(row.id, target, slotAt(e.pageX, e.pageY, target, row.id)) : null;
+                      if (columnOf(row, groupField) !== target || order?.filter((id) => here.includes(id)).join("\n") !== here.join("\n")) feelPlace();
                       // The card slides into its place and the columns to their heights.
                       animateNextLayout();
                       const source = rows.find((r) => r.id === row.id);
@@ -5982,11 +6159,7 @@ export function BoardView({
             }
           >
             <html.div
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              ref={(el: any) => {
-                cards.cardRef(row.id)(el);
-                if (canDrag) registerCard(row.id).ref(el);
-              }}
+              ref={cardRefOf(row.id)}
               onClick={() => {
                 cards.setFocusId(row.id);
                 onOpenBody?.(row.id);
@@ -6063,7 +6236,7 @@ export function BoardView({
     <>
       <Bleed>
         {/* The web's board scrolls itself (overflowX); React Native's needs a scroller. */}
-        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))}>
+        <BoardScroll snapTo={columnKeys.map((_, i) => i * (BOARD_COLUMN_WIDTH + BOARD_GAP))} scrollProps={boardScrollProps}>
           <html.div {...cards.containerProps} style={styles.board}>
             <GutterSpacer gap={BOARD_GAP} />
             {columnsContent}
@@ -6455,6 +6628,11 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const setRange = (next: CalendarRange) => setCalendarRange(view.id, next);
   const rangeInBar = useContext(CalendarRangeInBar);
   const [cursor, setCursor] = useState(() => dateKey(initialMonth(view, rows)));
+  // The middle of the months a swipe can reach, moved when a date beyond them is chosen.
+  const [pagerCentre, setPagerCentre] = useState(() => monthPosition(cursor));
+  if (Math.abs(monthPosition(cursor) - pagerCentre) >= MONTHS_EITHER_SIDE) setPagerCentre(monthPosition(cursor));
+  // How far what's under a phone's month has moved, from the pager, once it's measured.
+  const [belowShift, setBelowShift] = useState<unknown>(null);
   const todayKey = dateKey(new Date());
   const [chosenDay, setChosenDay] = useState<string>(todayKey);
   const [listedDay, setListedDay] = useState<string | null>(null);
@@ -6562,7 +6740,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const aroundGrid = 186 + (undated.length > 0 ? 40 : 0) + (undated.length > 0 && showUndated ? 40 : 0);
   const weeksShown = monthGrid(cursorDate, weekStart)[35]!.inMonth ? 6 : 5;
   // A phone on its side: the month's rows share the height there is.
-  const phoneRow = turned && pageHeight > 0 ? Math.max(36, Math.min(58, Math.floor((pageHeight - 176) / weeksShown))) : 58;
+  const phoneRowFor = (weeks: number) => (turned && pageHeight > 0 ? Math.max(36, Math.min(58, Math.floor((pageHeight - 176) / weeks))) : 58);
   const GridEdges = turned ? Fragment : Bleed;
   const weekHeight =
     pageHeight > 0
@@ -6720,9 +6898,62 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
 
   // A phone's month, as the system's Calendar lays one out: edge to edge with
   // no box, only the month's own days, and a mark under each for what's on it.
+  const phoneWeeksIn = (position: number) => monthGridWeeks(localDay(monthAtPosition(position))!, weekStart);
+  const phoneMonthHeight = (position: number) => phoneWeeksIn(position) * phoneRowFor(phoneWeeksIn(position));
+  const phoneTallest = Math.max(5 * phoneRowFor(5), 6 * phoneRowFor(6));
+  /** One month's weeks on a phone. */
+  const phoneWeeks = (position: number) => {
+    const cells = monthGrid(localDay(monthAtPosition(position))!, weekStart);
+    const weeks = phoneWeeksIn(position);
+    const row = phoneRowFor(weeks);
+    const live = position === monthPosition(cursor);
+    return (
+      <>
+        {Array.from({ length: weeks }, (_, week) => (
+      <html.div key={week} style={[styles.phoneWeek, styles.calendarWeekHeight(row)]}>
+        {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
+          const key = dateKey(cell.date);
+          if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
+          const on = entriesOn(entries, key);
+          // Only the month at rest takes a dragged row.
+          const target = canEdit && live ? registerDay(key) : undefined;
+          const isToday = key === todayKey;
+          const isChosen = key === chosenInView;
+          return (
+            <html.button
+              key={key}
+              ref={target?.ref}
+              aria-label={longDay(key)}
+              onClick={() => clickDay(key, 0)}
+              style={[styles.calendarColumn, styles.phoneDay, turned && styles.phoneDayTurned, hoverDay === key && styles.calendarCellDrop]}
+            >
+              <html.span
+                style={[
+                  styles.phoneNumber,
+                  turned && styles.phoneNumberTurned,
+                  offDay(column) && styles.phoneOffDay,
+                  isToday && styles.phoneToday,
+                  isChosen && styles.phoneChosen,
+                  isChosen && isToday && styles.phoneChosenToday,
+                ]}
+              >
+                {cell.date.getDate()}
+              </html.span>
+              <html.div style={[styles.phoneMarks, turned && styles.phoneMarksTurned]}>
+                {on.slice(0, 5).map((entry) => (
+                  <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
+                ))}
+              </html.div>
+            </html.button>
+          );
+        })}
+      </html.div>
+    ))}
+      </>
+    );
+  };
+
   const phoneMonth = () => {
-    const cells = monthGrid(cursorDate, weekStart);
-    const weeks = cells[35]!.inMonth ? 6 : 5;
     const letters = rotateWeekdays(
       Array.from({ length: 7 }, (_, i) => calendarDate(1970, 0, 4 + i).toLocaleDateString(undefined, { weekday: "narrow" })),
       weekStart,
@@ -6735,45 +6966,15 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
             <html.span key={i} style={[styles.phoneWeekday, styles.calendarColumn, offDay(i) && styles.phoneOffDay]}>{letter}</html.span>
           ))}
         </html.div>
-        {Array.from({ length: weeks }, (_, week) => (
-          <html.div key={week} style={[styles.phoneWeek, styles.calendarWeekHeight(phoneRow)]}>
-            {cells.slice(week * 7, week * 7 + 7).map((cell, column) => {
-              const key = dateKey(cell.date);
-              if (!cell.inMonth) return <html.div key={key} style={styles.calendarColumn} />;
-              const on = entriesOn(entries, key);
-              const target = canEdit ? registerDay(key) : undefined;
-              const isToday = key === todayKey;
-              const isChosen = key === chosenDay;
-              return (
-                <html.button
-                  key={key}
-                  ref={target?.ref}
-                  aria-label={longDay(key)}
-                  onClick={() => clickDay(key, 0)}
-                  style={[styles.calendarColumn, styles.phoneDay, turned && styles.phoneDayTurned, hoverDay === key && styles.calendarCellDrop]}
-                >
-                  <html.span
-                    style={[
-                      styles.phoneNumber,
-                      turned && styles.phoneNumberTurned,
-                      offDay(column) && styles.phoneOffDay,
-                      isToday && styles.phoneToday,
-                      isChosen && styles.phoneChosen,
-                      isChosen && isToday && styles.phoneChosenToday,
-                    ]}
-                  >
-                    {cell.date.getDate()}
-                  </html.span>
-                  <html.div style={[styles.phoneMarks, turned && styles.phoneMarksTurned]}>
-                    {on.slice(0, 5).map((entry) => (
-                      <html.span key={entry.row.id} style={[on.length === 1 ? styles.phoneDot : styles.phoneStripe, styles.calendarMark(markOf(entry.row))]} />
-                    ))}
-                  </html.div>
-                </html.button>
-              );
-            })}
-          </html.div>
-        ))}
+        <MonthPager
+          month={monthPosition(cursor)}
+          {...monthsAround(pagerCentre, minMonth ? monthPosition(dateKey(minMonth)) : undefined, maxMonth ? monthPosition(dateKey(maxMonth)) : undefined)}
+          heightOf={phoneMonthHeight}
+          tallest={phoneTallest}
+          onShift={setBelowShift}
+          renderMonth={phoneWeeks}
+          onMonth={(position) => setCursor(monthAtPosition(position))}
+        />
       </PhoneEdges>
     );
   };
@@ -6807,7 +7008,7 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
                   !isCompact && styles.calendarCellWide,
                   offDay(column) && styles.calendarCellOffDay,
                   !cell.inMonth && styles.calendarCellOther,
-                  isCompact && chosenDay === key && styles.calendarCellChosen,
+                  isCompact && chosenInView === key && styles.calendarCellChosen,
                   hoverDay === key && styles.calendarCellDrop,
                 ]}
               >
@@ -6956,6 +7157,29 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
   const listedRows = listedDay ? entriesOn(entries, listedDay) : [];
   const draggedRow = dragged ? rows.find((r) => r.id === dragged.id) : undefined;
 
+  const undatedSection = () => (
+        <html.div style={styles.calendarUndated}>
+          <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
+            <html.div style={styles.calendarDisclosureTitle}>
+              <html.div style={[styles.calendarDisclosure, showUndated && styles.calendarDisclosureOpen]} />
+              <html.span style={styles.calendarAgendaHead}>No Date</html.span>
+            </html.div>
+            <html.span style={styles.calendarMore}>{undated.length}</html.span>
+          </html.button>
+          {showUndated ? (
+            <html.div style={styles.calendarUndatedList}>
+              {undated.map((row) => (
+                <DragHandle key={row.id} {...dragProps(row.id)}>
+                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarUndatedChip, tintOf(colorsOf(row).row), dragged?.id === row.id && styles.cardDragging]}>
+                    <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(row)}</html.span>
+                  </html.button>
+                </DragHandle>
+              ))}
+            </html.div>
+          ) : null}
+        </html.div>
+  );
+
   return (
     <html.div {...measureProps} style={styles.calendarPage}>
       {isCompact ? (
@@ -7066,37 +7290,24 @@ export function CalendarView({ view, rows, schema, bodies, cells, searchQuery, o
       )}
 
       {!searching && range === "month" && isCompact ? (
+        <FollowsMonth shift={belowShift ?? phoneMonthHeight(monthPosition(cursor)) - phoneTallest}>
         <html.div style={styles.calendarAgendaDay}>
-          <html.span style={styles.calendarAgendaHead}>{longDay(chosenDay)}</html.span>
-          {entriesOn(entries, chosenDay).length === 0 ? (
+          <html.span style={styles.calendarAgendaHead}>{longDay(chosenInView)}</html.span>
+          {entriesOn(entries, chosenInView).length === 0 ? (
             <html.span style={styles.daySheetEmpty}>Nothing on this day.</html.span>
           ) : (
-            entriesOn(entries, chosenDay).map((entry) => entryLine(entry, chosenDay))
+            entriesOn(entries, chosenInView).map((entry) => entryLine(entry, chosenInView))
           )}
         </html.div>
+        </FollowsMonth>
       ) : null}
 
       {!searching && undated.length > 0 ? (
-        <html.div style={styles.calendarUndated}>
-          <html.button onClick={() => setShowUndated((shown) => !shown)} style={styles.calendarUndatedHead}>
-            <html.div style={styles.calendarDisclosureTitle}>
-              <html.div style={[styles.calendarDisclosure, showUndated && styles.calendarDisclosureOpen]} />
-              <html.span style={styles.calendarAgendaHead}>No Date</html.span>
-            </html.div>
-            <html.span style={styles.calendarMore}>{undated.length}</html.span>
-          </html.button>
-          {showUndated ? (
-            <html.div style={styles.calendarUndatedList}>
-              {undated.map((row) => (
-                <DragHandle key={row.id} {...dragProps(row.id)}>
-                  <html.button onClick={() => onOpenBody?.(row.id)} style={[styles.calendarUndatedChip, tintOf(colorsOf(row).row), dragged?.id === row.id && styles.cardDragging]}>
-                    <html.span dir="auto" style={styles.calendarBarTitle}>{labelOf(row)}</html.span>
-                  </html.button>
-                </DragHandle>
-              ))}
-            </html.div>
-          ) : null}
-        </html.div>
+        range === "month" && isCompact ? (
+          <FollowsMonth shift={belowShift ?? phoneMonthHeight(monthPosition(cursor)) - phoneTallest}>{undatedSection()}</FollowsMonth>
+        ) : (
+          undatedSection()
+        )
       ) : null}
 
       {draggedRow && pointerPos ? (
