@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { monthGrid, monthGridWeeks } from "./cards";
+
 import type { Row, View } from "@workspace.sh/table-core";
 
-import {
+import { choseADay,
   addDays,
   agendaDays,
   calendarEntries,
   dayTimeline,
   hiddenOnDay,
   hourWindow,
+  monthAtPosition,
+  monthPosition,
+  monthsAround,
+  MONTHS_EITHER_SIDE,
   moveEntry,
   resizeEntry,
   retimeEntry,
@@ -162,4 +168,35 @@ test("every year a date can hold works, and a step stops at the ends", () => {
   assert.equal(stepRange("month", "9999-12-01", 1), "9999-12-01");
   assert.equal(stepRange("week", "9999-12-30", 1), "9999-12-30");
   assert.equal(stepRange("month", "0000-01-01", -1), "0000-01-01");
+});
+
+test("months are one apart across a year's end, and come back as the same key", () => {
+  assert.equal(monthPosition("2027-01-15") - monthPosition("2026-12-01"), 1);
+  for (const key of ["0001-01-01", "2026-11-01", "2026-12-01", "9999-12-01"]) assert.equal(monthAtPosition(monthPosition(key)), key);
+});
+
+test("a swipe's range stays inside the calendar's bounds", () => {
+  const centre = monthPosition("2026-11-01");
+  assert.deepEqual(monthsAround(centre), { first: centre - MONTHS_EITHER_SIDE, last: centre + MONTHS_EITHER_SIDE });
+  assert.deepEqual(monthsAround(centre, centre - 2, centre + 3), { first: centre - 2, last: centre + 3 });
+  assert.deepEqual(monthsAround(centre, centre, centre), { first: centre, last: centre });
+});
+
+test("a month's week count is the one its grid shows, for any first day of the week", () => {
+  for (let weekStart = 0; weekStart < 7; weekStart++) {
+    for (let position = monthPosition("2000-01-01"); position < monthPosition("2040-01-01"); position++) {
+      const month = new Date(Math.floor(position / 12), position % 12, 1);
+      assert.equal(monthGridWeeks(month, weekStart), monthGrid(month, weekStart)[35]!.inMonth ? 6 : 5);
+    }
+  }
+});
+
+test("a picker's wheel turning is not a day being chosen", () => {
+  assert.equal(choseADay("2026-11-23", "2940-11-23"), false);
+  assert.equal(choseADay("2026-11-23", "2026-06-23"), false);
+  assert.equal(choseADay("2026-01-31", "2026-02-28"), false);
+  assert.equal(choseADay("2028-01-31", "2028-02-29"), false);
+  assert.equal(choseADay("2026-11-23", "2026-11-24"), true);
+  assert.equal(choseADay("2026-11-23", "2026-12-05"), true);
+  assert.equal(choseADay("2026-01-31", "2026-02-27"), true);
 });
