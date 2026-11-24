@@ -1,0 +1,1495 @@
+{
+  "about": "Cases for schema.json: each checked against schema/schema.schema.json, and each says whether it is valid and which rule of the spec decides it.",
+  "schema": "../../schema/schema.schema.json",
+  "cases": [
+    {
+      "description": "the spec's own example",
+      "rule": "SPEC 2",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "title",
+            "type": "string",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "id": "7n1wsgc4hedra",
+            "name": "status",
+            "type": "string",
+            "categories": [
+              "planning",
+              "active",
+              "done"
+            ]
+          },
+          {
+            "id": "za5jto9mx6cbi",
+            "name": "summary",
+            "type": "string",
+            "display": "markdown"
+          }
+        ],
+        "primaryKey": [
+          "title"
+        ],
+        "schema-version": 1
+      }
+    },
+    {
+      "description": "no fields at all",
+      "rule": "SPEC 2",
+      "valid": true,
+      "data": {
+        "fields": []
+      }
+    },
+    {
+      "description": "a string field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a number field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a integer field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a boolean field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "boolean"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a date field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a datetime field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "datetime"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a time field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "time"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a year field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "year"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a yearmonth field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "yearmonth"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a array field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "array"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a object field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "object"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a duration field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "duration"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a geopoint field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "geopoint"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a geojson field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "geojson"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a any field",
+      "rule": "SPEC 2, Field types",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "any"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a field without an id: readers derive one",
+      "rule": "SPEC 2, A field's id",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "name": "x",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "keys the spec doesn't name, x- and otherwise, at every level",
+      "rule": "SPEC 2, Manifest declaration",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "x-app": {
+              "width": 3
+            },
+            "future": 1
+          }
+        ],
+        "x-generator": "tool",
+        "other": true
+      }
+    },
+    {
+      "description": "no fields key",
+      "rule": "SPEC 2",
+      "valid": false,
+      "data": {
+        "primaryKey": [
+          "x"
+        ]
+      }
+    },
+    {
+      "description": "fields that aren't a list",
+      "rule": "SPEC 2",
+      "valid": false,
+      "data": {
+        "fields": {
+          "x": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "description": "a schema that isn't an object",
+      "rule": "SPEC 2",
+      "valid": false,
+      "data": []
+    },
+    {
+      "description": "a type the spec doesn't list",
+      "rule": "SPEC 2, Field types",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a field with no type",
+      "rule": "SPEC 2, Field types",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a field with no name",
+      "rule": "SPEC 2",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "an empty name",
+      "rule": "SPEC 2",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a field named id, which every row has and the schema never declares",
+      "rule": "SPEC 3, System id",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "id",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "an id that isn't 13 characters",
+      "rule": "SPEC 2, A field's id",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xp",
+            "name": "x",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "an id with a letter outside z-base-32 (l)",
+      "rule": "SPEC 2, A field's id",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpl",
+            "name": "x",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "an id in capitals",
+      "rule": "SPEC 2, A field's id",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "KQ3UFMY8B9XPE",
+            "name": "x",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "description": "every constraint, on fields they apply to",
+      "rule": "SPEC 2, Field constraints",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "required": true,
+              "unique": true,
+              "minLength": 1,
+              "maxLength": 9,
+              "pattern": "^[A-Z]+$"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "n",
+            "type": "number",
+            "constraints": {
+              "minimum": 0,
+              "maximum": 1,
+              "exclusiveMinimum": -1,
+              "exclusiveMaximum": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "date, datetime, time, year-month and duration bounds as values of their type",
+      "rule": "SPEC 2, Field constraints",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "d",
+            "type": "date",
+            "constraints": {
+              "minimum": "2026-01-01"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "dt",
+            "type": "datetime",
+            "constraints": {
+              "maximum": "2026-01-01T09:00:00Z"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "t",
+            "type": "time",
+            "constraints": {
+              "exclusiveMinimum": "09:00:00"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "ym",
+            "type": "yearmonth",
+            "constraints": {
+              "exclusiveMaximum": "2026-12"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "du",
+            "type": "duration",
+            "constraints": {
+              "maximum": "PT8H"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a year bound is a number",
+      "rule": "SPEC 2, Field constraints",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "year",
+            "constraints": {
+              "minimum": 1900
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "required that isn't true or false",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "required": "yes"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a number field's bound as text",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "constraints": {
+              "minimum": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a date field's bound that isn't a date",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "constraints": {
+              "minimum": "1 Jan 2026"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a datetime bound without seconds",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "datetime",
+            "constraints": {
+              "minimum": "2026-01-01T09:00Z"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a year-month bound with a day",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "yearmonth",
+            "constraints": {
+              "maximum": "2026-11-01"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a duration bound that isn't ISO 8601",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "duration",
+            "constraints": {
+              "maximum": "8 hours"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a negative minLength",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "minLength": -1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a maxLength that isn't whole",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "maxLength": 2.5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a pattern that isn't text",
+      "rule": "SPEC 2, Field constraints",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "pattern": 5
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "choices as bare values and objects, mixed",
+      "rule": "SPEC 2, Choices: categories",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "categories": [
+              {
+                "value": "planning",
+                "color": "gray",
+                "label": "Planning"
+              },
+              {
+                "value": "active",
+                "color": "green"
+              },
+              "done"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "choices on a list field: a multi-select",
+      "rule": "SPEC 2, Multi-select",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "array",
+            "categories": [
+              "emea",
+              "priority"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "choices kept in constraints.enum, as before D68",
+      "rule": "SPEC 2, Choices: categories",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "constraints": {
+              "enum": [
+                "a",
+                {
+                  "value": "b",
+                  "color": "red"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a choice object without a value",
+      "rule": "SPEC 2, Choices: categories",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "categories": [
+              {
+                "label": "Planning"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "a choice colour that isn't one of the fourteen names",
+      "rule": "SPEC 2, Choices: categories",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "categories": [
+              {
+                "value": "a",
+                "color": "#ff0000"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "a choice that is a number",
+      "rule": "SPEC 2, Choices: categories",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "categories": [
+              1,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "every annotation",
+      "rule": "SPEC 2, Field annotations",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "title": "Title",
+            "description": "Help",
+            "align": "center",
+            "format": "email",
+            "icon": "💰",
+            "example": "a@example.com",
+            "rdfType": "https://schema.org/email",
+            "attachment": false,
+            "deprecated": true
+          }
+        ]
+      }
+    },
+    {
+      "description": "an alignment that isn't start, center or end",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "align": "left"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a string format the spec doesn't list",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "format": "phone-number"
+          }
+        ]
+      }
+    },
+    {
+      "description": "email as the format of a number",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "format": "email"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a display token kept in format, as before D68",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "format": "currency:USD"
+          }
+        ]
+      }
+    },
+    {
+      "description": "url for uri, as before D68",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "format": "url"
+          }
+        ]
+      }
+    },
+    {
+      "description": "attachment that isn't true or false",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "attachment": "yes"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a relation, one and many",
+      "rule": "SPEC 2, Field annotations",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "relation": {
+              "table": "companies",
+              "field": "id"
+            }
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "y",
+            "type": "array",
+            "relation": {
+              "table": "deals",
+              "field": "id",
+              "cardinality": "many"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a relation by a field other than id",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "relation": {
+              "table": "companies",
+              "field": "name"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a relation without its table",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "relation": {
+              "field": "id"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a cardinality that isn't one or many",
+      "rule": "SPEC 2, Field annotations",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "relation": {
+              "table": "t",
+              "field": "id",
+              "cardinality": "several"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display integer",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "integer"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display decimal:2",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "decimal:2"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display decimal:2:parens",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "decimal:2:parens"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display percent",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "percent"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display currency:GBP",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "currency:GBP"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display currency:USD:parens",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "currency:USD:parens"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display duration:seconds",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "duration:seconds"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display scientific:3",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "scientific:3"
+          }
+        ]
+      }
+    },
+    {
+      "description": "number display fraction",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "fraction"
+          }
+        ]
+      }
+    },
+    {
+      "description": "date display iso",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "display": "iso"
+          }
+        ]
+      }
+    },
+    {
+      "description": "date display short",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "display": "short"
+          }
+        ]
+      }
+    },
+    {
+      "description": "date display long",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "display": "long"
+          }
+        ]
+      }
+    },
+    {
+      "description": "date display weekday",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "display": "weekday"
+          }
+        ]
+      }
+    },
+    {
+      "description": "date display relative",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "date",
+            "display": "relative"
+          }
+        ]
+      }
+    },
+    {
+      "description": "string display plain",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "display": "plain"
+          }
+        ]
+      }
+    },
+    {
+      "description": "string display markdown",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "display": "markdown"
+          }
+        ]
+      }
+    },
+    {
+      "description": "string display phone",
+      "rule": "SPEC 2, Field display",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "display": "phone"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a display token the vocabulary doesn't have",
+      "rule": "SPEC 2, Field display",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "display": "bold"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a currency that isn't three capitals",
+      "rule": "SPEC 2, Field display",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "currency:usd"
+          }
+        ]
+      }
+    },
+    {
+      "description": "scientific with parens, which only decimal and currency take",
+      "rule": "SPEC 2, Field display",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "scientific:2:parens"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a number display on a string",
+      "rule": "SPEC 2, Field display",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "display": "percent"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a date display on a number",
+      "rule": "SPEC 2, Field display",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "display": "long"
+          }
+        ]
+      }
+    },
+    {
+      "description": "a computed field",
+      "rule": "SPEC 2, Computed fields",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "number",
+            "computed": {
+              "expr": "(* price quantity)",
+              "dialect": "table-expr-v1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a computed field without its dialect",
+      "rule": "SPEC 2, Computed fields",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "computed": {
+              "expr": "(+ 1 1)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "a computed field with an empty expression",
+      "rule": "SPEC 2, Computed fields",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string",
+            "computed": {
+              "expr": "",
+              "dialect": "table-expr-v1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "primaryKey, uniqueKeys and missingValues",
+      "rule": "SPEC 3, System id",
+      "valid": true,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          },
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "y",
+            "type": "string"
+          }
+        ],
+        "primaryKey": [
+          "x",
+          "y"
+        ],
+        "uniqueKeys": [
+          [
+            "x"
+          ],
+          [
+            "x",
+            "y"
+          ]
+        ],
+        "missingValues": [
+          "",
+          "n/a"
+        ]
+      }
+    },
+    {
+      "description": "a primaryKey that's a bare name, not a list",
+      "rule": "SPEC 9, rule 3",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          }
+        ],
+        "primaryKey": "x"
+      }
+    },
+    {
+      "description": "an empty primaryKey",
+      "rule": "SPEC 9, rule 3",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          }
+        ],
+        "primaryKey": []
+      }
+    },
+    {
+      "description": "a primaryKey naming a field twice",
+      "rule": "SPEC 9, rule 3",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          }
+        ],
+        "primaryKey": [
+          "x",
+          "x"
+        ]
+      }
+    },
+    {
+      "description": "a unique key with no fields",
+      "rule": "SPEC 3, System id",
+      "valid": false,
+      "data": {
+        "fields": [
+          {
+            "id": "kq3ufmy8b9xpe",
+            "name": "x",
+            "type": "string"
+          }
+        ],
+        "uniqueKeys": [
+          []
+        ]
+      }
+    },
+    {
+      "description": "a schema-version of 0",
+      "rule": "SPEC 12, Schema version",
+      "valid": false,
+      "data": {
+        "fields": [],
+        "schema-version": 0
+      }
+    }
+  ]
+}

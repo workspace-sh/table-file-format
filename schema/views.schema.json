@@ -1,0 +1,334 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/workspace-sh/table-file-format/blob/develop/schema/views.schema.json",
+  "title": ".table views.json",
+  "description": "A table's saved views (SPEC section 4). Any key not named here is allowed and kept. What this can't check (unique view ids, names that match fields, rows that match ids) is listed in SPEC section 9.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/view"
+  },
+  "$defs": {
+    "fieldName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rowId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pixels": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+    },
+    "color": {
+      "description": "A choice colour's symbolic name (SPEC section 2, D43).",
+      "enum": [
+        "gray",
+        "brown",
+        "red",
+        "orange",
+        "yellow",
+        "lime",
+        "green",
+        "mint",
+        "teal",
+        "cyan",
+        "blue",
+        "indigo",
+        "purple",
+        "pink"
+      ]
+    },
+    "filter": {
+      "description": "One condition (SPEC section 4, \"Filter operators\"). in and not_in take a list.",
+      "type": "object",
+      "required": [
+        "field",
+        "operator"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "operator": {
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "contains",
+            "not_contains",
+            "starts_with",
+            "ends_with",
+            "empty",
+            "not_empty",
+            "in",
+            "not_in"
+          ]
+        },
+        "value": {}
+      },
+      "if": {
+        "properties": {
+          "operator": {
+            "enum": [
+              "in",
+              "not_in"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "filters": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/filter"
+      }
+    },
+    "cell": {
+      "type": "object",
+      "required": [
+        "field",
+        "row"
+      ],
+      "properties": {
+        "field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "row": {
+          "$ref": "#/$defs/rowId"
+        }
+      }
+    },
+    "view": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "layout"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique among the table's views; a writer mints 13 characters of z-base-32 (SPEC section 3)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Free-form and shown to people; never parsed."
+        },
+        "layout": {
+          "enum": [
+            "table",
+            "board",
+            "gallery",
+            "list",
+            "calendar"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        },
+        "filter": {
+          "$ref": "#/$defs/filters"
+        },
+        "sort": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "field",
+              "direction"
+            ],
+            "properties": {
+              "field": {
+                "$ref": "#/$defs/fieldName"
+              },
+              "direction": {
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              }
+            }
+          }
+        },
+        "group": {
+          "type": "object",
+          "required": [
+            "field"
+          ],
+          "properties": {
+            "field": {
+              "$ref": "#/$defs/fieldName"
+            }
+          }
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rowId"
+          }
+        },
+        "hidden": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/rowId"
+          }
+        },
+        "columnWidths": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/pixels"
+          }
+        },
+        "rowHeight": {
+          "$ref": "#/$defs/pixels"
+        },
+        "rowHeights": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/pixels"
+          }
+        },
+        "frozen": {
+          "type": "object",
+          "properties": {
+            "columns": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "merged": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/cell"
+              },
+              "to": {
+                "$ref": "#/$defs/cell"
+              }
+            }
+          }
+        },
+        "coordinates": {
+          "type": "boolean",
+          "description": "true: a Sheet view, which is a table layout."
+        },
+        "totals": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "sum",
+              "average",
+              "min",
+              "max",
+              "count",
+              "count_empty"
+            ]
+          }
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "filter",
+              "color"
+            ],
+            "properties": {
+              "filter": {
+                "$ref": "#/$defs/filters"
+              },
+              "color": {
+                "$ref": "#/$defs/color"
+              },
+              "field": {
+                "$ref": "#/$defs/fieldName"
+              }
+            }
+          }
+        },
+        "board_field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "gallery_field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "calendar_field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "calendar_end_field": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "calendar_range": {
+          "type": "object",
+          "required": [
+            "start",
+            "end"
+          ],
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/date"
+            },
+            "end": {
+              "$ref": "#/$defs/date"
+            }
+          }
+        }
+      },
+      "if": {
+        "required": [
+          "coordinates"
+        ],
+        "properties": {
+          "coordinates": {
+            "const": true
+          }
+        },
+        "type": "object"
+      },
+      "then": {
+        "properties": {
+          "layout": {
+            "const": "table"
+          }
+        },
+        "type": "object"
+      }
+    }
+  }
+}

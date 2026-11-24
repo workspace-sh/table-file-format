@@ -1,0 +1,640 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/workspace-sh/table-file-format/blob/develop/schema/schema.schema.json",
+  "title": ".table schema.json",
+  "description": "A table's fields, their types, constraints, annotations and display (SPEC section 2). Any key not named here is allowed and kept (SPEC section 2, \"Manifest declaration\"). What this can't check is listed in SPEC section 9.",
+  "type": "object",
+  "required": [
+    "fields"
+  ],
+  "properties": {
+    "fields": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/field"
+      }
+    },
+    "primaryKey": {
+      "description": "Field names whose values together no two rows share (SPEC section 9, rule 3).",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/fieldName"
+      }
+    },
+    "uniqueKeys": {
+      "description": "Combinations of fields no two rows share; a row with any of them empty isn't checked (SPEC section 3, D67).",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/$defs/fieldName"
+        }
+      }
+    },
+    "missingValues": {
+      "description": "Strings that mean empty when values are read from text, as a CSV is imported (SPEC section 3, D67).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "schema-version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "SPEC section 12."
+    }
+  },
+  "$defs": {
+    "fieldName": {
+      "description": "The key a field's values have in every row. Not `id`, which is every row's system id and is never declared (SPEC section 3).",
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "const": "id"
+      }
+    },
+    "fieldId": {
+      "description": "13 characters of z-base-32 (SPEC section 2, \"A field's id\").",
+      "type": "string",
+      "pattern": "^[ybndrfg8ejkmcpqxot1uwisza345h769]{13}$"
+    },
+    "fieldType": {
+      "enum": [
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "date",
+        "datetime",
+        "time",
+        "year",
+        "yearmonth",
+        "array",
+        "object",
+        "duration",
+        "geopoint",
+        "geojson",
+        "any"
+      ]
+    },
+    "color": {
+      "description": "A choice colour's symbolic name (SPEC section 2, \"Choices\"; D43).",
+      "enum": [
+        "gray",
+        "brown",
+        "red",
+        "orange",
+        "yellow",
+        "lime",
+        "green",
+        "mint",
+        "teal",
+        "cyan",
+        "blue",
+        "indigo",
+        "purple",
+        "pink"
+      ]
+    },
+    "category": {
+      "description": "A choice: a bare value, or an object with how it is shown (SPEC section 2, \"Choices\").",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "required": [
+            "value"
+          ],
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "color": {
+              "$ref": "#/$defs/color"
+            },
+            "label": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "numberDisplay": {
+      "anyOf": [
+        {
+          "enum": [
+            "integer",
+            "percent",
+            "duration:seconds",
+            "fraction"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^decimal:[0-9]+(:parens)?$"
+        },
+        {
+          "type": "string",
+          "pattern": "^currency:[A-Z]{3}(:parens)?$"
+        },
+        {
+          "type": "string",
+          "pattern": "^scientific:[0-9]+$"
+        }
+      ]
+    },
+    "dateDisplay": {
+      "enum": [
+        "iso",
+        "short",
+        "long",
+        "weekday",
+        "relative"
+      ]
+    },
+    "stringDisplay": {
+      "enum": [
+        "plain",
+        "markdown",
+        "phone"
+      ]
+    },
+    "display": {
+      "description": "SPEC section 2, \"Field display\": a closed vocabulary.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/numberDisplay"
+        },
+        {
+          "$ref": "#/$defs/dateDisplay"
+        },
+        {
+          "$ref": "#/$defs/stringDisplay"
+        }
+      ]
+    },
+    "bound": {
+      "description": "A number for numbers and years; a value of the field's type for dates, datetimes, times, durations and year-months (SPEC section 2, \"Field constraints\").",
+      "type": [
+        "number",
+        "string"
+      ]
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "required": {
+          "type": "boolean"
+        },
+        "unique": {
+          "type": "boolean"
+        },
+        "enum": {
+          "description": "Table Schema's plain list of allowed values. A file written before D68 holds its choices here, objects included; readers read them as categories.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category"
+          }
+        },
+        "minimum": {
+          "$ref": "#/$defs/bound"
+        },
+        "maximum": {
+          "$ref": "#/$defs/bound"
+        },
+        "exclusiveMinimum": {
+          "$ref": "#/$defs/bound"
+        },
+        "exclusiveMaximum": {
+          "$ref": "#/$defs/bound"
+        },
+        "minLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxLength": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pattern": {
+          "type": "string"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/fieldId"
+        },
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/fieldType"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "format": {
+          "description": "How the stored value is written (D68): email, uri, uuid or binary for a string, default otherwise. A file written before D68 may hold a display token here, or url for uri; readers read it as display.",
+          "anyOf": [
+            {
+              "enum": [
+                "default",
+                "email",
+                "uri",
+                "uuid",
+                "binary",
+                "url"
+              ]
+            },
+            {
+              "$ref": "#/$defs/display"
+            }
+          ]
+        },
+        "display": {
+          "$ref": "#/$defs/display"
+        },
+        "categories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/category"
+          }
+        },
+        "icon": {
+          "type": "string"
+        },
+        "align": {
+          "enum": [
+            "start",
+            "center",
+            "end"
+          ]
+        },
+        "example": {
+          "description": "A typical value, shown as a placeholder (D67)."
+        },
+        "rdfType": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A class in a shared vocabulary, as a URI (D67)."
+        },
+        "constraints": {
+          "$ref": "#/$defs/constraints"
+        },
+        "attachment": {
+          "type": "boolean"
+        },
+        "relation": {
+          "type": "object",
+          "required": [
+            "table",
+            "field"
+          ],
+          "properties": {
+            "table": {
+              "type": "string",
+              "minLength": 1
+            },
+            "field": {
+              "const": "id",
+              "description": "Relations resolve by the target table's system id."
+            },
+            "cardinality": {
+              "enum": [
+                "one",
+                "many"
+              ]
+            }
+          }
+        },
+        "computed": {
+          "type": "object",
+          "required": [
+            "expr",
+            "dialect"
+          ],
+          "properties": {
+            "expr": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The formula in the stored form (SPEC section 2, \"Computed fields\")."
+            },
+            "dialect": {
+              "type": "string",
+              "minLength": 1,
+              "description": "table-expr-v1; a reader shows a field of a dialect it doesn't know empty."
+            }
+          }
+        },
+        "deprecated": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "number",
+                  "integer",
+                  "year"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "display": {
+                "$ref": "#/$defs/numberDisplay"
+              },
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "type": "number"
+                  },
+                  "maximum": {
+                    "type": "number"
+                  },
+                  "exclusiveMinimum": {
+                    "type": "number"
+                  },
+                  "exclusiveMaximum": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "date",
+                  "datetime"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "display": {
+                "$ref": "#/$defs/dateDisplay"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "string"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "display": {
+                "$ref": "#/$defs/stringDisplay"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "not": {
+                  "const": "string"
+                }
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "format": {
+                "description": "Only a string has a format other than default; a display token here is a file written before D68.",
+                "not": {
+                  "enum": [
+                    "email",
+                    "uri",
+                    "uuid",
+                    "binary",
+                    "url"
+                  ]
+                }
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "date"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "$ref": "#/$defs/dateBound"
+                  },
+                  "maximum": {
+                    "$ref": "#/$defs/dateBound"
+                  },
+                  "exclusiveMinimum": {
+                    "$ref": "#/$defs/dateBound"
+                  },
+                  "exclusiveMaximum": {
+                    "$ref": "#/$defs/dateBound"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "datetime"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "$ref": "#/$defs/datetimeBound"
+                  },
+                  "maximum": {
+                    "$ref": "#/$defs/datetimeBound"
+                  },
+                  "exclusiveMinimum": {
+                    "$ref": "#/$defs/datetimeBound"
+                  },
+                  "exclusiveMaximum": {
+                    "$ref": "#/$defs/datetimeBound"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "time"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "$ref": "#/$defs/timeBound"
+                  },
+                  "maximum": {
+                    "$ref": "#/$defs/timeBound"
+                  },
+                  "exclusiveMinimum": {
+                    "$ref": "#/$defs/timeBound"
+                  },
+                  "exclusiveMaximum": {
+                    "$ref": "#/$defs/timeBound"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "yearmonth"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "$ref": "#/$defs/yearmonthBound"
+                  },
+                  "maximum": {
+                    "$ref": "#/$defs/yearmonthBound"
+                  },
+                  "exclusiveMinimum": {
+                    "$ref": "#/$defs/yearmonthBound"
+                  },
+                  "exclusiveMaximum": {
+                    "$ref": "#/$defs/yearmonthBound"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "duration"
+              }
+            },
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "constraints": {
+                "properties": {
+                  "minimum": {
+                    "$ref": "#/$defs/durationBound"
+                  },
+                  "maximum": {
+                    "$ref": "#/$defs/durationBound"
+                  },
+                  "exclusiveMinimum": {
+                    "$ref": "#/$defs/durationBound"
+                  },
+                  "exclusiveMaximum": {
+                    "$ref": "#/$defs/durationBound"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ]
+    },
+    "dateBound": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$"
+    },
+    "datetimeBound": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])[Tt]([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\\.[0-9]+)?([Zz]|[+-]([01][0-9]|2[0-3]):[0-5][0-9])?$"
+    },
+    "timeBound": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]:([0-5][0-9]|60)(\\.[0-9]+)?$"
+    },
+    "yearmonthBound": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+    },
+    "durationBound": {
+      "type": "string",
+      "pattern": "^P(?!$)([0-9]+([.,][0-9]+)?Y)?([0-9]+([.,][0-9]+)?M)?([0-9]+([.,][0-9]+)?W)?([0-9]+([.,][0-9]+)?D)?(T(?=[0-9])([0-9]+([.,][0-9]+)?H)?([0-9]+([.,][0-9]+)?M)?([0-9]+([.,][0-9]+)?S)?)?$"
+    }
+  }
+}

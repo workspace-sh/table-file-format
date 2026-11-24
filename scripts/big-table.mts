@@ -62,12 +62,12 @@ const schema: TableSchema = {
         { value: "lost", color: "red" },
       ],
     },
-    { name: "amount", type: "number", display: "currency" },
+    { name: "amount", type: "number", display: "currency:USD" },
     { name: "probability", type: "number" },
     { name: "owner", type: "string" },
     { name: "close_date", type: "date" },
     { name: "note", type: "string" },
-    { name: "weighted", type: "number", display: "currency", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
+    { name: "weighted", type: "number", display: "currency:USD", computed: { expr: "(round (* amount probability) 0)", dialect: "table-expr-v1" } },
   ],
 };
 
