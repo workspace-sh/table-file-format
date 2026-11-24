@@ -1,0 +1,173 @@
+{
+  "about": "Cases for meta.json (a bundle's or a table's), against schema/meta.schema.json.",
+  "schema": "../../schema/meta.schema.json",
+  "cases": [
+    {
+      "description": "the spec's own manifest",
+      "rule": "SPEC 5",
+      "valid": true,
+      "data": {
+        "format": "table",
+        "formatVersion": 1,
+        "title": "CRM",
+        "description": "Companies, the people there, and deals",
+        "tables": [
+          "companies",
+          "contacts",
+          "deals"
+        ],
+        "created_at": "2026-04-01T00:00:00Z",
+        "modified_at": "2026-04-27T00:00:00Z",
+        "generator": "table-file-format spike fixture"
+      }
+    },
+    {
+      "description": "an empty meta.json",
+      "rule": "SPEC 5",
+      "valid": true,
+      "data": {}
+    },
+    {
+      "description": "a table's own: title, description and iteration",
+      "rule": "SPEC 5",
+      "valid": true,
+      "data": {
+        "title": "Budget",
+        "description": "This year",
+        "iteration": {
+          "max": 100,
+          "change": 0.001
+        }
+      }
+    },
+    {
+      "description": "Data Package's licenses, contributors, keywords and version",
+      "rule": "SPEC 5",
+      "valid": true,
+      "data": {
+        "licenses": [
+          {
+            "name": "CC-BY-4.0",
+            "path": "https://creativecommons.org/licenses/by/4.0/",
+            "title": "Creative Commons Attribution 4.0"
+          }
+        ],
+        "contributors": [
+          {
+            "title": "A. Person",
+            "email": "a@example.com",
+            "roles": [
+              "author"
+            ]
+          }
+        ],
+        "keywords": [
+          "crm"
+        ],
+        "version": "1.0.0"
+      }
+    },
+    {
+      "description": "a source",
+      "rule": "SPEC 5, Where a table came from: source",
+      "valid": true,
+      "data": {
+        "source": {
+          "uri": "https://example.org/exports/sales.csv",
+          "format": "text/csv",
+          "retrieved_at": "2026-10-27T10:00:00Z"
+        }
+      }
+    },
+    {
+      "description": "keys the spec doesn't name",
+      "rule": "SPEC 2, Manifest declaration",
+      "valid": true,
+      "data": {
+        "com.example.app": {
+          "version": 1
+        },
+        "x-note": "kept"
+      }
+    },
+    {
+      "description": "a format other than table",
+      "rule": "SPEC 5",
+      "valid": false,
+      "data": {
+        "format": "sheet"
+      }
+    },
+    {
+      "description": "a formatVersion of 0",
+      "rule": "SPEC 12, Spec version",
+      "valid": false,
+      "data": {
+        "formatVersion": 0
+      }
+    },
+    {
+      "description": "a formatVersion as text",
+      "rule": "SPEC 12, Spec version",
+      "valid": false,
+      "data": {
+        "formatVersion": "3"
+      }
+    },
+    {
+      "description": "tables that aren't a list of names",
+      "rule": "SPEC 5",
+      "valid": false,
+      "data": {
+        "tables": "companies"
+      }
+    },
+    {
+      "description": "iteration without its change",
+      "rule": "SPEC 5",
+      "valid": false,
+      "data": {
+        "iteration": {
+          "max": 10
+        }
+      }
+    },
+    {
+      "description": "iteration of no passes",
+      "rule": "SPEC 5",
+      "valid": false,
+      "data": {
+        "iteration": {
+          "max": 0,
+          "change": 0
+        }
+      }
+    },
+    {
+      "description": "a source that is only its address",
+      "rule": "SPEC 5, Where a table came from: source",
+      "valid": false,
+      "data": {
+        "source": "https://example.org/a.csv"
+      }
+    },
+    {
+      "description": "a source with an empty uri",
+      "rule": "SPEC 5, Where a table came from: source",
+      "valid": false,
+      "data": {
+        "source": {
+          "uri": ""
+        }
+      }
+    },
+    {
+      "description": "meta.json that isn't an object",
+      "rule": "SPEC 5",
+      "valid": false,
+      "data": [
+        "CRM"
+      ]
+    }
+  ]
+}

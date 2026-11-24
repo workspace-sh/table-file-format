@@ -1,0 +1,851 @@
+{
+  "about": "Cases for views.json, against schema/views.schema.json.",
+  "schema": "../../schema/views.schema.json",
+  "cases": [
+    {
+      "description": "the spec's own example",
+      "rule": "SPEC 4",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "Active by priority",
+          "layout": "table",
+          "fields": [
+            "title",
+            "status",
+            "priority"
+          ],
+          "filter": [
+            {
+              "field": "status",
+              "operator": "neq",
+              "value": "done"
+            }
+          ],
+          "sort": [
+            {
+              "field": "priority",
+              "direction": "asc"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "no views",
+      "rule": "SPEC 4",
+      "valid": true,
+      "data": []
+    },
+    {
+      "description": "a table view",
+      "rule": "SPEC 4, Layouts",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table"
+        }
+      ]
+    },
+    {
+      "description": "a board view",
+      "rule": "SPEC 4, Layouts",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "board"
+        }
+      ]
+    },
+    {
+      "description": "a gallery view",
+      "rule": "SPEC 4, Layouts",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "gallery"
+        }
+      ]
+    },
+    {
+      "description": "a list view",
+      "rule": "SPEC 4, Layouts",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "list"
+        }
+      ]
+    },
+    {
+      "description": "a calendar view",
+      "rule": "SPEC 4, Layouts",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "calendar"
+        }
+      ]
+    },
+    {
+      "description": "keys the spec doesn't name",
+      "rule": "SPEC 2, Manifest declaration",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "x-app": 1,
+          "future": {
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "description": "views.json that isn't a list",
+      "rule": "SPEC 4",
+      "valid": false,
+      "data": {
+        "id": "v1",
+        "name": "All",
+        "layout": "table"
+      }
+    },
+    {
+      "description": "a view without an id",
+      "rule": "SPEC 4",
+      "valid": false,
+      "data": [
+        {
+          "name": "All",
+          "layout": "table"
+        }
+      ]
+    },
+    {
+      "description": "a view without a name",
+      "rule": "SPEC 4",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "layout": "table"
+        }
+      ]
+    },
+    {
+      "description": "a layout the spec doesn't list",
+      "rule": "SPEC 4, Layouts",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "timeline"
+        }
+      ]
+    },
+    {
+      "description": "a filter with eq",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "eq",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with neq",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "neq",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with gt",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "gt",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with gte",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "gte",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with lt",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "lt",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with lte",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "lte",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with contains",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "contains",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with not_contains",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "not_contains",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with starts_with",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "starts_with",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter with ends_with",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "ends_with",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "empty and not_empty, without a value",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "empty"
+            },
+            {
+              "field": "y",
+              "operator": "not_empty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "in and not_in with a list",
+      "rule": "SPEC 4, Filter operators",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "in",
+              "value": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "field": "x",
+              "operator": "not_in",
+              "value": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "in with a single value, not a list",
+      "rule": "SPEC 4, Filter operators",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "in",
+              "value": "a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "not_in without a value",
+      "rule": "SPEC 4, Filter operators",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "not_in"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "an operator the spec doesn't list",
+      "rule": "SPEC 4, Filter operators",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "field": "x",
+              "operator": "like",
+              "value": "a%"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a filter without a field",
+      "rule": "SPEC 4, Filter operators",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "filter": [
+            {
+              "operator": "eq",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a sort direction that isn't asc or desc",
+      "rule": "SPEC 4, Sort behaviour",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "sort": [
+            {
+              "field": "x",
+              "direction": "up"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a sort without a direction",
+      "rule": "SPEC 4, Sort behaviour",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "sort": [
+            {
+              "field": "x"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "group, order, widths, heights, frozen, hidden, merged and totals",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "group": {
+            "field": "status"
+          },
+          "order": [
+            "r1",
+            "r2"
+          ],
+          "columnWidths": {
+            "title": 240
+          },
+          "rowHeight": 48,
+          "rowHeights": {
+            "r1": 96
+          },
+          "frozen": {
+            "columns": 1,
+            "rows": 0
+          },
+          "hidden": [
+            "r3"
+          ],
+          "merged": [
+            {
+              "from": {
+                "field": "a",
+                "row": "r1"
+              },
+              "to": {
+                "field": "b",
+                "row": "r2"
+              }
+            }
+          ],
+          "totals": {
+            "budget": "sum",
+            "title": "count_empty"
+          }
+        }
+      ]
+    },
+    {
+      "description": "a group that names no field",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "group": {}
+        }
+      ]
+    },
+    {
+      "description": "a group as a bare name",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "group": "status"
+        }
+      ]
+    },
+    {
+      "description": "a column width of zero",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "columnWidths": {
+            "title": 0
+          }
+        }
+      ]
+    },
+    {
+      "description": "a column width as text",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "columnWidths": {
+            "title": "240px"
+          }
+        }
+      ]
+    },
+    {
+      "description": "a negative row height",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "rowHeight": -1
+        }
+      ]
+    },
+    {
+      "description": "frozen columns that aren't whole",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "frozen": {
+            "columns": 1.5
+          }
+        }
+      ]
+    },
+    {
+      "description": "a merge without its end",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "merged": [
+            {
+              "from": {
+                "field": "a",
+                "row": "r1"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a total the spec doesn't list",
+      "rule": "SPEC 4, Grouping, manual order and column widths",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "totals": {
+            "budget": "median"
+          }
+        }
+      ]
+    },
+    {
+      "description": "a view listing a field twice",
+      "rule": "SPEC 4",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "fields": [
+            "a",
+            "a"
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a Sheet view",
+      "rule": "SPEC 4, Sheet views",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "coordinates": true
+        }
+      ]
+    },
+    {
+      "description": "a board with coordinates: a Sheet view is a table layout",
+      "rule": "SPEC 4, Sheet views",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "board",
+          "coordinates": true
+        }
+      ]
+    },
+    {
+      "description": "colour rules, a row's and a cell's",
+      "rule": "SPEC 4, Colour rules",
+      "valid": true,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "colors": [
+            {
+              "filter": [
+                {
+                  "field": "status",
+                  "operator": "eq",
+                  "value": "blocked"
+                }
+              ],
+              "color": "red"
+            },
+            {
+              "filter": [
+                {
+                  "field": "budget",
+                  "operator": "gt",
+                  "value": 10000
+                }
+              ],
+              "color": "orange",
+              "field": "budget"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a colour rule in hex",
+      "rule": "SPEC 4, Colour rules",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "colors": [
+            {
+              "filter": [],
+              "color": "#ff0000"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "a colour rule without its filter",
+      "rule": "SPEC 4, Colour rules",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "table",
+          "colors": [
+            {
+              "color": "red"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "board, gallery and calendar fields",
+      "rule": "SPEC 4, Layout-specific fields",
+      "valid": true,
+      "data": [
+        {
+          "id": "b",
+          "name": "Board",
+          "layout": "board",
+          "board_field": "status"
+        },
+        {
+          "id": "g",
+          "name": "Gallery",
+          "layout": "gallery",
+          "gallery_field": "cover"
+        },
+        {
+          "id": "c",
+          "name": "Calendar",
+          "layout": "calendar",
+          "calendar_field": "start",
+          "calendar_end_field": "end",
+          "calendar_range": {
+            "start": "2026-11-01",
+            "end": "2026-12-31"
+          }
+        }
+      ]
+    },
+    {
+      "description": "a calendar range without its end",
+      "rule": "SPEC 4, Layout-specific fields",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "calendar",
+          "calendar_range": {
+            "start": "2026-11-01"
+          }
+        }
+      ]
+    },
+    {
+      "description": "a calendar range that isn't dates",
+      "rule": "SPEC 4, Layout-specific fields",
+      "valid": false,
+      "data": [
+        {
+          "id": "v1",
+          "name": "All",
+          "layout": "calendar",
+          "calendar_range": {
+            "start": "November",
+            "end": "December"
+          }
+        }
+      ]
+    }
+  ]
+}

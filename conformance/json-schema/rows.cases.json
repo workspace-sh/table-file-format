@@ -1,0 +1,802 @@
+{
+  "about": "Cases for rows: each table's schema.json makes a JSON Schema for its rows (rowJsonSchema in @workspace.sh/table-core), and each row is checked against it.",
+  "tables": [
+    {
+      "description": "a field of every type",
+      "schema": {
+        "fields": [
+          {
+            "name": "string",
+            "type": "string"
+          },
+          {
+            "name": "number",
+            "type": "number"
+          },
+          {
+            "name": "integer",
+            "type": "integer"
+          },
+          {
+            "name": "boolean",
+            "type": "boolean"
+          },
+          {
+            "name": "date",
+            "type": "date"
+          },
+          {
+            "name": "datetime",
+            "type": "datetime"
+          },
+          {
+            "name": "time",
+            "type": "time"
+          },
+          {
+            "name": "year",
+            "type": "year"
+          },
+          {
+            "name": "yearmonth",
+            "type": "yearmonth"
+          },
+          {
+            "name": "array",
+            "type": "array"
+          },
+          {
+            "name": "object",
+            "type": "object"
+          },
+          {
+            "name": "duration",
+            "type": "duration"
+          },
+          {
+            "name": "geopoint",
+            "type": "geopoint"
+          },
+          {
+            "name": "geojson",
+            "type": "geojson"
+          },
+          {
+            "name": "any",
+            "type": "any"
+          }
+        ]
+      },
+      "cases": [
+        {
+          "description": "a value of each type, as the spec's table writes it",
+          "rule": "SPEC 2, Value encodings",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "string": "Workspace v1",
+            "number": 4200.5,
+            "integer": 42,
+            "boolean": true,
+            "date": "2026-04-01",
+            "datetime": "2026-04-01T09:30:00Z",
+            "time": "09:30:00",
+            "year": 2026,
+            "yearmonth": "2026-11",
+            "array": [
+              "a",
+              1
+            ],
+            "object": {
+              "k": "v"
+            },
+            "duration": "PT1H30M",
+            "geopoint": [
+              -0.1276,
+              51.5072
+            ],
+            "geojson": {
+              "type": "Point",
+              "coordinates": [
+                -0.1276,
+                51.5072
+              ]
+            },
+            "any": 42
+          }
+        },
+        {
+          "description": "every value empty: absent, null or \"\"",
+          "rule": "SPEC 2, Empty values",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "string": null,
+            "number": "",
+            "date": null
+          }
+        },
+        {
+          "description": "an id and nothing else",
+          "rule": "SPEC 9, rule 1",
+          "valid": true,
+          "row": {
+            "id": "p1"
+          }
+        },
+        {
+          "description": "a floating datetime, with no offset",
+          "rule": "SPEC 2, Value encodings",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "datetime": "2026-04-01T09:30:00"
+          }
+        },
+        {
+          "description": "a datetime with an offset and a fraction",
+          "rule": "SPEC 2, Value encodings",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "datetime": "2026-04-01T09:30:00.250+02:00"
+          }
+        },
+        {
+          "description": "a date in the year 0",
+          "rule": "SPEC 2, Value encodings (D42)",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "date": "0000-01-01"
+          }
+        },
+        {
+          "description": "a duration in days",
+          "rule": "SPEC 2, Value encodings",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "duration": "P3D"
+          }
+        },
+        {
+          "description": "a time with a fraction of a second",
+          "rule": "SPEC 2, Value encodings",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "time": "09:30:00.5"
+          }
+        },
+        {
+          "description": "any: text in one row",
+          "rule": "SPEC 2, Value encodings (D56)",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "any": "n/a"
+          }
+        },
+        {
+          "description": "a key the schema doesn't name",
+          "rule": "SPEC 3",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "extra": 1
+          }
+        },
+        {
+          "description": "no id",
+          "rule": "SPEC 9, rule 1",
+          "valid": false,
+          "row": {
+            "string": "a"
+          }
+        },
+        {
+          "description": "an empty id",
+          "rule": "SPEC 9, rule 1",
+          "valid": false,
+          "row": {
+            "id": ""
+          }
+        },
+        {
+          "description": "an id that isn't text",
+          "rule": "SPEC 9, rule 1",
+          "valid": false,
+          "row": {
+            "id": 7
+          }
+        },
+        {
+          "description": "text in a number field",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "number": "4200"
+          }
+        },
+        {
+          "description": "a fraction in an integer field",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "integer": 4.5
+          }
+        },
+        {
+          "description": "an integer beyond 2^53 - 1",
+          "rule": "SPEC 2, Numbers",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "integer": 9007199254740992
+          }
+        },
+        {
+          "description": "a year beyond 2^53 - 1",
+          "rule": "SPEC 2, Numbers",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "year": -9007199254740992
+          }
+        },
+        {
+          "description": "a boolean as text",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "boolean": "true"
+          }
+        },
+        {
+          "description": "a boolean as 1",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "boolean": 1
+          }
+        },
+        {
+          "description": "a date with a time",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "date": "2026-04-01T00:00:00Z"
+          }
+        },
+        {
+          "description": "a date with a thirteenth month",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "date": "2026-13-01"
+          }
+        },
+        {
+          "description": "a datetime without seconds",
+          "rule": "SPEC 2, Value encodings (seconds are always written)",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "datetime": "2026-04-01T09:30"
+          }
+        },
+        {
+          "description": "a time without seconds",
+          "rule": "SPEC 2, Value encodings (seconds are always written)",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "time": "09:30"
+          }
+        },
+        {
+          "description": "a time with an offset",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "time": "09:30:00Z"
+          }
+        },
+        {
+          "description": "a year as text",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "year": "2026"
+          }
+        },
+        {
+          "description": "a year-month with a day",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "yearmonth": "2026-11-01"
+          }
+        },
+        {
+          "description": "a duration that is a count of seconds",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "duration": 5400
+          }
+        },
+        {
+          "description": "a duration with nothing after P",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "duration": "P"
+          }
+        },
+        {
+          "description": "a duration ending in T",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "duration": "P1DT"
+          }
+        },
+        {
+          "description": "a list field holding text",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "array": "a, b"
+          }
+        },
+        {
+          "description": "an object field holding a list",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "object": [
+              1
+            ]
+          }
+        },
+        {
+          "description": "a geopoint as latitude, longitude text",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "geopoint": "51.5, -0.12"
+          }
+        },
+        {
+          "description": "a geopoint with three numbers",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "geopoint": [
+              1,
+              2,
+              3
+            ]
+          }
+        },
+        {
+          "description": "a geopoint whose latitude is past 90",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "geopoint": [
+              0,
+              91
+            ]
+          }
+        },
+        {
+          "description": "a geopoint whose longitude is past 180",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "geopoint": [
+              181,
+              0
+            ]
+          }
+        },
+        {
+          "description": "GeoJSON without its type",
+          "rule": "SPEC 2, Value encodings",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "geojson": {
+              "coordinates": [
+                0,
+                0
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "description": "constraints",
+      "schema": {
+        "fields": [
+          {
+            "name": "title",
+            "type": "string",
+            "constraints": {
+              "required": true,
+              "minLength": 2,
+              "maxLength": 5,
+              "pattern": "^[A-Z]"
+            }
+          },
+          {
+            "name": "n",
+            "type": "number",
+            "constraints": {
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "r",
+            "type": "number",
+            "constraints": {
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            }
+          },
+          {
+            "name": "y",
+            "type": "year",
+            "constraints": {
+              "minimum": 1900
+            }
+          }
+        ]
+      },
+      "cases": [
+        {
+          "description": "every constraint met",
+          "rule": "SPEC 9, rule 2",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "n": 0,
+            "r": 0.5,
+            "y": 1900
+          }
+        },
+        {
+          "description": "bounds include their limit",
+          "rule": "SPEC 2, Field constraints",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "n": 100
+          }
+        },
+        {
+          "description": "a required field absent",
+          "rule": "SPEC 2, Empty values",
+          "valid": false,
+          "row": {
+            "id": "r1"
+          }
+        },
+        {
+          "description": "a required field null",
+          "rule": "SPEC 2, Empty values",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": null
+          }
+        },
+        {
+          "description": "a required field \"\"",
+          "rule": "SPEC 2, Empty values",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": ""
+          }
+        },
+        {
+          "description": "shorter than minLength",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "A"
+          }
+        },
+        {
+          "description": "longer than maxLength",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abcdef"
+          }
+        },
+        {
+          "description": "not matching the pattern",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "abc"
+          }
+        },
+        {
+          "description": "below the minimum",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "n": -1
+          }
+        },
+        {
+          "description": "above the maximum",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "n": 101
+          }
+        },
+        {
+          "description": "at the exclusive minimum",
+          "rule": "SPEC 2, Field constraints",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "r": 0
+          }
+        },
+        {
+          "description": "at the exclusive maximum",
+          "rule": "SPEC 2, Field constraints",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "r": 1
+          }
+        },
+        {
+          "description": "a year below its minimum",
+          "rule": "SPEC 9, rule 2",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "title": "Abc",
+            "y": 1899
+          }
+        }
+      ]
+    },
+    {
+      "description": "choices and relations",
+      "schema": {
+        "fields": [
+          {
+            "name": "status",
+            "type": "string",
+            "categories": [
+              {
+                "value": "planning",
+                "color": "gray"
+              },
+              "done"
+            ]
+          },
+          {
+            "name": "old",
+            "type": "string",
+            "constraints": {
+              "enum": [
+                "a",
+                "b"
+              ]
+            }
+          },
+          {
+            "name": "tags",
+            "type": "array",
+            "categories": [
+              "red",
+              "green"
+            ]
+          },
+          {
+            "name": "must",
+            "type": "array",
+            "categories": [
+              "x"
+            ],
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "owner",
+            "type": "string",
+            "relation": {
+              "table": "people",
+              "field": "id"
+            }
+          },
+          {
+            "name": "deals",
+            "type": "array",
+            "relation": {
+              "table": "deals",
+              "field": "id",
+              "cardinality": "many"
+            }
+          },
+          {
+            "name": "total",
+            "type": "number",
+            "computed": {
+              "expr": "(+ 1 1)",
+              "dialect": "table-expr-v1"
+            }
+          }
+        ]
+      },
+      "cases": [
+        {
+          "description": "a choice, a multi-select and relations",
+          "rule": "SPEC 2, Choices: categories",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "status": "planning",
+            "old": "b",
+            "tags": [
+              "red",
+              "green"
+            ],
+            "must": [
+              "x"
+            ],
+            "owner": "p1",
+            "deals": [
+              "d1",
+              "d2"
+            ]
+          }
+        },
+        {
+          "description": "an empty multi-select where it isn't required",
+          "rule": "SPEC 2, Multi-select",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "tags": [],
+            "must": [
+              "x"
+            ]
+          }
+        },
+        {
+          "description": "a computed field's value isn't checked: writers drop it",
+          "rule": "SPEC 2, Computed fields",
+          "valid": true,
+          "row": {
+            "id": "r1",
+            "must": [
+              "x"
+            ],
+            "total": "anything"
+          }
+        },
+        {
+          "description": "a value outside the choices",
+          "rule": "SPEC 2, Choices: categories",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "status": "paused",
+            "must": [
+              "x"
+            ]
+          }
+        },
+        {
+          "description": "a value outside constraints.enum",
+          "rule": "SPEC 2, Choices: categories",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "old": "c",
+            "must": [
+              "x"
+            ]
+          }
+        },
+        {
+          "description": "a multi-select item outside the choices",
+          "rule": "SPEC 2, Multi-select",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "tags": [
+              "red",
+              "blue"
+            ],
+            "must": [
+              "x"
+            ]
+          }
+        },
+        {
+          "description": "a required multi-select that's empty",
+          "rule": "SPEC 2, Multi-select",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "must": []
+          }
+        },
+        {
+          "description": "a many relation holding one id",
+          "rule": "SPEC 2, Field annotations",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "must": [
+              "x"
+            ],
+            "deals": "d1"
+          }
+        },
+        {
+          "description": "a many relation holding numbers",
+          "rule": "SPEC 2, Field annotations",
+          "valid": false,
+          "row": {
+            "id": "r1",
+            "must": [
+              "x"
+            ],
+            "deals": [
+              1,
+              2
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

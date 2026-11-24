@@ -1201,8 +1201,8 @@ bundle's `meta.json` it is the whole bundle's source; in a table's, that
 table's (one table of a bundle imported from a CSV, say).
 
 [`schema/meta.schema.json`](../schema/meta.schema.json) is the JSON
-Schema for both `meta.json` files, `source` included; every example's
-pass it.
+Schema for both `meta.json` files, `source` included (section 9, "JSON
+Schema").
 
 It is a record of origin and nothing more (DECISIONS D66). A reader MUST
 NOT read or compute anything differently because of it, and nothing
@@ -1539,6 +1539,43 @@ A `.table/` is **valid** when:
 Validators MAY surface warnings for: orphaned attachments, dangling
 relations (cross-table reference to a missing id), unused enum values.
 None of these block validity.
+
+### JSON Schema
+
+Each JSON file of a `.table` has a JSON Schema (2020-12) in
+[`schema/`](../schema/): `schema.schema.json` for `schema.json`,
+`views.schema.json` for `views.json`, and `meta.schema.json` for both
+`meta.json` files. A table's rows have one made from its `schema.json`
+(reference: `rowJsonSchema()` in `@workspace.sh/table-core`), which checks
+each value against its field's type and constraints (rule 2). The cases in
+[`conformance/json-schema/`](../conformance/json-schema/) say, for each
+file, what is valid and what isn't, and which rule decides it; every
+example table passes.
+
+This spec is the authority, and the schemas follow it. They allow keys they
+don't name, `x-` keys included, as readers do (section 2, "Manifest
+declaration"). They check what a writer writes, so a closed vocabulary
+(`display`, a choice's `color`) is closed there, although a reader shows a
+token it doesn't know as plain text or `gray`. They accept the forms a
+reader MUST read from files written before D68 (choices in
+`constraints.enum`, a display token in `format`).
+
+A file can pass them and still be invalid. JSON Schema checks one document
+at a time, and one value against fixed rules, so these are for a validator
+to check:
+
+- Row ids unique within the table (rule 1); view ids unique among its views.
+- `unique`, `primaryKey` and `uniqueKeys`, which compare rows (rule 3).
+- `bodies/` and `cells/` against the rows and fields (rules 4 and 5); a
+  cell with its own formula is checked by its result, not its stored value.
+- No two fields sharing an `id` (rule 6).
+- Names that must name something: a field in `primaryKey`, `uniqueKeys` or a
+  view, a row id in a view's `order`, `hidden`, `rowHeights` or `merged`,
+  and a relation's table (dangling is a warning, above).
+- Bounds on dates, datetimes, times, year-months and durations, which compare
+  values of those types (a datetime as the instant it names), and a date
+  being a real day (`2026-02-30` matches the pattern).
+- A `geojson` value kept as text being GeoJSON.
 
 ### Showing a table's problems (guidance)
 
