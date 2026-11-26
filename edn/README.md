@@ -22,7 +22,7 @@ edn/
 | --- | --- | --- |
 | Web | WebAssembly (`js/`) | Works out the web app's formulas once loaded (Firefox checked) |
 | Linux (Node, GTKX) | Native (N-API, `js/native/`) | Works out the Linux app's formulas |
-| macOS, iOS (Hermes) | C interface (`crates/ffi`) → JSI (`js/apple`, `@workspace.sh/edn/jsi`) | Built and tested on Linux through C and Node; the apps load it, but no Mac build has run yet |
+| macOS, iOS (Hermes) | C interface (`crates/ffi`) → JSI (`js/apple`, `@workspace.sh/edn/jsi`) | Works out the Mac app's formulas, and Workspace's Mac Release build links it as the dynamic framework `WorkspaceEdnCore` (#638, #712); on iOS, checked in the Simulator (iOS 26) but not yet on a device |
 | Android (Hermes) | C interface → JSI (`js/android`, `@workspace.sh/edn/jsi`) | Built for its four ABIs; runs on a Galaxy A15 (Android 15), formulas recomputing on edit |
 | Bare | native addon over the C interface | To do |
 
@@ -118,7 +118,7 @@ and results out.
 
 ### Reading formulas
 
-- **Native** (Linux, and what macOS, iOS and Android will use) is faster
+- **Native** (Linux, macOS, iOS and Android) is faster
   than today. Not yet measured on a phone's ARM chip.
 - **WebAssembly** is at parity for text, slower when whole trees cross into
   JavaScript. Evaluating inside the core (text in, results out) is meant to
