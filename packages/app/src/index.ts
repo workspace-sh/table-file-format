@@ -43,3 +43,4 @@ export { INDEXED_FROM, storedTableRows, heldText, readHeldRows, withHeld, type H
 export { loadingViewRows, remoteEdits, remoteViewRows, rowsServer, type RemoteViewRows, type RowsRequest, type TableFacts } from "./remoteRows.ts";
 export { buildLabel, currentBuild, type BuildInfo } from "./buildInfo.ts";
 export { asStored, ingestingText, readingText } from "./reading.ts";
+export * from "./problemWords.ts";
