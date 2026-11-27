@@ -312,7 +312,12 @@ export default function TableScreen() {
               <html.span>{indexed.stale && state.search.trim().length > 0 ? "Searching…" : summary.count}</html.span>
             )}
             {indexed.building ? null : <html.span>·</html.span>}
-            {indexed.building ? null : summary.valid ? (
+            {indexed.building ? null : summary.standing === "unchecked" ? (
+              // Not yet known: as the row count is, not green; a tap says why.
+              <html.button aria-label={`${summary.validity}: what this means`} onClick={() => Alert.alert(summary.validity, summary.validityHint)} style={styles.validityButton}>
+                <html.span>{summary.validity}</html.span>
+              </html.button>
+            ) : summary.valid ? (
               <html.span style={styles.validityOk}>{summary.validity}</html.span>
             ) : (
               // Which rows, and why: the web shows them on hover, which a

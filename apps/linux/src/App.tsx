@@ -332,7 +332,7 @@ function TablePane({
           <GtkBox spacing={6} hexpand visible={!building}>
             <GtkLabel label={summary.count} cssClasses={["dim-label"]} />
             <GtkLabel label="·" cssClasses={["dim-label"]} />
-            <GtkLabel label={summary.validity} tooltipText={summary.validityHint} cssClasses={[summary.valid ? "success" : "error"]} />
+            <GtkLabel label={summary.validity} tooltipText={summary.validityHint} cssClasses={[summary.standing === "valid" ? "success" : summary.standing === "invalid" ? "error" : "dim-label"]} />
             {summary.schemaChanged ? (
               <>
                 <GtkLabel label="·" cssClasses={["dim-label"]} />

@@ -745,14 +745,22 @@ test("an indexed table's rows checked: said while checking, then its problems; a
   const table = s.tables[key]!;
   const checking = run(s, { type: "checked", key, checked: "checking" });
   assert.equal(derive(checking).summary.validity, "checking");
+  // Not known yet: drawn as the row count is, not green.
+  assert.equal(derive(checking).summary.standing, "unchecked");
   const check: IndexCheck = { rules: 1, stamp: checkStamp(table), rows: 17, total: 0, counts: {}, found: [], lines: [] };
   const checked = run(checking, { type: "checked", key, checked: check });
   assert.equal(derive(checked).summary.validity, "schema valid");
+  assert.equal(derive(checked).summary.standing, "valid");
+  // Its errors counted as the rows are, with the same formatter.
+  const many = run(checking, { type: "checked", key, checked: { ...check, total: 1_330_274, counts: { "value.maximum": 1_330_274 } } });
+  assert.equal(derive(many).summary.validity, `${(1_330_274).toLocaleString()} validation errors`);
+  assert.equal(derive(many).summary.standing, "invalid");
   // A build's count (or a fill's) keeps it as it is.
   assert.deepEqual(run(checked, { type: "indexed", key, count: 17 }).tables[key]!.indexed!.checked, check);
   // An edit landing: from before it.
   const edited = run(checked, { type: "indexed", key, count: 17, done: 1 });
   assert.equal(derive(edited).summary.validity, "not checked since edited");
+  assert.equal(derive(edited).summary.standing, "unchecked");
   // None to go by: not checked.
   assert.equal(derive(run(checked, { type: "checked", key, checked: null })).summary.validity, "not checked");
 });

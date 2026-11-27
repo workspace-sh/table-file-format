@@ -78,6 +78,8 @@ export interface TableFileChrome {
   breadcrumb: string;
   /** Whether its rows meet its schema, said ("schema valid"), and what that means. */
   valid: boolean;
+  /** Whether that's known: "unchecked" for a large table not checked (or being checked), drawn as the row count is, not green (viewSummary's `standing`). */
+  standing: "valid" | "invalid" | "unchecked";
   /** Every problem the table on screen has, with its place and fixes (table-core's problemsOf). */
   problems: Problem[];
   /** The same in a person's words, a merge conflict as one decision, in the order they're listed (problemWords). */
@@ -410,6 +412,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
     redo: () => dispatch({ type: "redo" }),
     breadcrumb: derived.breadcrumb.text,
     valid: derived.summary.valid,
+    standing: derived.summary.standing,
     problems: derived.summary.problems,
     problemItems: itemsOf(table, derived.summary.problems),
     canFix: !lookOnly && !table.indexed,
