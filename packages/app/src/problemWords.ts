@@ -68,6 +68,11 @@ export interface ProblemItem {
   quick?: ProblemFix;
   /** Said when there's nothing to fix. */
   nothing?: string;
+  /**
+   * For someone who wants to look closer: where it is in the file, and the
+   * lines as they're written. The words above are for anyone; this is not.
+   */
+  technical?: { where: string; lines: { n: number; text: string }[] };
   conflict?: ProblemConflict;
   /** How many of the library's problems this is: a conflict is four. */
   count: number;
@@ -125,8 +130,9 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
       severity: "error",
       group: "decisions",
       title: `Two versions of ${rowWords(conflict.item.row)}`,
-      where: `${conflict.file} · lines ${conflict.first + 1}–${conflict.last + 1}`,
-      explain: "A merge left both versions of this row in the file, between conflict markers. Choose what to keep. The markers go either way.",
+      where: rowWords(conflict.item.row),
+      explain: "This row was changed in two places at once, and both versions were kept. Choose the one to keep, or keep both as separate rows.",
+      technical: { where: `${conflict.file} · lines ${conflict.first + 1}–${conflict.last + 1}`, lines: conflict.lines },
       row: conflict.item.row,
       rule: [],
       fixes: [],
@@ -254,7 +260,7 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
           "line.id-repeated": "Another version of a row",
           "cell.line-unreadable": "A formula line cut short",
         }[p.code];
-        where = at.kind === "line" ? lineWhere : "rows/";
+        where = p.code === "cell.line-unreadable" ? "a formula the table can’t use" : "a line the table can’t show";
         explain = {
           "line.not-json": "It isn’t JSON, so it can’t be read. It’s kept in the file as it is.",
           "line.not-row": "It’s JSON, but not a row, so it’s kept in the file as it is.",
@@ -267,7 +273,7 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
       case "line.repeat-left-out":
         group = "notes";
         title = "A line repeated exactly";
-        where = lineWhere;
+        where = "a copy of a row";
         explain = "It’s an exact copy of the row before it, so the copy is left out. Nothing is lost.";
         nothing = "There’s nothing to fix. The copy goes when the table is saved.";
         break;
@@ -348,7 +354,7 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
       explain,
       ...(row !== undefined && field !== undefined && at.kind === "cell" ? { cell: { row, field } } : {}),
       ...(row !== undefined ? { row } : {}),
-      ...(at.kind === "line" ? { line: at.text } : {}),
+      ...(at.kind === "line" ? { line: at.text, technical: { where: lineWhere, lines: [{ n: at.line + 1, text: at.text }] } } : {}),
       rule,
       fixes,
       ...(quick ? { quick } : {}),
@@ -377,7 +383,10 @@ function fixWords(fix: Fix, field: string | undefined): ProblemFix {
 }
 
 /** A merge conflict as the reader leaves it: `<<<<<<<`, the row read first, `=======`, another line with its id, `>>>>>>>`. */
-function mergeConflict(table: ParsedTable, problems: readonly Problem[]): { item: ProblemConflict; problems: Problem[]; file: string; first: number; last: number } | null {
+function mergeConflict(
+  table: ParsedTable,
+  problems: readonly Problem[],
+): { item: ProblemConflict; problems: Problem[]; file: string; first: number; last: number; lines: { n: number; text: string }[] } | null {
   const markers = problems.filter((p) => p.code === "line.conflict-marker" && p.at.kind === "line");
   const opening = markers.find((p) => p.at.kind === "line" && p.at.text.startsWith("<<<<<<<"));
   if (!opening || opening.at.kind !== "line") return null;
@@ -407,6 +416,13 @@ function mergeConflict(table: ParsedTable, problems: readonly Problem[]): { item
     file,
     first: start,
     last: lineOf(closing),
+    lines: [
+      { n: start + 1, text: opening.at.text },
+      { n: start + 2, text: JSON.stringify(ours) },
+      ...(middle.at.kind === "line" ? [{ n: lineOf(middle) + 1, text: middle.at.text }] : []),
+      { n: lineOf(theirs) + 1, text: theirs.at.text },
+      ...(closing.at.kind === "line" ? [{ n: lineOf(closing) + 1, text: closing.at.text }] : []),
+    ],
     problems: [opening, middle, closing, theirs],
     item: {
       row: id,
