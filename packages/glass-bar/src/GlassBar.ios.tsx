@@ -321,12 +321,15 @@ function Lead(props: Part) {
   const tucked = !!expansion?.on;
   const rest = state.kind === "rest";
   const action = rest ? onFilter : state.kind === "selected" ? onDeselect : onCancel;
+  const off = rest && !!props.restDisabled;
   return (
     <Image
       systemName={rest ? ((restLead?.symbol as Symbol | undefined) ?? "line.3.horizontal.decrease") : "xmark"}
       size={rest ? 19 : 17}
+      {...(off ? { color: systemColor("tertiaryLabel") } : {})}
       onPress={action}
       modifiers={[
+        ...(off ? [disabled(true)] : []),
         frame({ width: tucked ? 0 : SIZE, height: tucked ? 0 : SIZE }),
         opacity(tucked ? 0 : 1),
         glass("circle"),
@@ -685,8 +688,9 @@ function Capsule(props: Part) {
             <Image
               systemName="magnifyingglass"
               size={18}
+              {...(props.restDisabled ? { color: systemColor("tertiaryLabel") } : {})}
               onPress={props.onSearch}
-              modifiers={[frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("capsule", ns), contentShape(shapes.circle()), accessibilityLabel(props.searchLabel ?? "Search")]}
+              modifiers={[...(props.restDisabled ? [disabled(true)] : []), frame({ width: SIZE, height: SIZE }), glass("circle"), glassEffectId("capsule", ns), contentShape(shapes.circle()), accessibilityLabel(props.searchLabel ?? "Search")]}
             />
           </HStack>
         );

@@ -191,6 +191,12 @@ export type GlassBarProps = {
    * chosen, opening the system's menu (a calendar's Month, Week or Agenda).
    */
   restChoice?: { label: string; options: { id: string; label: string; symbol: string; on: boolean }[]; onChoose: (id: string) => void };
+  /**
+   * At rest, the lead and Search are shown but can't be used: drawn dimmed and
+   * disabled, More still working (a file that couldn't be read, which has no
+   * view to set and nothing to search). iOS.
+   */
+  restDisabled?: boolean;
   onMore?: () => void;
   /** Rest: Search tapped. Absent: there is no search, and the bar at rest is its two buttons. */
   onSearch?: () => void;
