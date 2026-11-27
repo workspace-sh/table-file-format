@@ -47,7 +47,9 @@ export type ProblemCode =
   // Rows held in the index: checked as the index was made (#867), not checked, or not since an edit.
   | "rows.not-checked"
   | "rows.not-checked-since-edit"
-  | "rows.more-problems";
+  | "rows.checking"
+  | "rows.more-problems"
+  | "rows.links-not-checked";
 
 /**
  * - `error`: section 9 says the table isn't valid, or a line was kept that
@@ -126,6 +128,8 @@ const SEVERITY: Partial<Record<ProblemCode, Severity>> = {
   "rows.not-checked": "notice",
   "rows.not-checked-since-edit": "notice",
   "rows.more-problems": "notice",
+  "rows.checking": "notice",
+  "rows.links-not-checked": "notice",
   "cell.repeated": "warning",
   "bundle.not-a-table": "warning",
   "relation.dangling": "warning",
@@ -135,9 +139,9 @@ const SEVERITY: Partial<Record<ProblemCode, Severity>> = {
 const severityOf = (code: ProblemCode): Severity => SEVERITY[code] ?? "error";
 
 /**
- * A large table's rows checked as its index was made (#867, step 2c): what
+ * A large table's rows checked once its index is made (#867, step 2c): what
  * foundInRows finds of them, with no relation followed (a target's rows are
- * another table's, which the build doesn't read). How many problems of each
+ * another table's, which the check doesn't read). How many problems of each
  * kind, the first of them, and the lines of the rows those are of, for their
  * fixes. Kept with the index, and said by `problemsOf` while the table is as
  * it was checked.
@@ -157,6 +161,8 @@ export interface IndexCheck {
   lines: string[];
   /** The files of `attachments/` it was checked against, when they were known. */
   attachments?: string[];
+  /** Its relation fields, when it has any: their links weren't checked (a target's rows are another table's). */
+  links?: string[];
 }
 
 /** What a check of a table's rows reads besides them: the schema's rules, and which rows have pages. */
@@ -179,10 +185,11 @@ export function checkStamp(table: Pick<ParsedTable, "schema" | "bodies">): strin
   return `${text.length}:${a.toString(16)}:${b.toString(16)}`;
 }
 
-/** How a check kept with an index stands now: usable, made before an edit, or none to go by. */
-export function checkState(table: ParsedTable, context: ProblemContext = {}): { check: IndexCheck } | "since-edit" | "none" {
+/** How a check kept with an index stands now: usable, under way, made before an edit, or none to go by. */
+export function checkState(table: ParsedTable, context: ProblemContext = {}): { check: IndexCheck } | "checking" | "since-edit" | "none" {
   const check = table.indexed?.checked;
   if (!check) return "none";
+  if (check === "checking") return "checking";
   if (check.stale || check.stamp !== checkStamp(table)) return "since-edit";
   // Attachments checked against other files than these: not what's there now.
   if (context.attachments && JSON.stringify(check.attachments ?? null) !== JSON.stringify(context.attachments)) return "since-edit";
@@ -235,8 +242,10 @@ export function problemsOf(table: ParsedTable, name: string, context: ProblemCon
 
   const unchecked = table.indexed !== undefined || table.loading !== undefined;
   const state = table.indexed ? checkState(table, context) : "none";
-  if (state === "since-edit") {
-    push("rows.not-checked-since-edit", { kind: "table" }, "A table this large is read through its index. Its rows were checked against the schema as the index was made, and haven't been since they or the schema were edited.");
+  if (state === "checking") {
+    push("rows.checking", { kind: "table" }, "A table this large is read through its index, and its rows are being checked against the schema.");
+  } else if (state === "since-edit") {
+    push("rows.not-checked-since-edit", { kind: "table" }, "A table this large is read through its index. Its rows were checked against the schema once the index was made, and haven't been since they or the schema were edited.");
   } else if (unchecked && state === "none") {
     push("rows.not-checked", { kind: "table" }, "A table this large is read through its index, and its rows aren't checked against the schema one by one.");
   }
@@ -272,6 +281,9 @@ export function problemsOf(table: ParsedTable, name: string, context: ProblemCon
     const total = check.total - left;
     if (total > found.length) {
       push("rows.more-problems", { kind: "table" }, `${found.length.toLocaleString("en")} of its ${total.toLocaleString("en")} problems are listed: the first, in the order its rows have them.`, { shown: found.length, total });
+    }
+    if (check.links?.length) {
+      push("rows.links-not-checked", { kind: "table" }, `Its links to other tables (${check.links.join(", ")}) weren't checked: their rows are another table's.`, { fields: check.links.join(",") });
     }
   }
   return out;

@@ -119,11 +119,13 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
       total: input.searching ? input.inView : total,
       found: foundText(input),
       valid: true,
-      validity: state === "since-edit" ? "not checked since edited" : "not checked",
+      validity: state === "checking" ? "checking" : state === "since-edit" ? "not checked since edited" : "not checked",
       validityHint:
-        state === "since-edit"
-          ? "A table this large is read through its index. Its rows were checked against the schema as the index was made, and haven't been since they or the schema were edited."
-          : "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
+        state === "checking"
+          ? "A table this large is read through its index, and its rows are being checked against the schema."
+          : state === "since-edit"
+            ? "A table this large is read through its index. Its rows were checked against the schema once the index was made, and haven't been since they or the schema were edited."
+            : "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
       schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
       schemaChangedLabel: "schema changed",
       schemaChangedHint:
@@ -136,19 +138,22 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   // Checked as its index was made: how many errors there are is the check's, of which the first are listed.
   const count = typeof state === "object" ? checkErrors(state.check) + errors.filter((e) => e.code !== undefined && !(e.code in state.check.counts)).length : errors.length;
   const fits = count === 0;
+  // A check that didn't follow links can't say the whole table fits.
+  const links = typeof state === "object" && state.check.links?.length ? " · links not checked" : "";
+  const linksHint = links ? "\nLinks to other tables weren't checked: their rows are another table's." : "";
   return {
     count: countText(table, input, total),
     shown: input.shown,
     total: input.searching ? input.inView : total,
     found: foundText(input),
     valid: fits,
-    validity: fits ? "schema valid" : `${count} validation error${count === 1 ? "" : "s"}`,
-    validityHint: fits
+    validity: (fits ? "schema valid" : `${count} validation error${count === 1 ? "" : "s"}`) + links,
+    validityHint: (fits
       ? "Every row fits the schema: required fields are filled, choices are from their lists, and values are the right type."
       : errors
           .slice(0, HINT_ERRORS)
           .map((e) => e.message)
-          .join("\n") + (count > HINT_ERRORS ? `\n…and ${count - Math.min(HINT_ERRORS, errors.length)} more` : ""),
+          .join("\n") + (count > HINT_ERRORS ? `\n…and ${count - Math.min(HINT_ERRORS, errors.length)} more` : "")) + linksHint,
     schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
     schemaChangedLabel: "schema changed",
     schemaChangedHint:

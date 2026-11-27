@@ -1,12 +1,13 @@
-// A large table's index made from its archive with its rows checked on the way (table-file-format#867,
-// step 2c), against the same build with no check:
+// A large table's index made from its archive, then its rows checked from the index (table-file-format#867,
+// step 2c), as a host does it after the build, off the way to showing the table:
 //
 //   node --conditions=source --import tsx edn/bench/engine-check.mts <file.table> <wasm|native> <on|off> [strict]
 //
 // One build a run, into a new SQLite file, as an app makes one from a file just opened (the rows
-// files inflated a piece at a time, as indexHost reads them). Run it under `/usr/bin/time -l` for
-// the peak memory. "strict" adds constraints most rows break (as engine-problems.mts does): a
-// unique title keeps every title met, the most a check holds across files.
+// files inflated a piece at a time, as indexHost reads them); "on" then checks it. The build is
+// timed alone, and the check after it; the peak memory (maxRSS) is said after each, so a check
+// that held more than the build would show. "strict" adds constraints most rows break (as
+// engine-problems.mts does): a unique title keeps every title met, the most a check holds.
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +15,7 @@ import { join } from "node:path";
 import { loadEdn } from "../js/src/index.ts";
 import { readTableArchive } from "../../packages/core/src/archive.ts";
 import { setFormulaEngine } from "../../packages/core/src/engine.ts";
-import { checkOf } from "../../packages/core/src/indexer.ts";
+import { checkOf, indexCheck } from "../../packages/core/src/indexer.ts";
 import { readZip, type LazyZipEntry } from "../../packages/core/src/zip.ts";
 import { openNodeDatabase } from "../../packages/core/src/sqlite-node.ts";
 import { buildIndexFromBytes } from "../../packages/app/src/indexed.ts";
@@ -59,9 +60,16 @@ try {
     rows: { files: parts.map((p) => ({ name: p.name.split("/").pop()!, chunks: p.chunks() })), size },
     key: "k",
     commitEvery: 50_000,
-    ...(mode === "off" ? { check: false as const } : {}),
   });
   const build = performance.now() - s;
+  const builtRss = process.resourceUsage().maxRSS / 1e3;
+  let checking = 0;
+  if (mode === "on") {
+    const c = performance.now();
+    const run = indexCheck(db, { name: "deals", schema });
+    while (await run.step());
+    checking = performance.now() - c;
+  }
   const check = await checkOf(db, "deals");
   if (mode === "on" && !check) throw new Error("no check was kept");
   console.log(
@@ -72,7 +80,10 @@ try {
       strict: !!strict,
       rows: count,
       "build (ms)": Math.round(build),
-      "in the check (ms)": Math.round(inCheck),
+      "check, after (ms)": Math.round(checking),
+      "in the engine's check (ms)": Math.round(inCheck),
+      "peak after the build (MB)": Math.round(builtRss),
+      "peak after the check (MB)": Math.round(process.resourceUsage().maxRSS / 1e3),
       ...(check ? { problems: check.total, "kept (bytes)": JSON.stringify(check).length } : {}),
       "heap after (MB)": Math.round(process.memoryUsage().heapUsed / 1e6),
     }),

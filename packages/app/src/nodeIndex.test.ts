@@ -24,7 +24,7 @@ import {
 } from "./indexed.ts";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { checkOf, fieldChanges, isIndexStale, problemsOf, queryIndex, type TableSchema } from "@workspace.sh/table-core";
+import { checkOf, fieldChanges, indexCheck, isIndexStale, problemsOf, putRows, queryIndex, type TableSchema } from "@workspace.sh/table-core";
 import { buildTableIndex, countRows, openIndexHost, saveTableRows, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
@@ -652,7 +652,7 @@ test("a table with cells' own formulas is indexed: shown with their results, edi
   }
 });
 
-test("a large table's rows are checked as its index is made, file by file, and a file the check can't read leaves the index made and the table not checked", async () => {
+test("a large table's rows are checked after its index is made, a step at a time, and a row the check can't read leaves the index as it is and the table not checked", async () => {
   const s = scratch();
   const warned: string[] = [];
   const warn = console.warn;
@@ -661,38 +661,55 @@ test("a large table's rows are checked as its index is made, file by file, and a
     const whole = await readBundle(nodeFs, s.bundle);
     const tasks = whole.tables.tasks!;
     const host = openIndexHost(s.bundle);
-    const lines = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8").trimEnd().split("\n");
-    const half = Math.floor(lines.length / 2);
-    const enc = (text: string) => new TextEncoder().encode(text);
-    // Two rows files, in pieces cut through lines.
-    const files = (second: string) => [
-      { name: "0001.ndjson", chunks: [enc(lines.slice(0, half).join("\n").slice(0, 30)), enc(lines.slice(0, half).join("\n").slice(30) + "\n")] },
-      { name: "0002.ndjson", chunks: [enc(second)] },
-    ];
-    const rest = lines.slice(half).join("\n");
-    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(rest), size: 1 }, key: "k1" }), lines.length);
+    const run = async (batchSize?: number) => {
+      const r = indexCheck(host, { name: "tasks", schema: tasks.schema, ...(batchSize ? { batchSize } : {}) });
+      let steps = 0;
+      while (await r.step()) steps++;
+      return steps;
+    };
+    await buildTableIndex(host, "tasks", s.tasks);
+    // Nothing is checked on the way: the build is as it was.
+    assert.equal(await checkOf(host, "tasks"), null);
+    assert.ok((await run(2)) >= 3, "a step at a time");
     const check = await checkOf(host, "tasks");
     assert.ok(check, "checked");
-    assert.equal(check.rows, lines.length);
-    // What problemsOf says of the rows in memory (a relation isn't followed: the bundle isn't given).
+    assert.equal(check.rows, tasks.rows.length);
+    // What problemsOf says of the rows in memory, with the links it didn't follow said.
     const want = problemsOf(tasks, "tasks");
     assert.equal(check.total, want.length);
-    assert.deepEqual(problemsOf({ ...tasks, rows: [], indexed: { count: lines.length, version: 1, checked: check } }, "tasks"), want);
+    assert.deepEqual(check.links, ["project"]);
+    const got = problemsOf({ ...tasks, rows: [], indexed: { count: tasks.rows.length, version: 1, checked: check } }, "tasks");
+    assert.deepEqual(got.filter((p) => p.code !== "rows.links-not-checked"), want);
+    assert.ok(got.some((p) => p.code === "rows.links-not-checked"));
+    // Checked already: nothing to do again.
+    assert.equal(await run(), 0);
 
-    // A line JSON.parse reads and the engine doesn't (a key that's a lone surrogate): the index is made, with no check.
-    const corrupt = rest + '\n{"id":"odd","\\ud800":1}\n';
-    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(corrupt), size: 1 }, key: "k2" }), lines.length + 1);
-    assert.equal((await queryIndex(host, { name: "tasks", schema: tasks.schema }))!.count, lines.length + 1);
-    assert.equal(await checkOf(host, "tasks"), null);
-    assert.match(warned.join("\n"), /tasks: its rows weren't checked as its index was made \(check\.file: rows\/0002\.ndjson: line \d+ isn't JSON the engine reads\)/);
-
-    // Asked not to, no check; built from the table's folder, as Linux's app builds it, checked.
-    await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(rest), size: 1 }, key: "k3", check: false });
-    assert.equal(await checkOf(host, "tasks"), null);
+    // Stopped part-way, nothing is kept, and the next run makes it whole.
     await buildTableIndex(host, "tasks", s.tasks);
-    assert.equal((await checkOf(host, "tasks"))?.total, want.length);
-    await buildTableIndex(host, "tasks", s.tasks, undefined, { check: false });
+    const stopped = indexCheck(host, { name: "tasks", schema: tasks.schema, batchSize: 2 });
+    assert.equal(await stopped.step(), true);
+    stopped.stop();
+    assert.equal(await stopped.step(), false);
     assert.equal(await checkOf(host, "tasks"), null);
+    await run();
+    assert.equal((await checkOf(host, "tasks"))?.total, want.length);
+
+    // An edit while it runs: what it finds is from before the edit.
+    await buildTableIndex(host, "tasks", s.tasks);
+    const during = indexCheck(host, { name: "tasks", schema: tasks.schema, batchSize: 2 });
+    await during.step();
+    await putRows(host, { name: "tasks", schema: tasks.schema, rows: [{ ...tasks.rows[0]!, title: "edited" }], key: "edited" });
+    while (await during.step());
+    assert.equal((await checkOf(host, "tasks"))?.stale, true);
+
+    // A row JSON.parse reads and the engine doesn't (a key that's a lone surrogate): the index is made, and no check.
+    const lines = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8").trimEnd();
+    const corrupt = new TextEncoder().encode(lines + '\n{"id":"odd","\\ud800":1}\n');
+    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: corrupt, key: "k2" }), tasks.rows.length + 1);
+    await run();
+    assert.equal(await checkOf(host, "tasks"), null);
+    assert.equal((await queryIndex(host, { name: "tasks", schema: tasks.schema }))!.count, tasks.rows.length + 1);
+    assert.match(warned.join("\n"), /tasks: its rows weren't checked \(check\.\w+: rows: line \d+ isn't JSON the engine reads\)/);
     await host.close();
   } finally {
     console.warn = warn;

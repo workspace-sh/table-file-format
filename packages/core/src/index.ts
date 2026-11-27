@@ -64,6 +64,8 @@ export {
   dropIndex,
   indexKey,
   checkOf,
+  indexCheck,
+  type IndexCheckRun,
   putRows,
   removeRows,
   OWN_FORMULAS,

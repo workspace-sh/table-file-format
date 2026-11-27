@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CHECK_WINDOW, startCheck } from "./engineCheck.js";
-import { buildIndex, checkOf, putRows, removeRows, type SqlDriver } from "./indexer.js";
+import { buildIndex, checkOf, indexCheck, putRows, removeRows, type SqlDriver } from "./indexer.js";
 import { problemsOf, type IndexCheck, type ProblemCode } from "./problems.js";
 import { problemRows, problemSchema as schema, random } from "./viewCases.js";
 import type { ParsedTable, Row } from "./types.js";
@@ -144,6 +144,7 @@ test("a check from before an edit says so, and no problems; with none, the table
     ["rows.not-checked-since-edit"],
   );
   assert.deepEqual(codes(indexed()), ["rows.not-checked"]);
+  assert.deepEqual(codes({ ...indexed(), indexed: { count: rows.length, version: 1, checked: "checking" } }), ["rows.checking"]);
   // A title isn't a rule: still checked.
   assert.ok(
     codes({
@@ -208,61 +209,37 @@ function driver(): SqlDriver & { raw: any } {
   };
 }
 
-test(
-  "a check is kept with the index, said to be from before an edit after one, and not read from another version of the checks",
-  { skip: sqlite ? false : "node:sqlite is not available" },
-  async () => {
-    const rows = problemRows(5, 60);
-    const table: ParsedTable = {
-      path: "",
-      schema,
-      rows,
-      views: [],
-      meta: {} as never,
-    };
-    const check = checked(table, 2, 5)!;
-    const db = driver();
-    // An index made before checks: no _checks table at all, and no error.
-    await buildIndex(db, { name: "t", schema, rows, key: "k1" });
-    db.raw.exec("drop table if exists _checks");
-    assert.equal(await checkOf(db, "t"), null);
-    await buildIndex(db, {
-      name: "t",
-      schema,
-      rows,
-      key: "k2",
-      check: () => check,
-    });
-    assert.deepEqual(await checkOf(db, "t"), check);
-    // An edit: kept, and from before it.
-    await putRows(db, {
-      name: "t",
-      schema,
-      rows: [{ ...rows[0]!, n: 50 } as Row],
-      key: "k3",
-    });
-    assert.deepEqual(await checkOf(db, "t"), { ...check, stale: true });
-    await buildIndex(db, {
-      name: "t",
-      schema,
-      rows,
-      key: "k4",
-      check: () => check,
-    });
-    await removeRows(db, { name: "t", schema, ids: [rows[1]!.id], key: "k5" });
-    assert.equal((await checkOf(db, "t"))?.stale, true);
-    // Made again with no check: the one before is no one's.
-    await buildIndex(db, { name: "t", schema, rows, key: "k6" });
-    assert.equal(await checkOf(db, "t"), null);
-    // Another version of what a check finds: not checked.
-    await buildIndex(db, {
-      name: "t",
-      schema,
-      rows,
-      key: "k7",
-      check: () => check,
-    });
-    db.raw.exec("update _checks set rules = rules + 1");
-    assert.equal(await checkOf(db, "t"), null);
-  },
-);
+test("a check made from the index once it's built is kept with it, said to be from before an edit after one, and not read from another version of the checks", { skip: sqlite ? false : "node:sqlite is not available" }, async () => {
+  const rows = problemRows(5, 60);
+  const table: ParsedTable = { path: "", schema, rows, views: [], meta: {} as never };
+  // What a check of the same rows, file by file, finds; the index's says too which links it didn't follow.
+  const want = { ...checked(table, 2, 5)!, links: ["link", "links"] };
+  const db = driver();
+  const check = async () => {
+    const run = indexCheck(db, { name: "t", schema, batchSize: 7 });
+    while (await run.step());
+  };
+  // An index made before checks: no _checks table at all, and no error.
+  await buildIndex(db, { name: "t", schema, rows, key: "k1" });
+  db.raw.exec("drop table if exists _checks");
+  assert.equal(await checkOf(db, "t"), null);
+  await check();
+  assert.deepEqual(await checkOf(db, "t"), want);
+  // An edit: kept, and from before it.
+  await putRows(db, { name: "t", schema, rows: [{ ...rows[0]!, n: 50 } as Row], key: "k3" });
+  assert.deepEqual(await checkOf(db, "t"), { ...want, stale: true });
+  // A stale check isn't made again by itself: it says it's from before the edit.
+  await check();
+  assert.equal((await checkOf(db, "t"))?.stale, true);
+  await buildIndex(db, { name: "t", schema, rows, key: "k4" });
+  await check();
+  await removeRows(db, { name: "t", schema, ids: [rows[1]!.id], key: "k5" });
+  assert.equal((await checkOf(db, "t"))?.stale, true);
+  // Made again: the check of the rows before is no one's.
+  await buildIndex(db, { name: "t", schema, rows, key: "k6" });
+  assert.equal(await checkOf(db, "t"), null);
+  // Another version of what a check finds: not checked.
+  await check();
+  db.raw.exec("update _checks set rules = rules + 1");
+  assert.equal(await checkOf(db, "t"), null);
+});

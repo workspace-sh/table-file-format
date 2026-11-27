@@ -17,14 +17,11 @@ import {
   removeRows,
   rowLocal,
   searchRows,
-  startCheck,
   type CellFormula,
-  type IndexCheck,
   type IndexQuery,
   type LazyZipEntry,
   type ParsedTable,
   type Row,
-  type RowsCheck,
   type SqlDriver,
   type TableSchema,
   type UnreadLine,
@@ -378,12 +375,6 @@ export async function buildIndexFromBytes(
     /** Rows per transaction and per batch, as buildIndex takes them: for a device that stalls on a long commit or a long batch. */
     commitEvery?: number;
     batchSize?: number;
-    /**
-     * Its rows checked as they're read (#867, step 2c), and the check kept with the index: on
-     * unless false, given the files of its `attachments/` when they're known. A check that can't be
-     * made never stops the build: the table reads as not checked, and why is said to the console.
-     */
-    check?: false | { attachments?: readonly string[] };
   },
 ): Promise<number> {
   const whole = options.rows instanceof Uint8Array ? options.rows : null;
@@ -395,30 +386,20 @@ export async function buildIndexFromBytes(
   options.onProgress?.(0, total());
   // The rows file being read, for saying where a line that couldn't be read is.
   let reading = "";
-  // The engine is given the same pieces, a file at a time, and checks each file's rows as it ends.
-  const check = options.check === false ? null : startCheck({ schema: options.schema, bodies: options.bodies, cells: options.cells }, options.check ?? {});
   async function* taken(): AsyncIterable<Uint8Array> {
     for (const file of pieces!.files ?? [{ name: "", chunks: pieces!.chunks ?? [] }]) {
       reading = file.name;
       // Every row of the files before has been taken by now: a piece is asked for only once the last one's rows are.
       await pieces!.onFile?.(file.name, done + 1);
       let last = NEWLINE;
-      check?.beginFile(file.name ? `rows/${file.name}` : "rows.ndjson");
       for await (const chunk of file.chunks) {
         await pieces!.keep?.(chunk, file.name);
         if (chunk.length > 0) last = chunk[chunk.length - 1]!;
-        check?.piece(chunk);
         yield chunk;
       }
-      check?.endFile(file.name ? `rows/${file.name}` : "rows.ndjson");
       // A file whose last line has no end: its row is its own, not the start of the next file's first.
       if (last !== NEWLINE) yield new Uint8Array([NEWLINE]);
     }
-  }
-  if (whole && check) {
-    check.beginFile("rows.ndjson");
-    check.piece(whole);
-    check.endFile("rows.ndjson");
   }
   async function* streamed(): AsyncIterable<Row> {
     const where = () => (reading ? `rows/${reading}` : "its rows");
@@ -428,32 +409,19 @@ export async function buildIndexFromBytes(
       yield row;
     }
   }
-  try {
-    await buildIndex(db, {
-      name: options.name,
-      schema: options.schema,
-      rows: streamed(),
-      bodies: options.bodies,
-      ...(options.cells ? { cells: options.cells } : {}),
-      key: options.key,
-      search: "later",
-      ...(options.commitEvery !== undefined ? { commitEvery: options.commitEvery } : {}),
-      ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
-      ...(check ? { check: () => checked(check, options.name) } : {}),
-    });
-  } finally {
-    // A build that stopped part-way: its check is no one's.
-    check?.free();
-  }
+  await buildIndex(db, {
+    name: options.name,
+    schema: options.schema,
+    rows: streamed(),
+    bodies: options.bodies,
+    ...(options.cells ? { cells: options.cells } : {}),
+    key: options.key,
+    search: "later",
+    ...(options.commitEvery !== undefined ? { commitEvery: options.commitEvery } : {}),
+    ...(options.batchSize !== undefined ? { batchSize: options.batchSize } : {}),
+  });
   options.onProgress?.(done, done);
   return done;
-}
-
-/** What a check found once the rows are all read, or null, with why said to the console. */
-export function checked(check: RowsCheck, table: string): IndexCheck | null {
-  const found = check.finish();
-  if (!found) console.warn(`${table}: its rows weren't checked as its index was made (${check.failed ?? "no answer"})`);
-  return found;
 }
 
 /** A large table's rows read into memory after all, with what couldn't be read kept (SPEC section 3): what a table held there needs. */

@@ -705,29 +705,32 @@ A held table's problems are found by the engine (`edn/crates/table/src/problems.
 | big-1000000, strict, WebAssembly | 1,330,274 | 7,765 ms | 1,011 ms | 1.1 ms |
 | big-1000000, strict, native | 1,330,274 | 7,704 ms | 767 ms | 1.0 ms |
 
-## Large tables checked as their index is made (#867, step 2c, 27 Nov 2026)
+## Large tables checked once their index is made (#867, step 2c, 27 Nov 2026)
 
-An indexed table used to read as "not checked". Now its rows are checked as its index is made. The build already streams each rows file's inflated pieces; the same pieces go to the engine (`check.*` in `edn/crates/table/src/problems.rs`). It checks whole lines a few megabytes at a time and lets them go, keeping only what crosses rows: the values a unique field or key has met, and which pages, choices and attachments some row holds. The first 200 problems are said in full as they're found, with the lines of their rows (what their fixes read).
+An indexed table used to read as "not checked". Now its rows are checked once its index is made, the way the search's own index is made: after the build, a step at a time, off the way to showing the table (`indexCheck`). The build itself is as it was.
 
-What it finds is what `problemsOf` finds of the same rows in memory, in the same order and words (`engineCheck.test.ts`), with one exception. A relation isn't followed: its target's rows are another table's, which the build doesn't read, just as `problemsOf` doesn't follow a relation to a table that isn't in memory.
+The check reads the rows back out of the index, a few thousand at a time, so a file opened again with its index kept, and a check stopped part-way, are checked the same way without a build. The engine (`check.*` in `edn/crates/table/src/problems.rs`) checks whole lines a few megabytes at a time and lets them go, keeping only what crosses rows: the values a unique field or key has met, and which pages, choices and attachments some row holds. The first 200 problems are said in full as they're found, with the lines of their rows (what their fixes read).
 
-- **Kept with the index.** The check is kept in `_checks`, in the build's own transaction, so a file opened again (no build) still has it. `checkOf` reads it back.
+What it finds is what `problemsOf` finds of the same rows in memory, in the same order and words (`engineCheck.test.ts`), with one exception. A relation isn't followed: its target's rows are another table's, which the check doesn't read, just as `problemsOf` doesn't follow a relation to a table that isn't in memory. A check of a table with relation fields names them (`links`), and the table says its links weren't checked.
+
+- **Kept with the index.** The check is kept in `_checks`; `checkOf` reads it back. A check stopped part-way keeps nothing, so the next open makes it again.
 - **Two stamps.** A check carries the engine's version of the rules (`RULES`) and a stamp of what it was checked against (the schema's rules and which rows have pages). A check from other rules reads as not checked. An index from before checks has no `_checks` table and reads the same way, with no error and no rebuild.
-- **After an edit.** An edit to the rows (`putRows`, `removeRows`, `alterIndex`) marks the check stale; it isn't deleted. So does a change of schema rules or pages. The table then says it "hasn't been checked since it was edited", with no counts.
-- **Never stops a build.** A line `JSON.parse` reads and the engine doesn't (a key that's a lone surrogate), or any engine error, leaves the index made and the table not checked, and the reason is said to the console.
+- **After an edit.** An edit to the rows (`putRows`, `removeRows`, `alterIndex`), or one made while the check runs, marks the check stale; it isn't deleted. So does a change of schema rules or pages. The table then says it "hasn't been checked since it was edited", with no counts.
+- **Four states.** Checked (its problems, the first 200 in full), checking, not checked since edited, and not checked.
+- **Never fails anything.** A row `JSON.parse` reads and the engine doesn't (a key that's a lone surrogate), or any engine error, leaves the index as it is and the table not checked, and the reason is said to the console.
 
-`edn/bench/engine-check.mts` makes the index of big-1000000 from its archive as an app does (the rows files inflated a piece at a time, into a new SQLite file), with the check on and off. Apple M1, Node 22.23.2, node:sqlite, medians of 3 runs, each in a fresh process; peak memory from `/usr/bin/time -l`. "Strict" adds the constraints of step 2b's bench (a unique title among them), giving 1,330,274 problems.
+`edn/bench/engine-check.mts` makes the index of big-1000000 from its archive as an app does (the rows files inflated a piece at a time, into a new SQLite file), then checks it. Each build was timed alongside develop's (a worktree of it, with its own packages), the two taking turns. Apple M1, Node 22.23.2, node:sqlite, medians of 3 runs, each in a fresh process; peak memory is the process's `maxRSS` after the build and after the check. "Strict" adds the constraints of step 2b's bench (a unique title among them), giving 1,330,274 problems.
 
-| big-1000000 | Build, no check | Build, checked | Time in the check | Peak memory, no check → checked |
+| big-1000000 | Build, develop | Build, now | The check, after it | Peak: after the build → after the check |
 |---|---|---|---|---|
-| native | 15.1 s | 15.9 s (+5%) | 0.95 s | 298 → 307 MB |
-| WebAssembly | 15.0 s | 16.5 s (+10%) | 1.30 s | 332 → 342 MB |
-| strict, native | 15.0 s | 16.5 s (+10%) | 1.41 s | 311 → 487 MB |
-| strict, WebAssembly | 15.0 s | 16.9 s (+13%) | 1.81 s | 327 → 445 MB |
+| native | 14.95 s | 14.90 s | 2.9 s | 297 → 331 MB |
+| WebAssembly | 15.16 s | 15.09 s | 3.3 s | 323 → 333 MB |
+| strict, native | 14.83 s | 14.83 s | 3.4 s | 294 → 498 MB |
+| strict, WebAssembly | 15.04 s | 15.08 s | 3.9 s | 320 → 449 MB |
 
-The check costs memory only for what crosses rows: about 10 MB at most for the rows themselves, however large a rows file is, and in the strict table, every title met (a unique field keeps each value it has). What's kept with the index is small: 102 bytes for a table with no problems, 55 KB for the strict table's first 200 and their rows.
+The build is level with develop's. Of the check's time, the engine's own part is 0.95 s natively and 1.3 s in WebAssembly (1.4 s and 1.8 s strict); the rest is reading the rows back out of SQLite. Its memory comes after the build's, not on top of it: a few tens of MB for the rows in hand, and in the strict table every title met (a unique field keeps each value it has). What's kept with the index is small: 102 bytes for a table with no problems, 55 KB for the strict table's first 200 and their rows.
 
-Batches, and one buffer for all of them, are what keep it there: measured the same way, holding a whole 25 MB rows file to check it added 200 MB at peak natively, and a new buffer for each batch 95 MB.
+The engine checks in batches, using one buffer for all of them. Measured with the check fed from the build, holding a whole 25 MB rows file added 200 MB at peak natively, and a new buffer for each batch 95 MB.
 
 ## Open questions for the large-tables discussion
 

@@ -345,7 +345,21 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
         group = "notes";
         title = "Not checked since it was edited";
         where = "";
-        explain = "A table this large is read through its index. Its rows were checked as the index was made, and haven’t been since they or the schema were edited.";
+        explain = "A table this large is read through its index. Its rows were checked once the index was made, and haven’t been since they or the schema were edited.";
+        nothing = "There’s nothing to fix.";
+        break;
+      case "rows.checking":
+        group = "notes";
+        title = "Being checked";
+        where = "";
+        explain = "A table this large is read through its index, and its rows are being checked one by one.";
+        nothing = "There’s nothing to do: its problems show here when it’s done.";
+        break;
+      case "rows.links-not-checked":
+        group = "notes";
+        title = "Links not checked";
+        where = "";
+        explain = "Its links to other tables weren’t checked: the rows they point to are another table’s.";
         nothing = "There’s nothing to fix.";
         break;
       case "rows.more-problems":
