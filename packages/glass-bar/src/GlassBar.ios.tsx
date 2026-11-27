@@ -51,6 +51,7 @@ import {
   autocorrectionDisabled,
   background,
   buttonStyle,
+  controlSize,
   datePickerStyle,
   contentShape,
   contentTransition,
@@ -732,10 +733,21 @@ function Capsule(props: Part) {
               {state.prefix ? <PrefixBadge text={state.prefix} size={14} /> : null}
               <Text modifiers={[font({ size: state.monospaced || state.prefix ? 14 : 16, design: state.monospaced || state.prefix ? "monospaced" : "default" }), lineLimit(1)]}>{state.value || " "}</Text>
             </HStack>
-            {/* The field's own help, as the web shows it on hover. */}
-            {state.about ? <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text> : null}
+            {/* What's wrong with it, when it breaks the table's rules; otherwise the field's own help, as the web shows it on hover. */}
+            {state.fix ? (
+              <Text modifiers={[font({ size: 11 }), foregroundStyle("red"), lineLimit(1)]}>{state.fix.problem}</Text>
+            ) : state.about ? (
+              <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text>
+            ) : null}
           </VStack>
           <Spacer />
+          {state.fix ? (
+            <Button
+              label={state.fix.label}
+              onPress={state.fix.onPress}
+              modifiers={[buttonStyle("bordered"), controlSize("small"), lineLimit(1), fixedSize({ horizontal: true, vertical: false }), accessibilityLabel(`${state.fix.problem}. ${state.fix.label}`)]}
+            />
+          ) : null}
           {state.facts ? (
             <Info title={state.factsTitle ?? state.label} facts={state.facts} onSettings={props.onInfoSettings} />
           ) : state.info ? (

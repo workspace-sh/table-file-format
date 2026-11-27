@@ -59,6 +59,11 @@ function workingOf(d: FormulaDetails): GlassBarWorking {
 }
 
 export interface GlassEditorOptions {
+  /**
+   * The host's fix for a selected cell that breaks its table's rules: what's
+   * wrong, and a button to put it right. Absent, or undefined for a cell, none.
+   */
+  cellFix?: (cell: { rowId: string; field: string }) => { problem: string; label: string; onPress: () => void } | undefined;
   query: string;
   onQuery: (query: string) => void;
   onFilter: () => void;
@@ -101,7 +106,7 @@ const EXPANDED = 300;
 /** Under the navigation bar: a cell above this is hidden behind it. */
 const TOP = 112;
 
-export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, ownFormulas, noSearch, drafts }: GlassEditorOptions) {
+export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScrollBy, formulasOnly, ownFormulas, noSearch, drafts, cellFix }: GlassEditorOptions) {
   const [selection, setSelection] = useState<CellEditorSelection | null>(null);
   const [session, setSession] = useState<CellEditSession | null>(null);
   // The edit's removable prefix (a cell's own formula's "="), until the reader takes it away.
@@ -274,6 +279,10 @@ export function useGlassEditor({ query, onQuery, onFilter, moreActions, onScroll
       info: !!selection.facts,
       facts: selection.facts,
       factsTitle: selection.label,
+      ...(() => {
+        const fix = selection.formula ? undefined : cellFix?.({ rowId: selection.rowId, field: selection.name });
+        return fix ? { fix } : {};
+      })(),
     };
   } else state = { kind: "rest", query };
 
