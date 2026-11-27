@@ -27,6 +27,11 @@ export type GlassBarState =
        */
       facts?: string;
       factsTitle?: string;
+      /**
+       * The cell breaks its table's rules: what's wrong, said under its value,
+       * and a button to put it right ("Make It 0", or "Fix…" to choose).
+       */
+      fix?: { problem: string; label: string; onPress: () => void };
     }
   /** The editor. */
   | GlassBarEditing
