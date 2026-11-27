@@ -24,7 +24,12 @@ const EXPECTED = JSON.parse(gunzipSync(readFileSync(new URL("./expected.json.gz"
   grids: Record<string, { ids: string[]; groups: unknown[]; loop: boolean; fields: Record<string, unknown[]> } | null>;
 };
 
-/** A moment past midnight UTC in some places and before it in others: the date is the reader's own. */
+/**
+ * A moment past midnight in some places and before it in others: the date is the reader's own. The
+ * expected values were recorded where it was already 25 October, so the reader's zone is pinned to
+ * one ahead of UTC; on a machine in UTC (CI) `today` would otherwise be the 24th.
+ */
+process.env.TZ = "Europe/Paris";
 const MOMENT = new Date("2026-10-24T23:30:15.250Z");
 
 function same(edn: Edn, tables: Record<string, ParsedTable>, label: string): { core: number; host: number } {
