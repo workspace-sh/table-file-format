@@ -126,8 +126,11 @@ export interface ViewProps {
   onInsertRow?: (anchor: string, where: "above" | "below") => void;
   /** Where you are in the view, reported as it changes: the cell selected. For history, which keeps it. */
   onPlace?: (place: { rowId?: string; field?: string }) => void;
-  /** A place to put back, going back to the view: the cell selected again. `n` counts each, so the same one twice is news. */
-  restorePlace?: { place: { rowId?: string; field?: string }; n: number } | null;
+  /**
+   * A place to put back, going back to the view: the cell selected again. `n` counts each, so the same one twice is news.
+   * `flash`: it was just changed from outside the cell (a fix chosen elsewhere), and is washed green for a moment so it's seen.
+   */
+  restorePlace?: { place: { rowId?: string; field?: string }; n: number; flash?: boolean } | null;
   /**
    * For the app that scrolls the view: which row is at a point on screen,
    * and where a row is now, in window coordinates. How far down is kept

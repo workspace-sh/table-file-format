@@ -86,7 +86,7 @@ export interface TableFileChrome {
   canFix: boolean;
   /** Makes `fixes` as one edit called `name` ("Make It 0"), undone as any other. */
   fix: (fixes: Fix[], name: string) => void;
-  /** Selects a cell, bringing it into view. */
+  /** Selects a cell, bringing it into view, washed green for a moment as one just changed. */
   reveal: (rowId: string, field: string) => void;
   validity: string;
   validityHint: string;
@@ -334,7 +334,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
   }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
-  const [select, setSelect] = useState<{ place: { rowId: string; field?: string }; n: number } | null>(null);
+  const [select, setSelect] = useState<{ place: { rowId: string; field?: string }; n: number; flash?: boolean } | null>(null);
   // New Field, asked of the table's header by count.
   const [newFieldAsk, setNewFieldAsk] = useState(0);
   const goTo = (address: string, start = false) => {
@@ -416,7 +416,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
     fix: (fixes, name) => {
       if (!lookOnly) dispatch({ type: "applyFixes", fixes, name });
     },
-    reveal: (rowId, field) => setSelect((was) => ({ place: { rowId, field }, n: (was?.n ?? 0) + 1 })),
+    reveal: (rowId, field) => setSelect((was) => ({ place: { rowId, field }, n: (was?.n ?? 0) + 1, flash: true })),
     validity: derived.summary.validity,
     validityHint: derived.summary.validityHint,
     canGoBack: derived.canGoBack,

@@ -288,6 +288,10 @@ const styles = css.create({
   cellSelected: {
     boxShadow: "inset 0 0 0 2px #0a84ff",
   },
+  // A cell a fix just changed: a wash of the system's green, gone in a second.
+  cellFlashed: {
+    backgroundColor: "rgba(52, 199, 89, 0.32)",
+  },
   tableGrow: {
     flex: 1,
     minWidth: 0,
@@ -3871,6 +3875,8 @@ export function TableView({
   // The columns beside the frozen one, when they scroll sideways in their own pane, and how far.
   const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
   const pageReveal = useContext(PageReveal);
+  // A cell just changed from outside it (a fix), washed green for a moment.
+  const [flashed, setFlashed] = useState<string | null>(null);
   const gutter = useContext(PageGutter);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
@@ -4736,6 +4742,7 @@ export function TableView({
           tintOf(colorsOf(row).cells[name]),
           note !== undefined && styles.noted,
           isSelected && styles.cellSelected,
+          flashed === cellKey && styles.cellFlashed,
         ]}
         {...(note !== undefined ? { title: note } : {})}
       >
@@ -4811,8 +4818,15 @@ export function TableView({
   useEffect(() => {
     const p = restorePlace?.place;
     if (!p) return;
-    if (p.rowId && p.field && (indexed || placeOfId(p.rowId) >= 0) && fields.includes(p.field)) setSel({ rowId: p.rowId, name: p.field });
-    else setSel(null);
+    if (p.rowId && p.field && (indexed || placeOfId(p.rowId) >= 0) && fields.includes(p.field)) {
+      setSel({ rowId: p.rowId, name: p.field });
+      if (restorePlace?.flash) {
+        const key = `${p.rowId}\u0000${p.field}`;
+        setFlashed(key);
+        // Long enough to be seen as the table settles on it; a new flash takes its place.
+        setTimeout(() => setFlashed((was) => (was === key ? null : was)), 1100);
+      }
+    } else setSel(null);
     // Each place once, as it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restorePlace?.n]);
