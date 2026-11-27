@@ -94,3 +94,33 @@ fn the_table_engine_answers_through_one_call() {
     assert_eq!(unsafe { edn_call_number(instant.as_ptr(), at.as_ptr(), at.len(), &mut n) }, 0);
     assert_eq!(n, 1_775_035_800_000.0);
 }
+
+#[test]
+fn a_held_table_reads_bytes_and_gives_rows_back() {
+    use std::ffi::{CStr, CString};
+    let call = |op: &str, input: &str| {
+        let (op, input) = (CString::new(op).unwrap(), CString::new(input).unwrap());
+        let out = unsafe { edn_call(op.as_ptr(), input.as_ptr()) };
+        let s = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_string();
+        unsafe { edn_call_free(out) };
+        s
+    };
+    let h: u32 = call("rows.new", r#"{"fields":["t"]}"#).trim_start_matches("{\"value\":").trim_end_matches('}').parse().unwrap();
+    let (op, input) = (CString::new("rows.read").unwrap(), CString::new(format!(r#"{{"handle":{h}}}"#)).unwrap());
+    let rows = b"{\"id\":\"a\",\"t\":\"x\"}\n";
+    let out = unsafe { edn_call_bytes(op.as_ptr(), input.as_ptr(), rows.as_ptr(), rows.len()) };
+    assert_eq!(unsafe { CStr::from_ptr(out) }.to_str().unwrap(), r#"{"value":1}"#);
+    unsafe { edn_call_free(out) };
+    let (op, input) = (CString::new("rows.window").unwrap(), CString::new(format!(r#"{{"handle":{h},"from":0,"to":1}}"#)).unwrap());
+    let mut w = std::mem::MaybeUninit::<EdnWindow>::uninit();
+    let mut error: *mut std::ffi::c_char = std::ptr::null_mut();
+    assert_eq!(unsafe { edn_call_window(op.as_ptr(), input.as_ptr(), w.as_mut_ptr(), &mut error) }, 0);
+    let w = unsafe { w.assume_init() };
+    assert_eq!(unsafe { std::slice::from_raw_parts(w.texts.ptr, w.texts.len) }, b"ax");
+    assert_eq!(unsafe { std::slice::from_raw_parts(w.entries, w.entries_len) }, &[2, 0xfffe, 0]);
+    unsafe { edn_window_free(w) };
+    let bad = CString::new("{").unwrap();
+    assert_eq!(unsafe { edn_call_window(op.as_ptr(), bad.as_ptr(), std::ptr::null_mut(), &mut error) }, 1);
+    assert!(unsafe { CStr::from_ptr(error) }.to_str().unwrap().starts_with("{\"error\":"));
+    unsafe { edn_call_free(error) };
+}

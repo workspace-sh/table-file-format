@@ -20,6 +20,7 @@
     "core:build": "npm run build -w @workspace.sh/table-core",
     "core:test": "npm run test -w @workspace.sh/table-core",
     "core:test:wasm": "INDEXER_DRIVER=wasm npm run test -w @workspace.sh/table-core",
+    "core:test:engine-rows": "npm run test:engine-rows -w @workspace.sh/table-core",
     "core:test:watch": "npm run test:watch -w @workspace.sh/table-core",
     "core:typecheck": "npm run typecheck -w @workspace.sh/table-core",
 

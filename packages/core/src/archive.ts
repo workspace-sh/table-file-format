@@ -23,7 +23,9 @@ import { estimateRows, FIRST_ROWS_FILE, isRowsFileName, LEGACY_ROWS_FILE, layout
 const ESTIMATE_HEAD = 64 * 1024;
 import { isTableName, tableOrder } from "./bundle.js";
 import { BODY_EXTENSION, BUNDLE_EXTENSION, bodyFileName, rowIdOfBodyFile, rowTitleIn, BundleEntry, TableEntry, isArchivedRowsFile, tableNameIn, tablePath } from "./layout.js";
-import { readZip, writeZip, type LazyZipEntry } from "./zip.js";
+import { rawChunks, readZip, writeZip, type LazyZipEntry, type RawZipEntry } from "./zip.js";
+import { rowsThroughEngine } from "./engine.js";
+import { readRowsThroughEngine } from "./engineRows.js";
 
 /**
  * `.table.zip` archive transport (SPEC section 13). Portable — Node,
@@ -99,8 +101,14 @@ export async function readTableArchive(
   options: ReadArchiveOptions = {},
 ): Promise<ParsedBundle> {
   const lazyFrom = options.lazyFrom ?? 1 << 20;
+  const lazily = (name: string, size: number) => (options.rows === "later" || (!!options.rowsLazily && size >= lazyFrom)) && isArchivedRowsFile(name);
+  // Read by the engine (#867): rows files stay compressed, for it to inflate. Not when the caller
+  // takes the rows' bytes itself (`rowsElsewhere`), or the rows are read later.
+  const throughEngine = rowsThroughEngine() && !options.rowsElsewhere && options.rows !== "later";
+  const raws = new Map<string, RawZipEntry>();
   const entries = readZip(source, {
-    lazy: (name, size) => (options.rows === "later" || (!!options.rowsLazily && size >= lazyFrom)) && isArchivedRowsFile(name),
+    lazy: (name, size) => lazily(name, size) || (throughEngine && isArchivedRowsFile(name)),
+    ...(throughEngine ? { raw: (e: RawZipEntry) => void raws.set(e.name, e) } : {}),
   }).filter((e) => !isJunk(e.name));
   if (entries.length === 0) {
     throw new Error("archive contains no table entries");
@@ -123,8 +131,11 @@ export async function readTableArchive(
   const files = new Map<string, Uint8Array>();
   // The large rows files, still compressed: read only when their table is.
   const compressed = new Map<string, LazyZipEntry>();
+  // The rows files the engine reads, as the archive holds them.
+  const forEngine = new Map<string, RawZipEntry>();
   for (const e of entries) {
     if ("data" in e) files.set(e.name.slice(root.length + 1), e.data);
+    else if (throughEngine && !lazily(e.name, e.size)) forEngine.set(e.name.slice(root.length + 1), raws.get(e.name)!);
     else compressed.set(e.name.slice(root.length + 1), e);
   }
   const text = (name: string): string | undefined => {
@@ -137,7 +148,7 @@ export async function readTableArchive(
     parseOptionalJsonText<BundleMeta>(BundleEntry.meta, text(BundleEntry.meta), diagnostics) ?? {};
 
   const names = new Set<string>();
-  for (const name of [...files.keys(), ...compressed.keys()]) {
+  for (const name of [...files.keys(), ...compressed.keys(), ...forEngine.keys()]) {
     const table = tableNameIn(name);
     if (table !== null && isTableName(table)) names.add(table);
   }
@@ -148,11 +159,11 @@ export async function readTableArchive(
     const schemaRaw = text(`${prefix}${TableEntry.schema}`);
     // Its rows files in order (D51), or formatVersion 1's rows.ndjson as 0001.
     const inRows = `${prefix}${TableEntry.rowsDir}/`;
-    const shards = rowsFileOrder([...files.keys(), ...compressed.keys()].filter((p) => p.startsWith(inRows)).map((p) => p.slice(inRows.length)));
+    const shards = rowsFileOrder([...files.keys(), ...compressed.keys(), ...forEngine.keys()].filter((p) => p.startsWith(inRows)).map((p) => p.slice(inRows.length)));
     const rowsFiles =
       shards.length > 0
         ? shards.map((n) => ({ name: n, path: `${inRows}${n}` }))
-        : files.has(`${prefix}${TableEntry.rows}`) || compressed.has(`${prefix}${TableEntry.rows}`)
+        : files.has(`${prefix}${TableEntry.rows}`) || compressed.has(`${prefix}${TableEntry.rows}`) || forEngine.has(`${prefix}${TableEntry.rows}`)
           ? [{ name: FIRST_ROWS_FILE, path: `${prefix}${TableEntry.rows}` }]
           : [];
     if (schemaRaw === undefined || rowsFiles.length === 0) {
@@ -166,7 +177,7 @@ export async function readTableArchive(
     }
     // Large rows, still compressed, handed over as they are: several files as one, in file order.
     const lazyRows = rowsFiles.some((f) => compressed.has(f.path))
-      ? chained(rowsFiles.map((f) => ({ name: f.name, entry: compressed.get(f.path) ?? inflated(f.path, files.get(f.path)!) })))
+      ? chained(rowsFiles.map((f) => ({ name: f.name, entry: compressed.get(f.path) ?? inflated(f.path, files.get(f.path) ?? joined([...rawChunks(forEngine.get(f.path)!)])) })))
       : undefined;
     const tableDiagnostics: ValidationError[] = [];
     // Fatal by design — do not wrap (same posture as parseTable).
@@ -202,13 +213,28 @@ export async function readTableArchive(
     if (lazyRows && !later) {
       elsewhere = (await options.rowsLazily!(name, { schema, views, bodies, cells, meta: tableMeta }, lazyRows)) === true;
       // Not taken: read as any other.
-      if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
+      if (!elsewhere) for (const f of rowsFiles) if (!files.has(f.path) && compressed.has(f.path)) files.set(f.path, whole(compressed.get(f.path)!));
     }
     if (!elsewhere && !later) elsewhere = (await options.rowsElsewhere?.(name, { schema, views, bodies, cells, meta: tableMeta }, joined(rowsFiles.map((f) => files.get(f.path)!)))) === true;
     const unread: UnreadLine[] = [];
     const rows: Row[] = [];
     const rowFiles: { name: string; ids: string[] }[] = [];
-    if (!elsewhere && !later) {
+    if (!elsewhere && !later && throughEngine && rowsFiles.every((f) => forEngine.has(f.path) || files.has(f.path))) {
+      const label = (f: { name: string; path: string }) => (f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`);
+      const read = readRowsThroughEngine(
+        schema.fields.map((f) => f.name),
+        rowsFiles.map((f) => {
+          const raw = forEngine.get(f.path);
+          return raw
+            ? { name: f.name, label: label(f), bytes: raw.raw, zip: { method: raw.method, size: raw.size, crc: raw.crc }, stripBom: true }
+            : { name: f.name, label: label(f), bytes: files.get(f.path)!, stripBom: true };
+        }),
+        tableDiagnostics,
+        unread,
+      );
+      for (const r of read.rows) rows.push(r);
+      for (const f of read.rowFiles) rowFiles.push(f);
+    } else if (!elsewhere && !later) {
       const seen = new Map<string, Row>();
       for (const f of rowsFiles) {
         const these = parseRowsText(text(f.path) ?? "", tableDiagnostics, unread, { file: f.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${f.name}`, after: rows.at(-1)?.id ?? null, seen });

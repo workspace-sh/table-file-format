@@ -7,8 +7,8 @@
 // list and a vector, `1` and `1.0` all stay apart, and integers are strings,
 // so one beyond 2^53 survives JavaScript's numbers.
 
-import init, { canonical as wasmCanonical, computeWorkbook as wasmComputeWorkbook, formula as wasmFormula, read as wasmRead, call as wasmCall, callCheck as wasmCallCheck, callNumber as wasmCallNumber } from "../wasm/edn.js";
-import { engineFrom, type Calls, type Edn } from "./api.ts";
+import init, { canonical as wasmCanonical, computeWorkbook as wasmComputeWorkbook, formula as wasmFormula, read as wasmRead, call as wasmCall, callBytes as wasmCallBytes, callCheck as wasmCallCheck, callNumber as wasmCallNumber, callWindow as wasmCallWindow } from "../wasm/edn.js";
+import { engineFrom, type Calls, type Edn, type RowsWindow } from "./api.ts";
 
 export * from "./api.ts";
 
@@ -29,13 +29,23 @@ export function loadEdn(options: { wasm?: ArrayBuffer | ArrayBufferView | URL | 
       if (options.binding === "native") throw new Error("no native EDN library for this machine (edn/js/build-native.sh builds one)");
       const url = new URL("../wasm/edn_bg.wasm", import.meta.url);
       await init({ module_or_path: options.wasm ?? (isNode() ? await readNodeFile(url) : url) });
-      return engineFrom({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula, computeWorkbook: wasmComputeWorkbook, call: wasmCall, callCheck: wasmCallCheck, callNumber: wasmCallNumber }, "wasm");
+      return engineFrom({ read: wasmRead, canonical: wasmCanonical, formula: wasmFormula, computeWorkbook: wasmComputeWorkbook, call: wasmCall, callCheck: wasmCallCheck, callNumber: wasmCallNumber, callBytes: wasmCallBytes, callWindow: windowOf }, "wasm");
     })();
     loading.set(key, found);
   }
   return found;
 }
 
+
+/** Rows from the WebAssembly binding, as plain typed arrays: each of its getters copies, so each is read once, and the window is freed. */
+function windowOf(op: string, input: string): RowsWindow {
+  const w = wasmCallWindow(op, input);
+  try {
+    return { entries: w.entries, kinds: w.kinds, numbers: w.numbers, texts: w.texts, ends: w.ends };
+  } finally {
+    w.free();
+  }
+}
 
 /** The native library built for this machine (native/edn.<platform>-<arch>.node), or null when there isn't one. */
 async function loadNative(): Promise<Calls | null> {

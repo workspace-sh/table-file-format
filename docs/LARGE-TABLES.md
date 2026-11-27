@@ -652,6 +652,27 @@ What the numbers taught:
 - **A browser must grant the space.** The 1M index is 700 MB, and Firefox's per-site quota is a fraction of free disk: on a profile in a 3.9 GB tmpfs the build failed with `SQLITE_IOERR`. A build that runs out of space rejects with the SQLite error, and the caller should fall back to memory; `WebDatabase.persistent` says only whether OPFS was available at all.
 - Filters still scan (0.8 s at 1M, against 160 ms in Node's in-memory database); a first search at 1M is half a second. Phase 1's list should treat a window as arriving late.
 
+## Rows read by the engine (#867, step 1, 27 Nov 2026)
+
+The engine reads a table's rows files from their bytes, still compressed, and holds them as read (`edn/crates/table/src/rows.rs`). `edn/bench/engine-rows.mts` times it against the TypeScript reader. Apple M1, Node 22.23.2, medians of 3 runs, each in a fresh process.
+
+| `big-1000000.table` | WebAssembly | Native (N-API) |
+| --- | --- | --- |
+| `readTableArchive` today | 2,853 ms, 896 MB peak | 2,822 ms, 902 MB peak |
+| The engine reads and holds the rows | 1,492 ms, 308 MB held, 480 MB peak | 996 ms, 308 MB held, 245 MB peak |
+| `readTableArchive` with the switch on (the engine reads, the rows rebuilt as objects) | 2,744 ms | 2,154 ms |
+| 200 rows from the middle, crossing back and made rows | 0.13 ms | 0.12 ms |
+
+| `big-50000.table` | WebAssembly | Native |
+| --- | --- | --- |
+| `readTableArchive` today | 147 ms | 146 ms |
+| The engine reads and holds the rows | 146 ms | 47 ms |
+| `readTableArchive` with the switch on | 207 ms | 109 ms |
+
+- **Held, the rows read faster and take less memory on both.** The JavaScript heap holds 507 MB for the same million rows.
+- **Rebuilding every row as an object costs what the engine saved.** On WebAssembly a small table is slower that way. So the switch stays off until a table is shown through the handle, as an indexed one is (#867, step 2).
+- **A window costs about 0.13 ms**, against 4 to 35 ms for 200 rows from the SQLite index (Phase B above).
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.

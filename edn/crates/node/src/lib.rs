@@ -55,6 +55,34 @@ pub fn call_number(op: String, text: String) -> Option<f64> {
     workspace_table::number(&op, &text)
 }
 
+/// A `.table` engine operation that takes a file's bytes (`workspace_table::call_bytes`): JSON answered, never thrown.
+#[napi(js_name = "callBytes")]
+pub fn call_bytes(op: String, input: String, bytes: Uint8Array) -> String {
+    workspace_table::call_bytes(&op, &input, &bytes)
+}
+
+/// Rows as they cross back (`workspace_table::held::Window`).
+#[napi(object)]
+pub struct RowsWindow {
+    pub entries: Uint16Array,
+    pub kinds: Uint8Array,
+    pub numbers: Float64Array,
+    pub texts: String,
+    pub ends: Uint32Array,
+}
+
+/// A `.table` engine operation that gives rows (`workspace_table::window`), or throws `{"error": "…"}`.
+#[napi(js_name = "callWindow")]
+pub fn call_window(op: String, input: String) -> Result<RowsWindow> {
+    let w = workspace_table::window(&op, &input).map_err(|e| {
+        let mut out = String::from("{\"error\":");
+        json_string(&mut out, &e);
+        out.push('}');
+        napi::Error::new(Status::InvalidArg, out)
+    })?;
+    Ok(RowsWindow { entries: Uint16Array::new(w.entries), kinds: Uint8Array::new(w.kinds), numbers: Float64Array::new(w.numbers), texts: w.texts, ends: Uint32Array::new(w.ends) })
+}
+
 /// A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
 #[napi(object)]
 pub struct ColumnResults {

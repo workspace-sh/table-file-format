@@ -40,6 +40,23 @@ void edn_call_free(char *text);
 // 0 no) or a number from one (0, in out); -1 when op isn't one.
 int32_t edn_call_check(const char *op, const uint8_t *text, size_t len);
 int32_t edn_call_number(const char *op, const uint8_t *text, size_t len, double *out);
+// Rows as they cross back (edn/crates/table/src/held.rs, Window); given back once to edn_window_free.
+typedef struct {
+  uint16_t *entries;
+  size_t entries_len;
+  EdnBytes kinds;
+  double *numbers;
+  size_t numbers_len;
+  EdnBytes texts;
+  uint32_t *ends;
+  size_t ends_len;
+} EdnWindow;
+// An operation that takes a file's bytes (rows.read): as edn_call, with the bytes beside its input.
+char *edn_call_bytes(const char *op, const char *input, const uint8_t *bytes, size_t len);
+// An operation that gives rows (rows.window): 0 with them in out, or 1 with {"error": "..."} in error
+// (given back to edn_call_free); each untouched otherwise.
+int32_t edn_call_window(const char *op, const char *input, EdnWindow *out, char **error);
+void edn_window_free(EdnWindow w);
 // On 1, columns is untouched and error holds the error; on 0, error is untouched.
 int32_t edn_compute_workbook(const uint8_t *json, size_t len, const double *numbers, size_t numbers_len, EdnColumns *columns, EdnBytes *error);
 void edn_bytes_free(EdnBytes b);

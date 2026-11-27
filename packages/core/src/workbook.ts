@@ -64,6 +64,10 @@ export interface FormulaEngine {
   callCheck(op: string, text: string): boolean | undefined | null;
   /** A `.table` number from one text (NaN included), with no JSON either way. Undefined (or null) when `op` isn't one. */
   callNumber(op: string, text: string): number | undefined | null;
+  /** A `.table` operation that takes a file's bytes beside its input: JSON answered as `call` answers. */
+  callBytes(op: string, input: string, bytes: Uint8Array): string;
+  /** A `.table` operation that gives rows, as typed arrays (`RowsWindow` in engineRows.ts). */
+  callWindow(op: string, input: string): { entries: Uint16Array; kinds: Uint8Array; numbers: Float64Array; texts: string; ends: Uint32Array };
 }
 
 /** Said once of a table whose formulas wait for the core: the app hasn't loaded it (yet). */

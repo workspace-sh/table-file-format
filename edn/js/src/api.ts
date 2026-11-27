@@ -70,6 +70,10 @@ export interface Edn {
   callCheck(op: string, text: string): boolean | undefined | null;
   /** A `.table` number from one text (NaN included), with no JSON either way. Undefined (or null) when `op` isn't one. */
   callNumber(op: string, text: string): number | undefined | null;
+  /** A `.table` operation that takes a file's bytes beside its input (`rows.read`): JSON answered as `call` answers. */
+  callBytes(op: string, input: string, bytes: Uint8Array): string;
+  /** A `.table` operation that gives rows (`rows.window`), as typed arrays; throws `{"error": "…"}` as JSON. */
+  callWindow(op: string, input: string): RowsWindow;
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
@@ -137,7 +141,25 @@ export type Calls = {
   call?(op: string, input: string): string;
   callCheck?(op: string, text: string): boolean | undefined | null;
   callNumber?(op: string, text: string): number | undefined | null;
+  callBytes?(op: string, input: string, bytes: Uint8Array): string;
+  callWindow?(op: string, input: string): RowsWindow;
 };
+
+/**
+ * Rows as they cross back from the engine (edn/crates/table/src/held.rs, `Window`): per row, its
+ * keys in the order its line writes them, each with its kind, and its value from the stream that
+ * kind reads.
+ */
+export interface RowsWindow {
+  /** Per row: how many keys, then each key (a field's index, 0xfffe the id, 0xffff a key the schema doesn't name, whose name is the next text). */
+  entries: Uint16Array;
+  /** Per key: 1 null, 2 number, 3 text, 4 escaped text, 5 true, 6 false, 7 an array or object as written. */
+  kinds: Uint8Array;
+  numbers: Float64Array;
+  /** Every text, one after another; `ends` says where each ends, in UTF-16 code units. */
+  texts: string;
+  ends: Uint32Array;
+}
 
 /** A binding's call, or one that says the binding was built before it had it. */
 function present<F>(f: F | undefined, name: string, binding: string): F {
@@ -164,6 +186,8 @@ export const engineFrom = (c: Calls, binding: "native" | "wasm"): Edn => ({
   call: present(c.call, "call", binding),
   callCheck: present(c.callCheck, "callCheck", binding),
   callNumber: present(c.callNumber, "callNumber", binding),
+  callBytes: present(c.callBytes, "callBytes", binding),
+  callWindow: present(c.callWindow, "callWindow", binding),
   binding,
 });
 

@@ -16,6 +16,9 @@
 //! An operation is named `module.function`, after the TypeScript module and
 //! export it serves (`encoding.isDate`); `OPS` lists them all.
 
+pub mod held;
+pub mod rows;
+
 use serde_json::Value as J;
 use workspace_edn::encoding;
 use workspace_edn::formula::json_string;
@@ -29,7 +32,18 @@ pub const OPS: &[&str] = &[
     "encoding.isYearMonth",
     "encoding.instantOf",
     "encoding.completeSeconds",
+    "rows.new",
+    "rows.count",
+    "rows.bytes",
+    "rows.lines",
+    "rows.free",
 ];
+
+/// The operations `call_bytes` knows: a file's bytes in.
+pub const BYTES_OPS: &[&str] = &["rows.read"];
+
+/// The operations `window` knows: rows out as typed arrays.
+pub const WINDOW_OPS: &[&str] = &["rows.window"];
 
 /// The checks `check` answers: a yes or no about one text.
 fn checks(op: &str) -> Option<fn(&str) -> bool> {
@@ -68,6 +82,8 @@ enum Answer {
     Bool(bool),
     Number(f64),
     Text(String),
+    /// JSON already written.
+    Json(String),
 }
 
 /// Run `op` with `input`. Never panics on bad input: a mistake is `{"error": "…"}`.
@@ -75,6 +91,10 @@ pub fn call(op: &str, input: &str) -> String {
     let result = serde_json::from_str::<J>(input)
         .map_err(|e| format!("the input isn't JSON: {e}"))
         .and_then(|input| dispatch(op, &input));
+    answer(result)
+}
+
+fn answer(result: Result<Answer, String>) -> String {
     let mut out = String::from("{\"");
     match result {
         Ok(answer) => {
@@ -85,6 +105,7 @@ pub fn call(op: &str, input: &str) -> String {
                 Answer::Number(n) if n.is_finite() => out.push_str(&n.to_string()),
                 Answer::Number(_) => out.push_str("null"),
                 Answer::Text(t) => json_string(&mut out, &t),
+                Answer::Json(j) => out.push_str(&j),
             }
         }
         Err(message) => {
@@ -96,7 +117,22 @@ pub fn call(op: &str, input: &str) -> String {
     out
 }
 
+/// Run `op` with `input` and `bytes` (a file's, as `rows.read` takes them). Never panics on bad
+/// input: a mistake is `{"error": "…"}`.
+pub fn call_bytes(op: &str, input: &str, bytes: &[u8]) -> String {
+    let result = serde_json::from_str::<J>(input).map_err(|e| format!("the input isn't JSON: {e}")).and_then(|input| held::call_bytes(op, &input, bytes));
+    answer(result.map(Answer::Json))
+}
+
+/// Run `op` with `input` for rows as typed arrays (`rows.window`), or the mistake.
+pub fn window(op: &str, input: &str) -> Result<held::Window, String> {
+    serde_json::from_str::<J>(input).map_err(|e| format!("the input isn't JSON: {e}")).and_then(|input| held::window(op, &input))
+}
+
 fn dispatch(op: &str, input: &J) -> Result<Answer, String> {
+    if let Some(r) = held::call(op, input) {
+        return r.map(Answer::Json);
+    }
     if let Some(f) = checks(op) {
         return Ok(Answer::Bool(f(text(input, "value")?)));
     }
@@ -145,6 +181,7 @@ mod tests {
     #[test]
     fn a_mistake_is_an_error_that_says_what_is_wrong() {
         let unknown = call("encoding.nothing", "{}");
+        assert!(call("rows.count", r#"{"handle":999999}"#).contains("no table is held as 999999"));
         assert!(unknown.starts_with(r#"{"error":"\"encoding.nothing\" isn't an operation; there are encoding.isDate"#), "{unknown}");
         assert_eq!(call("encoding.isDate", r#"{"value":1}"#), r#"{"error":"the input needs \"value\", as text"}"#);
         assert!(call("encoding.isDate", "{").starts_with(r#"{"error":"the input isn't JSON"#));
