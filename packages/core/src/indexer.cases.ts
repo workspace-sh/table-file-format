@@ -8,6 +8,8 @@ import { arraySource, memoryViewRows } from "./row-source.js";
 import { alterIndex, buildIndex, buildSearchIndex, fillIndex, indexFilling, storedRows, rowsBeingBuilt, dropIndex, indexKey, isIndexStale, putRows, queryIndex, removeRows, type SqlDriver } from "./indexer.js";
 import type { ParsedTable, Row, TableSchema, View, ViewFilter } from "./types.js";
 import type { SqlValue } from "./indexer.js";
+import { bodiesFor, dates, makeRows, random, randomFilter, schema } from "./viewCases.js";
+import { viewCases } from "./viewCases.js";
 
 /** The parts of node:assert/strict the cases use. */
 export interface CaseAssert {
@@ -22,82 +24,12 @@ export type CaseTest = (name: string, run: () => void | Promise<void>) => void;
 
 /** Each case, registered with `test`; `driver` opens a fresh, empty database each time it's called. */
 export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => SqlDriver): void {
-  // A small seeded generator, so a failure replays.
-  function random(seed: number) {
-    let a = seed >>> 0;
-    const next = () => {
-      a = (a + 0x6d2b79f5) >>> 0;
-      let t = a;
-      t = Math.imul(t ^ (t >>> 15), t | 1);
-      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-    const int = (n: number) => Math.floor(next() * n);
-    const pick = <T,>(xs: readonly T[]): T => xs[int(xs.length)]!;
-    return { next, int, pick };
-  }
-
-  const schema: TableSchema = {
-    fields: [
-      { name: "name", type: "string" },
-      { name: "n", type: "number" },
-      { name: "flag", type: "boolean" },
-      { name: "when", type: "datetime" },
-      { name: "day", type: "date" },
-      { name: "level", type: "string", constraints: { enum: ["low", "mid", "high"] } },
-      { name: "tags", type: "array" },
-      { name: "double", type: "number", computed: { dialect: "table-expr-v1", expr: "(* n 2)" } },
-    ],
-  };
-
-  const names = ["Apple", "apple", "APPLE", "banana", "Ünï", "ünï", "İstanbul", "ǅ", "😀 smile", "Ａ", "a b", "ab", "z", "Z", "\u{10000}x", "xＡ", "a\u0001b", "needle in hay", "100%", "_x"];
-  const dates = ["2026-01-02T10:00:00+02:00", "2026-01-02T09:00:00Z", "2026-01-02T08:30:00Z", "2025-12-31T23:59:59Z", "2026-03-01T00:00:00-05:00"];
-  const days = ["2026-01-01", "2026-02-03", "2025-12-31"];
-  const tagPool: (string | number)[] = ["a", "b", "c", 1, 2, "", "A"];
-  const blankish: unknown[] = [undefined, null, ""];
-
-  function makeRows(seed: number, count: number): Row[] {
-    const r = random(seed);
-    const maybe = (make: () => unknown): unknown => (r.int(5) === 0 ? r.pick(blankish) : make());
-    const rows: Row[] = [];
-    for (let i = 0; i < count; i++) {
-      const row: Row = { id: `r${i}-${r.pick(["X", "y", "Q"])}` };
-      const set = (k: string, v: unknown) => {
-        if (v !== undefined) row[k] = v as never;
-      };
-      set("name", maybe(() => r.pick(names)));
-      set("n", maybe(() => r.pick([-1, 0, 1, 2.5, 10, 100, 100, 7])));
-      set("flag", maybe(() => r.int(2) === 0));
-      set("when", maybe(() => r.pick(dates)));
-      set("day", maybe(() => r.pick(days)));
-      set("level", maybe(() => r.pick(["low", "mid", "high", "other"])));
-      set("tags", maybe(() => Array.from({ length: r.int(3) }, () => r.pick(tagPool))));
-      rows.push(row);
-    }
-    return rows;
-  }
-
-  function bodiesFor(rows: Row[], seed: number): Record<string, string> {
-    const r = random(seed);
-    const out: Record<string, string> = {};
-    for (const row of rows) if (r.int(4) === 0) out[row.id] = r.pick(["Needle in the body", "ÜNÏ page", "plain", "x\nneedle"]);
-    return out;
-  }
-
-  const ops = ["eq", "neq", "gt", "gte", "lt", "lte", "contains", "not_contains", "starts_with", "ends_with", "empty", "not_empty", "in", "not_in"] as const;
-
-  function randomFilter(r: ReturnType<typeof random>): ViewFilter {
-    const field = r.pick(["name", "n", "flag", "when", "day", "level", "tags", "double"]);
-    const operator = r.pick(ops);
-    const pool: unknown[] = [...names, ...dates, ...days, "low", "high", "a", "b", 1, 2, 10, 100, 2.5, -1, 0, true, false, "", "ap", "ünï", "p", "A"];
-    const value =
-      operator === "in" || operator === "not_in"
-        ? Array.from({ length: r.int(4) }, () => r.pick(pool))
-        : operator === "empty" || operator === "not_empty"
-          ? undefined
-          : r.pick(pool);
-    return value === undefined ? { field, operator } : ({ field, operator, value } as ViewFilter);
-  }
+  // The view cases every implementation runs, over the same seeded rows (viewCases.ts), here against the index.
+  viewCases(test, assert, "the index", async (rows, bodies, schema) => {
+    const db = driver();
+    await buildIndex(db, { name: "t", schema, rows, ...(bodies ? { bodies } : {}), key: "k1", batchSize: 64 });
+    return (query) => queryIndex(db, { name: "t", schema, query });
+  });
 
   const plain = (rows: Row[]) => JSON.parse(JSON.stringify(rows)) as Row[];
 
@@ -121,54 +53,6 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
   function tableOf(rows: Row[], bodies?: Record<string, string>): ParsedTable {
     return { path: "", schema, rows, views: [], meta: {} as never, bodies };
   }
-
-  test("the index answers what applyView and searchRows answer", async () => {
-    let compared = 0;
-    let fell = 0;
-    for (const seed of [1, 2, 3]) {
-      const rows = makeRows(seed, 300);
-      const bodies = bodiesFor(rows, seed);
-      const table = tableOf(rows, bodies);
-      const db = driver();
-      await buildIndex(db, { name: "t", schema, rows, bodies, key: "k1", batchSize: 64 });
-      const r = random(seed * 977);
-      for (let q = 0; q < 700; q++) {
-        const filter = Array.from({ length: r.int(3) }, () => randomFilter(r));
-        const sorts = Array.from({ length: r.int(3) }, () => ({
-          field: r.pick(["name", "n", "flag", "when", "day", "level", "double"]),
-          direction: r.pick(["asc", "desc"] as const),
-        }));
-        const order = r.int(6) === 0 ? Array.from({ length: 1 + r.int(8) }, () => r.pick(rows).id) : undefined;
-        const view: View = { id: "v", name: "v", layout: "table", filter, sort: sorts, order };
-        const search = r.int(4) === 0 ? r.pick(["needle", " NEEDLE ", "ünï", "ap", "a b", "x", "r1", "ǅ", "Ａ", "😀", "100%", "_x", "a\u0001b", "zzz"]) : undefined;
-        if (await check(db, table, view, search, `seed ${seed}`)) compared++;
-        else fell++;
-      }
-    }
-    // Most queries are answered by the index; the rest are said to be unanswerable, not guessed.
-    assert.ok(compared > fell, `index answered ${compared}, fell back ${fell}`);
-  });
-
-  test("every operator is checked one at a time against each field", async () => {
-    const rows = makeRows(11, 200);
-    const bodies = bodiesFor(rows, 11);
-    const table = tableOf(rows, bodies);
-    const db = driver();
-    await buildIndex(db, { name: "t", schema, rows, bodies, key: "k" });
-    const r = random(5);
-    let compared = 0;
-    for (const operator of ops) {
-      for (const field of ["name", "n", "flag", "when", "day", "level", "tags", "double"]) {
-        for (let i = 0; i < 25; i++) {
-          const f = randomFilter(r);
-          const filter = { ...f, field, operator } as ViewFilter;
-          if (operator === "in" || operator === "not_in") (filter as { value: unknown }).value = Array.isArray(f.value) ? f.value : [f.value];
-          if (await check(db, table, { id: "v", name: "v", layout: "table", filter: [filter] }, undefined, `${operator} ${field}`)) compared++;
-        }
-      }
-    }
-    assert.ok(compared > 1000, `compared ${compared}`);
-  });
 
   test("a field holding values its type doesn't is not answered by the index", async () => {
     const rows: Row[] = [
@@ -344,58 +228,6 @@ export function indexerCases(test: CaseTest, assert: CaseAssert, driver: () => S
     for (const [a, b] of [[0, 10], [35, 60], [5, 5], [-3, 2]] as const) {
       assert.deepEqual(await indexed.rows(Math.max(a, 0), b), memory.rows(a, b));
     }
-  });
-
-  test("groups, totals, ids and places are what the rows in memory give", async () => {
-    let compared = 0;
-    let fell = 0;
-    const totalKinds = ["sum", "average", "min", "max", "count", "count_empty"] as const;
-    for (const seed of [11, 12]) {
-      const rows = makeRows(seed, 300);
-      // Fractions, which don't add up the same in any order.
-      const f = random(seed);
-      for (const row of rows) if (typeof row.n === "number" && f.int(3) === 0) row.n = f.pick([0.1, 0.2, 0.3, 1e16, -1e16, 1 / 3]);
-      const bodies = bodiesFor(rows, seed);
-      const table = tableOf(rows, bodies);
-      const db = driver();
-      await buildIndex(db, { name: "t", schema, rows, bodies, key: "k1", batchSize: 64 });
-      const r = random(seed * 31);
-      for (let q = 0; q < 300; q++) {
-        const filter = Array.from({ length: r.int(2) }, () => randomFilter(r));
-        const sort = Array.from({ length: r.int(3) }, () => ({ field: r.pick(["name", "n", "flag", "when", "day", "level"]), direction: r.pick(["asc", "desc"] as const) }));
-        const order = r.int(8) === 0 ? Array.from({ length: 1 + r.int(8) }, () => r.pick(rows).id) : undefined;
-        const group = r.int(4) === 0 ? undefined : r.pick(["name", "n", "flag", "when", "day", "level", "tags", "double", "nope"]);
-        const totals = Object.fromEntries(
-          Array.from({ length: r.int(4) }, () => [r.pick(["name", "n", "flag", "level", "tags", "double", "nope"]), r.pick(totalKinds)]),
-        );
-        const search = r.int(5) === 0 ? r.pick(["needle", "ap", "x", "r1"]) : undefined;
-        const view: View = { id: "v", name: "v", layout: "table", filter, sort, order };
-        const query = { filter, sort, order, search, group, totals };
-        const label = `seed ${seed}: ${JSON.stringify(query)}`;
-        const got = await queryIndex(db, { name: "t", schema, query });
-        if (!got) {
-          fell++;
-          continue;
-        }
-        compared++;
-        const inView = applyView(table, view);
-        const shown = search ? searchRows(inView, search, { schema, bodies }) : inView;
-        const want = memoryViewRows(plain(shown), { inView: inView.length, group, schema, totals });
-        assert.equal(got.count, want.count, `count, ${label}`);
-        assert.equal(got.inView, want.inView, `inView, ${label}`);
-        assert.deepEqual(await got.groups(), want.groups(), `groups, ${label}`);
-        assert.deepEqual(await got.ids(0, want.count), want.ids(0, want.count), `ids, ${label}`);
-        const a = r.int(want.count + 1);
-        const b = a + r.int(40);
-        assert.deepEqual(await got.rows(a, b), want.rows(a, b), `rows ${a} to ${b}, ${label}`);
-        assert.deepEqual(await got.totals(), want.totals(), `totals, ${label}`);
-        for (const id of [r.pick(rows).id, r.pick(rows).id, "nobody"]) {
-          assert.equal(await got.placeOf(id), want.placeOf(id), `place of ${id}, ${label}`);
-          assert.deepEqual(await got.row(id), want.row(id), `row ${id}, ${label}`);
-        }
-      }
-    }
-    assert.ok(compared > fell, `index answered ${compared}, fell back ${fell}`);
   });
 
   test("a search index left for later answers the same before, while and after it's made, through edits", async () => {

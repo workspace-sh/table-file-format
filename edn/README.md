@@ -93,6 +93,11 @@ tables by handle, and two more shapes reach them:
   keys in the order its line writes them (`held::Window`).
 - `rows.lines` gives the lines that weren't rows, `rows.count`, `rows.bytes`,
   and `rows.free` ends the handle.
+- `rows.query {handle, fields, query, bodies?}` works out a view
+  (`crates/table/src/view.rs`), or answers null when it can't promise what
+  memory gives, as the SQLite index does. `rows.window`, `rows.ids` and
+  `rows.place` then read it by `view`. table-core's `heldViewRows`
+  (`packages/core/src/engineViews.ts`) is its ViewRows.
 
 A file can come from anyone, so nothing it says is allocated before it's
 checked: a size its bytes can't be is corrupt, and memory is asked for
