@@ -166,6 +166,7 @@ import { animateNextLayout } from "./internal/animateNextLayout";
 import { HOVERS, RESIZE_BY_LINES } from "./internal/hovers";
 import { GridKeys, type GridKeysHandle } from "./internal/GridKeys";
 import { Bleed, GutterSpacer } from "./internal/Bleed";
+import { PageGutter } from "./pageGutter";
 import { onWindowResize } from "./internal/onWindowResize";
 import { useCompactSide, useCompactViewport, useViewportWidth } from "./internal/useViewportWidth";
 import { PLATFORM_OS } from "./internal/platformOS";
@@ -3289,11 +3290,39 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
-function EdgeToEdge({ on, fill, children, snapTo }: { on: boolean; fill?: boolean; children: ReactNode; snapTo?: readonly number[] }) {
+function EdgeToEdge({
+  on,
+  fill,
+  children,
+  snapTo,
+  scroll,
+}: {
+  on: boolean;
+  fill?: boolean;
+  children: ReactNode;
+  snapTo?: readonly number[];
+  /** Where it's scrolled to, and its scroller, for a selection to be brought into view (as PaneScroll's). */
+  scroll?: { ref: { current: unknown }; x: { current: number } };
+}) {
   if (!on) return <>{children}</>;
   return (
     <Bleed>
-      <HScroll snapTo={snapTo} scrollProps={fill ? { contentContainerStyle: PANE_CONTENT } : undefined}>
+      <HScroll
+        snapTo={snapTo}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        scrollProps={
+          {
+            ...(fill ? { contentContainerStyle: PANE_CONTENT } : {}),
+            ...(scroll
+              ? {
+                  ref: scroll.ref,
+                  onScroll: (e: { nativeEvent: { contentOffset: { x: number } } }) => void (scroll.x.current = e.nativeEvent.contentOffset.x),
+                  scrollEventThrottle: 16,
+                }
+              : {}),
+          } as any
+        }
+      >
         <html.div style={[styles.bleedRow, fill && styles.fitGrow]}>
           <GutterSpacer />
           {children}
@@ -3842,6 +3871,7 @@ export function TableView({
   // The columns beside the frozen one, when they scroll sideways in their own pane, and how far.
   const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
   const pageReveal = useContext(PageReveal);
+  const gutter = useContext(PageGutter);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
   // whatever this reader's sort or search (D41).
@@ -5204,6 +5234,29 @@ export function TableView({
       cell.scrollIntoView({ block: "nearest", inline: "nearest" });
       return;
     }
+    // Native, a column off to the side may not be drawn, so has no cell to measure: the pane
+    // scrolls to where it starts (its width summed from the columns before it), seen as it moves,
+    // then the cell, drawn by then, is brought into the page's view.
+    const column = frozenNames.includes(sel.name) ? -1 : restNames.indexOf(sel.name);
+    if (!cell && column >= 0 && placeOfId(sel.rowId) >= 0) {
+      void measureAnchor(paneScroll.ref.current).then((pane) => {
+        if (!pane) return;
+        const widths = widthsKey.split(",").map(Number);
+        // Edge to edge, the scroller starts at the screen's edge, the page's margin before the first column.
+        const left = (columnStarts[column] ?? 0) + (edgeToEdge ? gutter : 0);
+        const right = left + (widths[column] ?? 0);
+        const x = paneScroll.x.current;
+        const to = left < x ? left - 8 : right > x + pane.width ? right - pane.width + 8 : x;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (to !== x) (paneScroll.ref.current as any)?.scrollTo?.({ x: Math.max(0, to), animated: true });
+        setTimeout(() => {
+          const drawn = cellRefs.current[`${sel.rowId}\u0000${sel.name}`];
+          if (drawn) void measureAnchor(drawn).then((rect) => rect && pageReveal?.(rect));
+          else paneRows.current?.scrollIndexIntoView(placeOfId(sel.rowId));
+        }, 320);
+      });
+      return;
+    }
     if (cell) {
       // Native has no scrollIntoView: the columns' own pane scrolls sideways
       // here, and the page, which the app scrolls, is asked for the rest.
@@ -5539,7 +5592,7 @@ export function TableView({
         onMeasured={(width) => finishFit(fitting.name, width)}
       />
     )}
-    <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts}>
+    <EdgeToEdge on={edgeToEdge} fill={fills} snapTo={columnStarts} scroll={paneScroll}>
     <GridKeys ref={keysRef} onKeyDown={onGridKey} grow={fills} most={wide && !fillWidth ? frameMostWidth : undefined}>
     <html.div
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
