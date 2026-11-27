@@ -163,8 +163,10 @@ export function useIndexedTables<D extends IndexedTablesDatabase = IndexedTables
     const say = (checked: IndexCheck | "checking" | null): void => {
       if (still()) latest.current.dispatch({ type: "checked", key, checked });
     };
+    // "checking" from the start, never "not checked" first: the kept one, if it's of the rows as they are, takes its place.
+    say("checking");
     const kept = host.checked(name).catch(() => null);
-    void kept.then((had) => say(had && !had.stale ? had : "checking"));
+    void kept.then((had) => had && !had.stale && say(had));
     return () =>
       kept.then((had) => {
         if (had && !had.stale) return;
@@ -187,12 +189,14 @@ export function useIndexedTables<D extends IndexedTablesDatabase = IndexedTables
         const table = latest.current.tables[key];
         if (!gone.current && table?.indexed && madeFor.current.get(key) === schema) latest.current.dispatch({ type: "indexed", key, count: table.indexed.count });
       });
-      void filled.then(() => (gone.current ? undefined : host.search(tableNameOf(key)))).catch(() => {});
-      // Its rows checked beside the search's own index (neither waits for the other), filled or not.
-      void filled
+      // Its rows checked first, filled or not: a few seconds, where the search's own index takes
+      // tens of seconds at a million rows, and taking turns with it would hold the check up as long.
+      // Until it's made, a search reads every row's text, as it does now.
+      const checked = filled
         .catch(() => {})
         .then(() => (gone.current ? undefined : check?.()))
         .catch(() => {});
+      void filled.then(() => checked).then(() => (gone.current ? undefined : host.search(tableNameOf(key)))).catch(() => {});
     }, after);
   };
 
