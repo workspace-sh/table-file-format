@@ -279,6 +279,87 @@ export function read(text) {
         wasm.__wbindgen_export3(deferred3_0, deferred3_1, 1);
     }
 }
+
+/**
+ * Inflates every rows file and schema in the archive; their total size.
+ * @param {Uint8Array} bytes
+ * @returns {number}
+ */
+export function spikeInflate(bytes) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.spikeInflate(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getFloat64(retptr + 8 * 0, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        var r3 = getDataViewMemory0().getInt32(retptr + 4 * 3, true);
+        if (r3) {
+            throw takeObject(r2);
+        }
+        return r0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Reads the archive's table into the engine; its row count.
+ * @param {Uint8Array} bytes
+ * @returns {number}
+ */
+export function spikeOpen(bytes) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_export);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.spikeOpen(retptr, ptr0, len0);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0 >>> 0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * Reads rows already inflated (NDJSON) into the engine; their count.
+ * @param {string} schema
+ * @param {Uint8Array} ndjson
+ * @returns {number}
+ */
+export function spikeParse(schema, ndjson) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(schema, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(ndjson, wasm.__wbindgen_export);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.spikeParse(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        var r2 = getDataViewMemory0().getInt32(retptr + 4 * 2, true);
+        if (r2) {
+            throw takeObject(r1);
+        }
+        return r0 >>> 0;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
+ * The bytes the engine's store holds.
+ * @returns {number}
+ */
+export function spikeStoreBytes() {
+    const ret = wasm.spikeStoreBytes();
+    return ret;
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
@@ -360,6 +441,13 @@ let heap = new Array(1024).fill(undefined);
 heap.push(undefined, null, true, false);
 
 let heap_next = heap.length;
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
 
 function passArrayF64ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 8, 8) >>> 0;

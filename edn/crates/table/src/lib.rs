@@ -16,6 +16,8 @@
 //! An operation is named `module.function`, after the TypeScript module and
 //! export it serves (`encoding.isDate`); `OPS` lists them all.
 
+pub mod store;
+
 use serde_json::Value as J;
 use workspace_edn::encoding;
 use workspace_edn::formula::json_string;

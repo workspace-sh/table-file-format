@@ -71,3 +71,35 @@ pub fn compute_workbook(json: String, numbers: Float64Array) -> Result<ColumnRes
     let c = workspace_edn::column::compute(&book);
     Ok(ColumnResults { kinds: Uint8Array::new(c.encoded.kinds), numbers: Float64Array::new(c.encoded.numbers), extra: c.encoded.extra, index: c.index })
 }
+
+// SPIKE (#867): the engine reading a table from an archive's bytes, timed against JavaScript. Not for merging.
+thread_local! {
+    static SPIKE: std::cell::RefCell<Option<workspace_table::store::Store>> = const { std::cell::RefCell::new(None) };
+}
+
+#[napi(js_name = "spikeInflate")]
+pub fn spike_inflate(bytes: Uint8Array) -> Result<f64> {
+    let e = workspace_table::store::unzip(&bytes, |n| n.ends_with(".json") || n.ends_with(".ndjson")).map_err(|e| napi::Error::from_reason(e))?;
+    Ok(e.iter().map(|(_, d)| d.len()).sum::<usize>() as f64)
+}
+
+#[napi(js_name = "spikeOpen")]
+pub fn spike_open(bytes: Uint8Array) -> Result<u32> {
+    let s = workspace_table::store::open(&bytes).map_err(|e| napi::Error::from_reason(e))?;
+    let n = s.rows() as u32;
+    SPIKE.with(|k| *k.borrow_mut() = Some(s));
+    Ok(n)
+}
+
+#[napi(js_name = "spikeParse")]
+pub fn spike_parse(schema: String, ndjson: Uint8Array) -> Result<u32> {
+    let s = workspace_table::store::parse(&schema, &ndjson).map_err(|e| napi::Error::from_reason(e))?;
+    let n = s.rows() as u32;
+    SPIKE.with(|k| *k.borrow_mut() = Some(s));
+    Ok(n)
+}
+
+#[napi(js_name = "spikeStoreBytes")]
+pub fn spike_store_bytes() -> f64 {
+    SPIKE.with(|k| k.borrow().as_ref().map_or(0, |s| s.bytes()) as f64)
+}

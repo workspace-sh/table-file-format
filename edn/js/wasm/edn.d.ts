@@ -50,6 +50,26 @@ export function formula(text: string): string;
  */
 export function read(text: string): string;
 
+/**
+ * Inflates every rows file and schema in the archive; their total size.
+ */
+export function spikeInflate(bytes: Uint8Array): number;
+
+/**
+ * Reads the archive's table into the engine; its row count.
+ */
+export function spikeOpen(bytes: Uint8Array): number;
+
+/**
+ * Reads rows already inflated (NDJSON) into the engine; their count.
+ */
+export function spikeParse(schema: string, ndjson: Uint8Array): number;
+
+/**
+ * The bytes the engine's store holds.
+ */
+export function spikeStoreBytes(): number;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -66,6 +86,10 @@ export interface InitOutput {
     readonly computeWorkbook: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly formula: (a: number, b: number, c: number) => void;
     readonly read: (a: number, b: number, c: number) => void;
+    readonly spikeInflate: (a: number, b: number, c: number) => void;
+    readonly spikeOpen: (a: number, b: number, c: number) => void;
+    readonly spikeParse: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly spikeStoreBytes: () => number;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
     readonly __wbindgen_export: (a: number, b: number) => number;
     readonly __wbindgen_export2: (a: number, b: number, c: number, d: number) => number;

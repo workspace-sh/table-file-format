@@ -9,4 +9,7 @@ publish = false
 
 [dependencies]
 workspace-edn = { path = "../core" }
-serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order", "raw_value"] }
+# The spike's inflater (table-file-format#867, the engine owning a table).
+miniz_oxide = "0.8"
+serde = "1"
