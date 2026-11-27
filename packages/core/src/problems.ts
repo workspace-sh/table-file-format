@@ -44,8 +44,12 @@ export type ProblemCode =
   | "relation.dangling"
   | "choice.unused"
   | "attachment.orphaned"
-  // Rows held in the index aren't checked one by one.
-  | "rows.not-checked";
+  // Rows held in the index: checked as the index was made (#867), not checked, or not since an edit.
+  | "rows.not-checked"
+  | "rows.not-checked-since-edit"
+  | "rows.checking"
+  | "rows.more-problems"
+  | "rows.links-not-checked";
 
 /**
  * - `error`: section 9 says the table isn't valid, or a line was kept that
@@ -122,6 +126,10 @@ const SEVERITY: Partial<Record<ProblemCode, Severity>> = {
   "line.repeat-left-out": "notice",
   "cell.typed-over": "notice",
   "rows.not-checked": "notice",
+  "rows.not-checked-since-edit": "notice",
+  "rows.more-problems": "notice",
+  "rows.checking": "notice",
+  "rows.links-not-checked": "notice",
   "cell.repeated": "warning",
   "bundle.not-a-table": "warning",
   "relation.dangling": "warning",
@@ -129,6 +137,71 @@ const SEVERITY: Partial<Record<ProblemCode, Severity>> = {
   "attachment.orphaned": "warning",
 };
 const severityOf = (code: ProblemCode): Severity => SEVERITY[code] ?? "error";
+
+/**
+ * A large table's rows checked once its index is made (#867, step 2c): what
+ * foundInRows finds of them, with no relation followed (a target's rows are
+ * another table's, which the check doesn't read). How many problems of each
+ * kind, the first of them, and the lines of the rows those are of, for their
+ * fixes. Kept with the index, and said by `problemsOf` while the table is as
+ * it was checked.
+ */
+export interface IndexCheck {
+  /** The engine's version of what a check finds; a check from another reads as not checked. */
+  rules: number;
+  /** What it was checked against (`checkStamp`): a table whose schema or pages have changed since reads as not checked since. */
+  stamp: string;
+  /** Its rows were edited since. */
+  stale?: true;
+  rows: number;
+  total: number;
+  counts: Partial<Record<ProblemCode, number>>;
+  found: Found[];
+  /** The rows the problems in `found` are of, as their lines. */
+  lines: string[];
+  /** The files of `attachments/` it was checked against, when they were known. */
+  attachments?: string[];
+  /** Its relation fields, when it has any: their links weren't checked (a target's rows are another table's). */
+  links?: string[];
+}
+
+/** What a check of a table's rows reads besides them: the schema's rules, and which rows have pages. */
+export function checkStamp(table: Pick<ParsedTable, "schema" | "bodies">): string {
+  const { schema } = table;
+  const text = JSON.stringify([
+    schema.fields.map((f) => [f.name, f.type ?? "string", !!f.computed, f.relation?.cardinality === "many", !!f.attachment, f.constraints ?? null, enumValues(f)]),
+    schema.primaryKey ?? null,
+    schema.uniqueKeys ?? null,
+    Object.keys(table.bodies ?? {}).sort(),
+  ]);
+  // FNV-1a, twice over, for a stamp short enough to keep.
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x811c9dc5) >>> 0;
+  }
+  return `${text.length}:${a.toString(16)}:${b.toString(16)}`;
+}
+
+/** How a check kept with an index stands now: usable, under way, made before an edit, or none to go by. */
+export function checkState(table: ParsedTable, context: ProblemContext = {}): { check: IndexCheck } | "checking" | "since-edit" | "none" {
+  const check = table.indexed?.checked;
+  if (!check) return "none";
+  if (check === "checking") return "checking";
+  if (check.stale || check.stamp !== checkStamp(table)) return "since-edit";
+  // Attachments checked against other files than these: not what's there now.
+  if (context.attachments && JSON.stringify(check.attachments ?? null) !== JSON.stringify(context.attachments)) return "since-edit";
+  return { check };
+}
+
+/** How many of a check's problems are errors. */
+export function checkErrors(check: Pick<IndexCheck, "counts">): number {
+  let n = 0;
+  for (const [code, count] of Object.entries(check.counts)) if (severityOf(code as ProblemCode) === "error") n += count ?? 0;
+  return n;
+}
 
 /** The diagnostics `validate` also finds: taken from there, with their places. */
 const FOUND_AGAIN = new Set(["cell.no-row", "cell.no-field"]);
@@ -168,7 +241,12 @@ export function problemsOf(table: ParsedTable, name: string, context: ProblemCon
   for (const d of table.diagnostics ?? []) if (!FOUND_AGAIN.has(d.code ?? "")) out.push(fromDiagnostic(d, name));
 
   const unchecked = table.indexed !== undefined || table.loading !== undefined;
-  if (unchecked) {
+  const state = table.indexed ? checkState(table, context) : "none";
+  if (state === "checking") {
+    push("rows.checking", { kind: "table" }, "A table this large is read through its index, and its rows are being checked against the schema.");
+  } else if (state === "since-edit") {
+    push("rows.not-checked-since-edit", { kind: "table" }, "A table this large is read through its index. Its rows were checked against the schema once the index was made, and haven't been since they or the schema were edited.");
+  } else if (unchecked && state === "none") {
     push("rows.not-checked", { kind: "table" }, "A table this large is read through its index, and its rows aren't checked against the schema one by one.");
   }
 
@@ -192,6 +270,21 @@ export function problemsOf(table: ParsedTable, name: string, context: ProblemCon
   if (!unchecked) {
     const byId = new Map(rows.map((r) => [r.id, r]));
     for (const f of foundInRows(table, context)) out.push(problemOf(f, table, name, (id) => byId.get(id)));
+  } else if (typeof state === "object") {
+    // Checked as its index was made: the first of its problems, and how many there are.
+    const { check } = state;
+    const byId = new Map(check.lines.map((line) => JSON.parse(line) as Row).map((r) => [r.id, r]));
+    // Without the files of attachments/ to go by, a file no row holds isn't said (as foundInRows doesn't).
+    const left = context.attachments ? 0 : (check.counts["attachment.orphaned"] ?? 0);
+    const found = left > 0 ? check.found.filter((f) => f.code !== "attachment.orphaned") : check.found;
+    for (const f of found) out.push(problemOf(f, table, name, (id) => byId.get(id)));
+    const total = check.total - left;
+    if (total > found.length) {
+      push("rows.more-problems", { kind: "table" }, `${found.length.toLocaleString("en")} of its ${total.toLocaleString("en")} problems are listed: the first, in the order its rows have them.`, { shown: found.length, total });
+    }
+    if (check.links?.length) {
+      push("rows.links-not-checked", { kind: "table" }, `Its links to other tables (${check.links.join(", ")}) weren't checked: their rows are another table's.`, { fields: check.links.join(",") });
+    }
   }
   return out;
 }

@@ -43,10 +43,16 @@ pub const OPS: &[&str] = &[
     "rows.place",
     "rows.problems",
     "rows.free",
+    "check.new",
+    "check.begin",
+    "check.file",
+    "check.finish",
+    "check.free",
+    "check.rules",
 ];
 
 /// The operations `call_bytes` knows: a file's bytes in.
-pub const BYTES_OPS: &[&str] = &["rows.read"];
+pub const BYTES_OPS: &[&str] = &["rows.read", "check.piece"];
 
 /// The operations `window` knows: rows out as typed arrays.
 pub const WINDOW_OPS: &[&str] = &["rows.window"];

@@ -3,7 +3,7 @@
 // the table was opened (D22). Each app draws it; the wording is here, so
 // they all say the same thing.
 
-import { problemsOf, type ParsedTable, type Problem, type ValidationError } from "@workspace.sh/table-core";
+import { checkErrors, checkState, problemsOf, type ParsedTable, type Problem, type ValidationError } from "@workspace.sh/table-core";
 
 export interface ViewSummary {
   /** `3 of 6 rows`, or `2 of 5 matching` while searching; `81 of 180 rows · Filtered by Read` when the view's filter hides rows (#595). */
@@ -110,16 +110,22 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
   const { problems, errors } = problemsFor(table);
   // Rows held in the index aren't here to count, or to check.
   const total = table.indexed ? table.indexed.count : table.rows.length;
-  const valid = errors.length === 0;
-  if (table.indexed) {
+  // A large table's rows checked as its index was made (#867): its errors counted there, the first of them listed.
+  const state = table.indexed ? checkState(table) : "none";
+  if (table.indexed && typeof state !== "object") {
     return {
       count: countText(table, input, total),
       shown: input.shown,
       total: input.searching ? input.inView : total,
       found: foundText(input),
       valid: true,
-      validity: "not checked",
-      validityHint: "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
+      validity: state === "checking" ? "checking" : state === "since-edit" ? "not checked since edited" : "not checked",
+      validityHint:
+        state === "checking"
+          ? "A table this large is read through its index, and its rows are being checked against the schema."
+          : state === "since-edit"
+            ? "A table this large is read through its index. Its rows were checked against the schema once the index was made, and haven't been since they or the schema were edited."
+            : "A table this large is read through its index, and its rows aren't checked against the schema one by one.",
       schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
       schemaChangedLabel: "schema changed",
       schemaChangedHint:
@@ -129,19 +135,25 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
       ...held,
     };
   }
+  // Checked as its index was made: how many errors there are is the check's, of which the first are listed.
+  const count = typeof state === "object" ? checkErrors(state.check) + errors.filter((e) => e.code !== undefined && !(e.code in state.check.counts)).length : errors.length;
+  const fits = count === 0;
+  // A check that didn't follow links can't say the whole table fits.
+  const links = typeof state === "object" && state.check.links?.length ? " · links not checked" : "";
+  const linksHint = links ? "\nLinks to other tables weren't checked: their rows are another table's." : "";
   return {
     count: countText(table, input, total),
     shown: input.shown,
     total: input.searching ? input.inView : total,
     found: foundText(input),
-    valid,
-    validity: valid ? "schema valid" : `${errors.length} validation error${errors.length === 1 ? "" : "s"}`,
-    validityHint: valid
+    valid: fits,
+    validity: (fits ? "schema valid" : `${count} validation error${count === 1 ? "" : "s"}`) + links,
+    validityHint: (fits
       ? "Every row fits the schema: required fields are filled, choices are from their lists, and values are the right type."
       : errors
           .slice(0, HINT_ERRORS)
           .map((e) => e.message)
-          .join("\n") + (errors.length > HINT_ERRORS ? `\n…and ${errors.length - HINT_ERRORS} more` : ""),
+          .join("\n") + (count > HINT_ERRORS ? `\n…and ${count - Math.min(HINT_ERRORS, errors.length)} more` : "")) + linksHint,
     schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
     schemaChangedLabel: "schema changed",
     schemaChangedHint:

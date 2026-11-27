@@ -17,6 +17,8 @@ import { enumValues } from "./types.js";
 import type { RowGroup, ViewRows } from "./row-source.js";
 import { exactSum } from "./query.js";
 import { computeRows, rowLocal } from "./workbook.js";
+import type { IndexCheck } from "./problems.js";
+import { checkRules, startCheck } from "./engineCheck.js";
 
 export type SqlValue = string | number | null;
 
@@ -426,6 +428,113 @@ async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await setHidden(db, n, []);
   await cellsTable(db);
   await db.run("delete from _cells where n = ?", [n]);
+  await checksTable(db);
+  await db.run("delete from _checks where n = ?", [n]);
+}
+
+// ---- Checks (#867, step 2c): a table's rows checked once its index is made, off the way to showing it
+
+/** Every index from before checks has no such table: it's made when first asked for, and a table in none reads as not checked. */
+async function checksTable(db: SqlDriver): Promise<void> {
+  await db.exec("create table if not exists _checks(n integer primary key, rules integer not null, stale integer not null default 0, result text not null)");
+}
+
+/** A table's rows have changed since their check: it's kept, and said to be from before. */
+async function checkStale(db: SqlDriver, n: number): Promise<void> {
+  await checksTable(db);
+  await db.run("update _checks set stale = 1 where n = ?", [n]);
+}
+
+/**
+ * A table's rows as checked once its index was made: with `stale` once they've been edited since.
+ * Null when there's none to go by: an index made without one (every index from before checks),
+ * one made by another version of the checks than this engine's (`check.rules`), or no engine.
+ */
+export async function checkOf(db: SqlDriver, name: string): Promise<IndexCheck | null> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || (await indexKey(db, name)) === null) return null;
+  const rules = checkRules();
+  if (rules === null) return null;
+  await checksTable(db);
+  const found = (await db.all("select rules, stale, result from _checks where n = ?", [n]))[0];
+  if (!found || found.rules !== rules) return null;
+  try {
+    const check = JSON.parse(found.result as string) as IndexCheck;
+    return found.stale ? { ...check, stale: true } : check;
+  } catch {
+    return null;
+  }
+}
+
+/** A check of an indexed table's rows under way, a step at a time (`indexCheck`). */
+export interface IndexCheckRun {
+  /** Checks the next rows; false once there are none left, and the check is kept (or there was none to make). */
+  step(): Promise<boolean>;
+  /** Stops it, keeping nothing: the next open makes it again. */
+  stop(): void;
+}
+
+/**
+ * A check of table `name`'s rows, read back out of its index a batch at a time, for a host to run
+ * the way it makes the search's own index (`buildSearchIndex`): after the build, off the way to
+ * showing the table. Kept in `_checks` when done. Nothing to do when the index has a check already
+ * (stale or not), or the engine can't make one. A rows edit made while it runs leaves the check it
+ * makes from before that edit. Its failing fails nothing: the table reads as not checked, and why
+ * is said to the console.
+ */
+export function indexCheck(
+  db: SqlDriver,
+  options: { name: string; schema: TableSchema; bodies?: Record<string, string>; attachments?: readonly string[]; batchSize?: number },
+): IndexCheckRun {
+  const { name, schema } = options;
+  let run: { check: NonNullable<ReturnType<typeof startCheck>>; lines: AsyncIterator<{ pos: number; line: string }[]>; key: string | null; n: number } | null = null;
+  let over = false;
+  const encoder = new TextEncoder();
+  const end = () => {
+    over = true;
+    run?.check.free();
+    run = null;
+  };
+  return {
+    stop: end,
+    async step() {
+      if (over) return false;
+      try {
+        if (!run) {
+          const n = await tableNumber(db, name, false);
+          const key = n === null ? null : await indexKey(db, name);
+          if (n === null || key === null || checkRules() === null) return (end(), false);
+          await checksTable(db);
+          if ((await db.all("select 1 from _checks where n = ?", [n])).length > 0) return (end(), false);
+          const cells = await indexedCells(db, name);
+          const check = startCheck({ schema, bodies: options.bodies, cells }, options.attachments ? { attachments: options.attachments } : {});
+          if (!check) return (end(), false);
+          check.beginFile("rows");
+          run = { check, lines: storedRowLines(db, { name, schema, batchSize: options.batchSize ?? 5_000 })[Symbol.asyncIterator](), key, n };
+        }
+        const next = await run.lines.next();
+        if (!next.done) {
+          run.check.piece(encoder.encode(next.value.map((r) => r.line).join("\n") + "\n"));
+          if (run.check.failed === undefined) return true;
+        } else run.check.endFile("rows");
+        const found = run.check.finish();
+        if (!found) console.warn(`${name}: its rows weren't checked (${run.check.failed ?? "no answer"})`);
+        else {
+          const links = schema.fields.filter((f) => f.relation).map((f) => f.name);
+          const result: IndexCheck = { ...found, ...(links.length > 0 ? { links } : {}) };
+          // Edited meanwhile: what it found is from before the edit.
+          const edited = (await indexKey(db, name)) !== run.key;
+          await db.run("insert or replace into _checks(n, rules, stale, result) values(?, ?, ?, ?)", [run.n, result.rules, edited ? 1 : 0, JSON.stringify(result)]);
+        }
+        end();
+        return false;
+      } catch (error) {
+        console.warn(`${name}: its rows weren't checked (${error instanceof Error ? error.message : String(error)})`);
+        end();
+        return false;
+      }
+    },
+  };
 }
 
 /**
@@ -811,6 +920,7 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
       await setFill(db, n, null);
     }
     await db.run("update _tables set sig = ? where n = ?", [signature(to), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
@@ -1011,6 +1121,7 @@ export async function putRows(
       await shiftBad(db, n, counted(e.bad, old.pos as number), 1);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
@@ -1052,6 +1163,7 @@ export async function removeRows(
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});

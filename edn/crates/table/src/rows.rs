@@ -150,6 +150,11 @@ impl Rows {
         self.rows.len()
     }
 
+    /// The bytes of the files read, given back for another use: the rows are let go.
+    pub fn into_bytes(self) -> Vec<Vec<u8>> {
+        self.files.into_iter().map(|(_, b)| b).collect()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
     }
