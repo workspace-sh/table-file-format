@@ -143,14 +143,45 @@ export interface ValueProblem {
   details: Record<string, string | number | boolean | null>;
 }
 
+/**
+ * A value problem said in English, from its code and details (and, for a relation's ids, the value):
+ * the one place its words are written, for what's found here and what the engine finds (#867).
+ */
+export function valueMessage(code: ValueProblem["code"], details: ValueProblem["details"], field: Pick<Field, "type" | "relation">, value: unknown): string {
+  switch (code) {
+    case "value.required":
+      return "required field is missing";
+    case "value.type":
+      if (field.relation?.cardinality === "many") return Array.isArray(value) ? "relation array must contain only string ids" : "expected an array of relation ids (cardinality: many)";
+      return `expected type ${field.type}, got ${String(details["got"])}`;
+    case "value.choice":
+      return `value not in enum: ${String(details["value"])}`;
+    case "value.minimum":
+      return `below minimum ${String(details["limit"])}`;
+    case "value.maximum":
+      return `above maximum ${String(details["limit"])}`;
+    case "value.exclusive-minimum":
+      return `not above exclusiveMinimum ${String(details["limit"])}`;
+    case "value.exclusive-maximum":
+      return `not below exclusiveMaximum ${String(details["limit"])}`;
+    case "value.min-length":
+      return `below minLength ${String(details["limit"])}`;
+    case "value.max-length":
+      return `above maxLength ${String(details["limit"])}`;
+    case "value.pattern":
+      return `fails pattern ${String(details["limit"])}`;
+  }
+}
+
 /** What is wrong with `value` in `field` by its type and constraints (SPEC section 9, rule 2). */
 export function valueProblems(field: Field, value: unknown): ValueProblem[] {
   const out: ValueProblem[] = [];
+  const add = (code: ValueProblem["code"], details: ValueProblem["details"]) => out.push({ code, message: valueMessage(code, details, field, value), details });
   const c = field.constraints;
   const isMissing = value === undefined || value === null || value === "";
 
   if (isMissing) {
-    if (c?.required) out.push({ code: "value.required", message: "required field is missing", details: {} });
+    if (c?.required) add("value.required", {});
     return out;
   }
 
@@ -158,13 +189,12 @@ export function valueProblems(field: Field, value: unknown): ValueProblem[] {
   // of target ids. Validate each entry as a string; skip the scalar
   // type/enum/range checks below (they assume a single value).
   if (field.relation?.cardinality === "many") {
-    if (!Array.isArray(value)) out.push({ code: "value.type", message: "expected an array of relation ids (cardinality: many)", details: { expected: "array" } });
-    else if (!value.every((v) => typeof v === "string")) out.push({ code: "value.type", message: "relation array must contain only string ids", details: { expected: "array" } });
+    if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) add("value.type", { expected: "array" });
     return out;
   }
 
   if (!typeMatches(field.type, value)) {
-    out.push({ code: "value.type", message: `expected type ${field.type}, got ${typeof value}`, details: { expected: field.type, got: typeof value } });
+    add("value.type", { expected: field.type, got: typeof value });
     return out;
   }
 
@@ -173,25 +203,25 @@ export function valueProblems(field: Field, value: unknown): ValueProblem[] {
   if (allowed.length > 0) {
     const items = Array.isArray(value) ? value : [value];
     for (const item of items) {
-      if (!allowed.includes(item as string)) out.push({ code: "value.choice", message: `value not in enum: ${JSON.stringify(item)}`, details: { value: JSON.stringify(item) } });
+      if (!allowed.includes(item as string)) add("value.choice", { value: JSON.stringify(item) });
     }
   }
 
-  const bound = (key: "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum", code: ValueProblem["code"], fails: (order: number) => boolean, words: string) => {
+  const bound = (key: "minimum" | "maximum" | "exclusiveMinimum" | "exclusiveMaximum", code: ValueProblem["code"], fails: (order: number) => boolean) => {
     const limit = c?.[key];
     if (limit === undefined) return;
     const order = compareBound(field.type, value, limit);
-    if (order !== null && fails(order)) out.push({ code, message: `${words} ${limit}`, details: { constraint: key, limit } });
+    if (order !== null && fails(order)) add(code, { constraint: key, limit });
   };
-  bound("minimum", "value.minimum", (o) => o < 0, "below minimum");
-  bound("maximum", "value.maximum", (o) => o > 0, "above maximum");
-  bound("exclusiveMinimum", "value.exclusive-minimum", (o) => o <= 0, "not above exclusiveMinimum");
-  bound("exclusiveMaximum", "value.exclusive-maximum", (o) => o >= 0, "not below exclusiveMaximum");
+  bound("minimum", "value.minimum", (o) => o < 0);
+  bound("maximum", "value.maximum", (o) => o > 0);
+  bound("exclusiveMinimum", "value.exclusive-minimum", (o) => o <= 0);
+  bound("exclusiveMaximum", "value.exclusive-maximum", (o) => o >= 0);
 
   if (typeof value === "string") {
-    if (c?.minLength !== undefined && value.length < c.minLength) out.push({ code: "value.min-length", message: `below minLength ${c.minLength}`, details: { constraint: "minLength", limit: c.minLength, length: value.length } });
-    if (c?.maxLength !== undefined && value.length > c.maxLength) out.push({ code: "value.max-length", message: `above maxLength ${c.maxLength}`, details: { constraint: "maxLength", limit: c.maxLength, length: value.length } });
-    if (c?.pattern !== undefined && !new RegExp(c.pattern).test(value)) out.push({ code: "value.pattern", message: `fails pattern ${c.pattern}`, details: { constraint: "pattern", limit: c.pattern } });
+    if (c?.minLength !== undefined && value.length < c.minLength) add("value.min-length", { constraint: "minLength", limit: c.minLength, length: value.length });
+    if (c?.maxLength !== undefined && value.length > c.maxLength) add("value.max-length", { constraint: "maxLength", limit: c.maxLength, length: value.length });
+    if (c?.pattern !== undefined && !new RegExp(c.pattern).test(value)) add("value.pattern", { constraint: "pattern", limit: c.pattern });
   }
 
   return out;
