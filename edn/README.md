@@ -103,6 +103,15 @@ tables by handle, and two more shapes reach them:
   of each kind, and the window `from` up to `to` as table-core's `Found`s,
   which `heldProblems` says in words with their fixes. Null for a `pattern`
   constraint, a JavaScript RegExp.
+- `check.new {schema, bodies, attachments?, window}` begins a check of a
+  table's rows as they're read for its index (step 2c): `check.begin
+  {handle, file}` names each rows file, `check.piece` (with `callBytes`)
+  gives it a piece at a time, `check.file` ends it, and `check.finish` gives
+  the counts, the first `window` problems and their rows' lines, and ends
+  the handle (`check.free` ends one left part-way). Whole lines are checked
+  a few megabytes at a time and let go. `check.rules` is the version of what
+  a check finds. table-core's `startCheck` (`packages/core/src/engineCheck.ts`)
+  drives it.
 
 A file can come from anyone, so nothing it says is allocated before it's
 checked: a size its bytes can't be is corrupt, and memory is asked for

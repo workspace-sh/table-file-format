@@ -9,10 +9,10 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, startCheck, type RowsCheck, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
-import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
+import { canBeIndexed, checked, INDEXED_FROM } from "./indexed.ts";
 import { rowFilePlacer, rowFileStarts, setRowFileStarts } from "./rowFilesIndexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 
@@ -144,10 +144,16 @@ export async function tableContentKey(tableDir: string): Promise<string> {
  * index writes the rows back out, and would leave that line out of the file
  * (#567), so such a table is held in memory instead, where it's kept.
  */
-async function* rowsOf(tableDir: string, onRow: () => void, onFile: (name: string) => void = () => {}): AsyncIterable<Row> {
+async function* rowsOf(tableDir: string, onRow: () => void, onFile: (name: string) => void = () => {}, check: RowsCheck | null = null): AsyncIterable<Row> {
   for (const file of rowsFilesIn(tableDir)) {
     onFile(file.name);
-    yield* rowsFrom(createReadStream(file.path), onRow, file.path.endsWith(LEGACY_ROWS_FILE) ? "its rows" : `${ROWS_DIR}/${file.name}`);
+    const legacy = file.path.endsWith(LEGACY_ROWS_FILE);
+    const input = createReadStream(file.path);
+    // The engine is given the same pieces as they're read, and checks the file's rows as it ends.
+    check?.beginFile(legacy ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`);
+    if (check) input.on("data", (chunk) => check.piece(chunk as Buffer));
+    yield* rowsFrom(input, onRow, legacy ? "its rows" : `${ROWS_DIR}/${file.name}`);
+    check?.endFile(legacy ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`);
   }
 }
 
@@ -193,7 +199,7 @@ export async function firstRows(tableDir: string, count: number): Promise<Row[]>
 }
 
 /** Build table `name`'s index from the files in `tableDir`, streaming its rows. Resolves with how many went in. */
-export async function buildTableIndex(db: SqlDriver, name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number> {
+export async function buildTableIndex(db: SqlDriver, name: string, tableDir: string, onProgress?: (done: number, total: number) => void, options: { check?: boolean } = {}): Promise<number> {
   const schema = JSON.parse(readFileSync(join(tableDir, "schema.json"), "utf8")) as TableSchema;
   const key = await tableContentKey(tableDir);
   const total = onProgress ? await countRows(tableDir) : 0;
@@ -202,26 +208,35 @@ export async function buildTableIndex(db: SqlDriver, name: string, tableDir: str
   let done = 0;
   // Where each rows file starts, by the place its first row takes in the index (positions run from 1).
   const files: { name: string; first: number }[] = [];
+  const cells = cellsIn(tableDir);
+  // Its rows checked as they're read (#867, step 2c). A folder's attachments/ isn't read, as tableProblems doesn't read it.
+  const check = options.check === false ? null : startCheck({ schema, bodies, cells });
   onProgress?.(0, total);
-  await buildIndex(db, {
-    name,
-    schema,
-    rows: rowsOf(
-      tableDir,
-      () => {
-        done++;
-        if (done % 5000 === 0) onProgress?.(done, total);
-      },
-      (file) => files.push({ name: file, first: done + 1 }),
-    ),
-    bodies,
-    key,
-    cells: cellsIn(tableDir),
-    // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
-    search: "later",
-    // In steps: as one transaction the log beside the index grows as large as the index itself.
-    commitEvery: BUILD_STEP,
-  });
+  try {
+    await buildIndex(db, {
+      name,
+      schema,
+      rows: rowsOf(
+        tableDir,
+        () => {
+          done++;
+          if (done % 5000 === 0) onProgress?.(done, total);
+        },
+        (file) => files.push({ name: file, first: done + 1 }),
+        check,
+      ),
+      bodies,
+      key,
+      cells,
+      // The search's own index is most of a build's time, and nothing waits on it (IndexHost.search).
+      search: "later",
+      // In steps: as one transaction the log beside the index grows as large as the index itself.
+      commitEvery: BUILD_STEP,
+      ...(check ? { check: () => checked(check, name) } : {}),
+    });
+  } finally {
+    check?.free();
+  }
   await setRowFileStarts(db, name, files);
   onProgress?.(done, total);
   return done;

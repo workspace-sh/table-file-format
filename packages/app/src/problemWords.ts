@@ -341,6 +341,20 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
         explain = "A table this large is read through its index, and its rows aren’t checked one by one.";
         nothing = "There’s nothing to fix.";
         break;
+      case "rows.not-checked-since-edit":
+        group = "notes";
+        title = "Not checked since it was edited";
+        where = "";
+        explain = "A table this large is read through its index. Its rows were checked as the index was made, and haven’t been since they or the schema were edited.";
+        nothing = "There’s nothing to fix.";
+        break;
+      case "rows.more-problems":
+        group = "notes";
+        title = "More problems than are listed";
+        where = "";
+        explain = `The first ${Number(p.details.shown).toLocaleString()} of its ${Number(p.details.total).toLocaleString()} problems are listed, in the order its rows have them.`;
+        nothing = "Fixing these shows the next.";
+        break;
     }
     if (p.severity !== "error") group = "notes";
     const fixes = p.fixes.filter(canApplyFix).map((f) => fixWords(f, field));

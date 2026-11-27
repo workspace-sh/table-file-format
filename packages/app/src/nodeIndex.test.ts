@@ -24,8 +24,8 @@ import {
 } from "./indexed.ts";
 import { strToU8, unzipSync, zipSync } from "fflate";
 import { bundleToArchive, openArchive } from "./tableFiles.ts";
-import { fieldChanges, isIndexStale, queryIndex, type TableSchema } from "@workspace.sh/table-core";
-import { countRows, openIndexHost, saveTableRows, tableContentKey } from "./nodeIndex.ts";
+import { checkOf, fieldChanges, isIndexStale, problemsOf, queryIndex, type TableSchema } from "@workspace.sh/table-core";
+import { buildTableIndex, countRows, openIndexHost, saveTableRows, tableContentKey } from "./nodeIndex.ts";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "fixtures");
 
@@ -648,6 +648,54 @@ test("a table with cells' own formulas is indexed: shown with their results, edi
     assert.deepEqual(again.cells, [{ id: "ytjc8tj8w8ftnbf9h86s5k9jfk", field: "priority", expr: "(+ 1 1)" }]);
     await host.close();
   } finally {
+    s.done();
+  }
+});
+
+test("a large table's rows are checked as its index is made, file by file, and a file the check can't read leaves the index made and the table not checked", async () => {
+  const s = scratch();
+  const warned: string[] = [];
+  const warn = console.warn;
+  console.warn = (m: string) => void warned.push(m);
+  try {
+    const whole = await readBundle(nodeFs, s.bundle);
+    const tasks = whole.tables.tasks!;
+    const host = openIndexHost(s.bundle);
+    const lines = readFileSync(join(s.tasks, "rows", "0001.ndjson"), "utf8").trimEnd().split("\n");
+    const half = Math.floor(lines.length / 2);
+    const enc = (text: string) => new TextEncoder().encode(text);
+    // Two rows files, in pieces cut through lines.
+    const files = (second: string) => [
+      { name: "0001.ndjson", chunks: [enc(lines.slice(0, half).join("\n").slice(0, 30)), enc(lines.slice(0, half).join("\n").slice(30) + "\n")] },
+      { name: "0002.ndjson", chunks: [enc(second)] },
+    ];
+    const rest = lines.slice(half).join("\n");
+    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(rest), size: 1 }, key: "k1" }), lines.length);
+    const check = await checkOf(host, "tasks");
+    assert.ok(check, "checked");
+    assert.equal(check.rows, lines.length);
+    // What problemsOf says of the rows in memory (a relation isn't followed: the bundle isn't given).
+    const want = problemsOf(tasks, "tasks");
+    assert.equal(check.total, want.length);
+    assert.deepEqual(problemsOf({ ...tasks, rows: [], indexed: { count: lines.length, version: 1, checked: check } }, "tasks"), want);
+
+    // A line JSON.parse reads and the engine doesn't (a key that's a lone surrogate): the index is made, with no check.
+    const corrupt = rest + '\n{"id":"odd","\\ud800":1}\n';
+    assert.equal(await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(corrupt), size: 1 }, key: "k2" }), lines.length + 1);
+    assert.equal((await queryIndex(host, { name: "tasks", schema: tasks.schema }))!.count, lines.length + 1);
+    assert.equal(await checkOf(host, "tasks"), null);
+    assert.match(warned.join("\n"), /tasks: its rows weren't checked as its index was made \(check\.file: rows\/0002\.ndjson: line \d+ isn't JSON the engine reads\)/);
+
+    // Asked not to, no check; built from the table's folder, as Linux's app builds it, checked.
+    await buildIndexFromBytes(host, { name: "tasks", schema: tasks.schema, rows: { files: files(rest), size: 1 }, key: "k3", check: false });
+    assert.equal(await checkOf(host, "tasks"), null);
+    await buildTableIndex(host, "tasks", s.tasks);
+    assert.equal((await checkOf(host, "tasks"))?.total, want.length);
+    await buildTableIndex(host, "tasks", s.tasks, undefined, { check: false });
+    assert.equal(await checkOf(host, "tasks"), null);
+    await host.close();
+  } finally {
+    console.warn = warn;
     s.done();
   }
 });

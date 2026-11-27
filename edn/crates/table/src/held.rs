@@ -17,6 +17,8 @@ static HELD: Mutex<Option<Held>> = Mutex::new(None);
 struct Held {
     next: u32,
     tables: HashMap<u32, Table>,
+    /// Checks of tables whose rows are being read, a file at a time (`check.*`).
+    checks: HashMap<u32, crate::problems::Checker>,
 }
 
 /// How many views of a table are kept; one asked again after it's gone is worked out again.
@@ -54,6 +56,11 @@ fn held<T>(input: &J, f: impl FnOnce(&mut Rows) -> Result<T, String>) -> Result<
 fn table<T>(input: &J, f: impl FnOnce(&mut Table) -> Result<T, String>) -> Result<T, String> {
     let h = handle(input)?;
     with(|held| held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}")).and_then(f))
+}
+
+fn checking<T>(input: &J, f: impl FnOnce(&mut crate::problems::Checker) -> Result<T, String>) -> Result<T, String> {
+    let h = handle(input)?;
+    with(|held| held.checks.get_mut(&h).ok_or_else(|| format!("no check is held as {h}")).and_then(f))
 }
 
 /// A view's query from its JSON (table-core's IndexQuery, its schema's fields, and the pages searched).
@@ -163,6 +170,29 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }))
         }
         "rows.free" => handle(input).map(|h| with(|held| held.tables.remove(&h).is_some()).to_string()),
+        // A check of a table's rows as they're read (step 2c): begun, each file ended, then finished.
+        "check.new" => crate::problems::Checker::new(input).map(|c| match c {
+            Some(c) => with(|held| {
+                held.next += 1;
+                held.checks.insert(held.next, c);
+                held.next.to_string()
+            }),
+            None => "null".into(),
+        }),
+        "check.begin" => {
+            let name = input.get("file").and_then(J::as_str).unwrap_or("rows");
+            checking(input, |c| {
+                c.begin_file(name);
+                Ok("true".to_string())
+            })
+        }
+        "check.file" => {
+            let name = input.get("file").and_then(J::as_str).unwrap_or("rows");
+            checking(input, |c| c.end_file(name).map(|n| n.to_string()))
+        }
+        "check.finish" => handle(input).and_then(|h| with(|held| held.checks.remove(&h)).map(|c| c.finish()).ok_or_else(|| format!("no check is held as {h}"))),
+        "check.free" => handle(input).map(|h| with(|held| held.checks.remove(&h).is_some()).to_string()),
+        "check.rules" => Ok(crate::problems::RULES.to_string()),
         "rows.count" => held(input, |r| Ok(r.len().to_string())),
         "rows.query" => table(input, |t| {
             let (fields, q) = query_of(input)?;
@@ -264,7 +294,8 @@ pub(crate) fn call_bytes(op: &str, input: &J, bytes: &[u8]) -> Result<String, St
             let strip_bom = input.get("stripBom").and_then(J::as_bool).unwrap_or(true);
             held(input, |r| r.read(name, bytes, strip_bom).map(|n| n.to_string()))
         }
-        _ => Err(format!("{op:?} isn't an operation that takes bytes; there is rows.read")),
+        "check.piece" => checking(input, |c| c.piece(bytes).map(|()| "true".to_string())),
+        _ => Err(format!("{op:?} isn't an operation that takes bytes; there are rows.read and check.piece")),
     }
 }
 

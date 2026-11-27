@@ -63,6 +63,7 @@ export {
   isIndexStale,
   dropIndex,
   indexKey,
+  checkOf,
   putRows,
   removeRows,
   OWN_FORMULAS,
@@ -105,7 +106,7 @@ export {
 export { parseRowsText, UnreadableSchemaError } from "./parse-text.js";
 export { schemaRepair, type SchemaRepair } from "./schema-repair.js";
 export { applyFix, applyFixes, canApplyFix } from "./fixes.js";
-export { tableProblems, problemsOf, type Problem, type ProblemCode, type ProblemContext, type Severity, type ProblemPlace, type Fix } from "./problems.js";
+export { tableProblems, problemsOf, checkStamp, checkState, checkErrors, type IndexCheck, type Found, type Problem, type ProblemCode, type ProblemContext, type Severity, type ProblemPlace, type Fix } from "./problems.js";
 export { serializeRows } from "./serialize.js";
 export {
   parseExpr,
@@ -119,6 +120,7 @@ export {
   type PlaceRow,
 } from "./expr.js";
 export { setRowsThroughEngine } from "./engine.js";
+export { startCheck, checkRules, CHECK_WINDOW, type RowsCheck } from "./engineCheck.js";
 export { computeRows, rowLocal, setFormulaEngine, sheetGrid, sheetOrder, type ComputeOptions, type FormulaEngine, type SheetGrid } from "./workbook.js";
 export { mergedBlocks, mergeOfRange, mergeOver, withMerge, type MergedBlock } from "./merged.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";

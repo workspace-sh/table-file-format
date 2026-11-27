@@ -505,6 +505,8 @@ export interface ParsedTable {
      * it is: nothing is read, so nothing says it's being read.
      */
     kept?: true;
+    /** Its rows as checked when its index was made (#867), kept with the index. */
+    checked?: import("./problems.js").IndexCheck;
   };
   /**
    * Its edit history, as `history.ndjson` holds it (SPEC section 14):

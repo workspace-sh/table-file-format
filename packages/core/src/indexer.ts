@@ -17,6 +17,8 @@ import { enumValues } from "./types.js";
 import type { RowGroup, ViewRows } from "./row-source.js";
 import { exactSum } from "./query.js";
 import { computeRows, rowLocal } from "./workbook.js";
+import type { IndexCheck } from "./problems.js";
+import { checkRules } from "./engineCheck.js";
 
 export type SqlValue = string | number | null;
 
@@ -92,6 +94,11 @@ export interface BuildOptions {
   commitEvery?: number;
   /** Cells' own formulas (D52): every `cells/` line, kept with the rows. Each must read only its own row. */
   cells?: CellFormula[];
+  /**
+   * The rows as checked while they were read (#867, step 2c), asked for once they all have been:
+   * kept with the index, in the same transaction. Null, or left out, keeps none.
+   */
+  check?: () => IndexCheck | null;
 }
 
 export const INDEX_FORMAT = 1;
@@ -426,6 +433,42 @@ async function dropTables(db: SqlDriver, n: number): Promise<void> {
   await setHidden(db, n, []);
   await cellsTable(db);
   await db.run("delete from _cells where n = ?", [n]);
+  await checksTable(db);
+  await db.run("delete from _checks where n = ?", [n]);
+}
+
+// ---- Checks (#867, step 2c): a table's rows as checked when its index was made
+
+/** Every index from before checks has no such table: it's made when first asked for, and a table in none reads as not checked. */
+async function checksTable(db: SqlDriver): Promise<void> {
+  await db.exec("create table if not exists _checks(n integer primary key, rules integer not null, stale integer not null default 0, result text not null)");
+}
+
+/** A table's rows have changed since their check: it's kept, and said to be from before. */
+async function checkStale(db: SqlDriver, n: number): Promise<void> {
+  await checksTable(db);
+  await db.run("update _checks set stale = 1 where n = ?", [n]);
+}
+
+/**
+ * A table's rows as checked when its index was made: with `stale` once they've been edited since.
+ * Null when there's none to go by: an index made without one (every index from before checks),
+ * one made by another version of the checks than this engine's (`check.rules`), or no engine.
+ */
+export async function checkOf(db: SqlDriver, name: string): Promise<IndexCheck | null> {
+  const n = await tableNumber(db, name, false);
+  if (n === null || (await indexKey(db, name)) === null) return null;
+  const rules = checkRules();
+  if (rules === null) return null;
+  await checksTable(db);
+  const found = (await db.all("select rules, stale, result from _checks where n = ?", [n]))[0];
+  if (!found || found.rules !== rules) return null;
+  try {
+    const check = JSON.parse(found.result as string) as IndexCheck;
+    return found.stale ? { ...check, stale: true } : check;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -553,6 +596,11 @@ export async function buildIndex(db: SqlDriver, options: BuildOptions): Promise<
     if (options.search === "later") await db.run("insert into _fts(n, upto) values(?, -1)", [n]);
     else await db.exec(`insert into x${n}(x${n}) values('rebuild');`);
     for (const [fld, count] of bad) await db.run("insert into _bad(n, fld, bad) values(?, ?, ?)", [n, fld, count]);
+    // The rows as checked on the way in, if they were: a check of the rows before them is no one's now.
+    await checksTable(db);
+    await db.run("delete from _checks where n = ?", [n]);
+    const check = options.check?.();
+    if (check) await db.run("insert into _checks(n, rules, stale, result) values(?, ?, 0, ?)", [n, check.rules, JSON.stringify(check)]);
     await db.run("update _tables set key = ?, format = ?, sig = ?, built_at = ? where n = ?", [
       key,
       INDEX_FORMAT,
@@ -811,6 +859,7 @@ export async function alterIndex(db: SqlDriver, name: string, from: TableSchema,
       await setFill(db, n, null);
     }
     await db.run("update _tables set sig = ? where n = ?", [signature(to), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
@@ -1011,6 +1060,7 @@ export async function putRows(
       await shiftBad(db, n, counted(e.bad, old.pos as number), 1);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
@@ -1052,6 +1102,7 @@ export async function removeRows(
       await db.run(`delete from r${n} where pos = ?`, [old.pos as number]);
     }
     await db.run("update _tables set key = ?, built_at = ? where n = ?", [key, new Date().toISOString(), n]);
+    await checkStale(db, n);
     await db.exec("commit");
   } catch (error) {
     await db.exec("rollback").catch(() => {});
