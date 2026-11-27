@@ -31,3 +31,8 @@ apps/desktop/macos/**/*.xcuserstate
 .DS_Store
 *.log
 /edn/target
+
+# The engine built for this machine (edn/js/build-native.sh): only the linux-x64 one is committed.
+/edn/js/native/*
+!/edn/js/native/edn.linux-x64.node
+!/edn/js/native/edn.linux-x64.node.source

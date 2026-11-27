@@ -9,6 +9,7 @@
 //! with the error as JSON (`{message, line, column}`, as the other bindings
 //! throw it) in `out`'s place.
 
+use std::ffi::{c_char, CStr, CString};
 use std::slice;
 
 use workspace_edn::formula::{expr_json, json_string, read_formula, value_json};
@@ -90,6 +91,62 @@ pub unsafe extern "C" fn edn_read(text: *const u8, len: usize, out: *mut EdnByte
 #[no_mangle]
 pub unsafe extern "C" fn edn_formula(text: *const u8, len: usize, out: *mut EdnBytes) -> i32 {
     answer(text, len, out, |t| read_formula(t).map(|e| expr_json(&e)))
+}
+
+/// A `.table` engine operation (`workspace_table::call`). `op` and `input`
+/// are NUL-terminated UTF-8, `input` JSON. Returns NUL-terminated JSON, given
+/// back to `edn_call_free`; never null: a mistake is `{"error": "…"}`.
+///
+/// # Safety
+/// `op` and `input` are null or NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn edn_call(op: *const c_char, input: *const c_char) -> *mut c_char {
+    let utf8 = |p: *const c_char| if p.is_null() { None } else { CStr::from_ptr(p).to_str().ok() };
+    let answer = match (utf8(op), utf8(input)) {
+        (Some(op), Some(input)) => workspace_table::call(op, input),
+        _ => r#"{"error":"the operation and its input are UTF-8 text"}"#.to_string(),
+    };
+    // JSON writes a NUL inside text as \u0000, so the answer has none of its own.
+    CString::new(answer).map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+/// Gives back what `edn_call` returned. Null is ignored.
+///
+/// # Safety
+/// `text` came from `edn_call` and hasn't been given back.
+#[no_mangle]
+pub unsafe extern "C" fn edn_call_free(text: *mut c_char) {
+    if !text.is_null() {
+        drop(CString::from_raw(text));
+    }
+}
+
+/// A `.table` engine check of one text (`workspace_table::check`): 1 yes,
+/// 0 no, -1 when `op` isn't a check or either isn't UTF-8.
+///
+/// # Safety
+/// `op` is NUL-terminated; `text` points at `len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn edn_call_check(op: *const c_char, text_ptr: *const u8, len: usize) -> i32 {
+    let (Ok(op), Ok(t)) = (CStr::from_ptr(op).to_str(), text(text_ptr, len)) else { return -1 };
+    workspace_table::check(op, t).map_or(-1, i32::from)
+}
+
+/// A `.table` engine number from one text (`workspace_table::number`) in
+/// `out`: 0, or -1 when `op` isn't a number or either isn't UTF-8.
+///
+/// # Safety
+/// As `edn_call_check`; `out` is writable.
+#[no_mangle]
+pub unsafe extern "C" fn edn_call_number(op: *const c_char, text_ptr: *const u8, len: usize, out: *mut f64) -> i32 {
+    let (Ok(op), Ok(t)) = (CStr::from_ptr(op).to_str(), text(text_ptr, len)) else { return -1 };
+    match workspace_table::number(op, t) {
+        Some(n) => {
+            *out = n;
+            0
+        }
+        None => -1,
+    }
 }
 
 /// A workbook's formulas computed (see `workspace_edn::workbook::workbook_from`).

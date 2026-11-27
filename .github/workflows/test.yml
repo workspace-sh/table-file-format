@@ -36,3 +36,22 @@ jobs:
         run: npm run ui:test
       - name: Test table-app
         run: npm run app:test
+
+  engine:
+    # The Rust engine (edn/) and its JavaScript API, through the committed
+    # binaries the other jobs use (checks.yml checks they match the sources).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Test the Rust
+        run: cargo test --workspace --manifest-path edn/Cargo.toml
+      - name: Test the engine's JavaScript API, natively and as WebAssembly
+        run: npm test --prefix edn/js

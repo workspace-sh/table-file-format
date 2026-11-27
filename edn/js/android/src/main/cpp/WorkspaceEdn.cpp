@@ -1,5 +1,5 @@
 // The core in the Android apps: the C binding (edn/crates/ffi) put on
-// `globalThis.__workspaceEdn` as the four calls @workspace.sh/edn/jsi takes
+// `globalThis.__workspaceEdn` as the calls @workspace.sh/edn/jsi takes
 // (src/api.ts, `Calls`), the same as apple/WorkspaceEdn.mm does on Apple.
 // React Native installs it when the module is first asked for
 // (`NativeModules.WorkspaceEdn`): WorkspaceEdnModule is a TurboModule with
@@ -81,6 +81,43 @@ jsi::Function computeWorkbook(jsi::Runtime &rt)
       });
 }
 
+// `call(op, input)`: a .table engine operation, its input and answer JSON text (never throws: a
+// mistake is {"error": ...}). `callCheck(op, text)` and `callNumber(op, text)`: the per-cell
+// exception, a check or number of one text, undefined when op isn't one.
+jsi::Function tableCall(jsi::Runtime &rt)
+{
+  return jsi::Function::createFromHostFunction(
+      rt, jsi::PropNameID::forAscii(rt, "call"), 2,
+      [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) -> jsi::Value {
+        if (count < 2 || !args[0].isString() || !args[1].isString()) throw jsi::JSError(rt, "expected two strings");
+        std::string op = args[0].asString(rt).utf8(rt);
+        std::string input = args[1].asString(rt).utf8(rt);
+        char *out = edn_call(op.c_str(), input.c_str());
+        if (!out) throw jsi::JSError(rt, "the engine gave no answer");
+        jsi::String answer = jsi::String::createFromUtf8(rt, out);
+        edn_call_free(out);
+        return answer;
+      });
+}
+
+jsi::Function tableTextCall(jsi::Runtime &rt, const char *name, bool check)
+{
+  return jsi::Function::createFromHostFunction(
+      rt, jsi::PropNameID::forAscii(rt, name), 2,
+      [check](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) -> jsi::Value {
+        if (count < 2 || !args[0].isString() || !args[1].isString()) throw jsi::JSError(rt, "expected two strings");
+        std::string op = args[0].asString(rt).utf8(rt);
+        std::string in = args[1].asString(rt).utf8(rt);
+        const uint8_t *t = reinterpret_cast<const uint8_t *>(in.data());
+        if (check) {
+          int32_t answer = edn_call_check(op.c_str(), t, in.size());
+          return answer < 0 ? jsi::Value::undefined() : jsi::Value(answer == 1);
+        }
+        double n = 0;
+        return edn_call_number(op.c_str(), t, in.size(), &n) != 0 ? jsi::Value::undefined() : jsi::Value(n);
+      });
+}
+
 void install(jsi::Runtime &rt)
 {
   jsi::Object edn(rt);
@@ -88,6 +125,9 @@ void install(jsi::Runtime &rt)
   edn.setProperty(rt, "read", textCall(rt, "read", edn_read));
   edn.setProperty(rt, "formula", textCall(rt, "formula", edn_formula));
   edn.setProperty(rt, "computeWorkbook", computeWorkbook(rt));
+  edn.setProperty(rt, "call", tableCall(rt));
+  edn.setProperty(rt, "callCheck", tableTextCall(rt, "callCheck", true));
+  edn.setProperty(rt, "callNumber", tableTextCall(rt, "callNumber", false));
   rt.global().setProperty(rt, "__workspaceEdn", edn);
 }
 

@@ -1,0 +1,12 @@
+[package]
+name = "workspace-table"
+version = "0.1.0"
+description = "The .table engine: the format's logic, shared by every app through the ffi, wasm and node bindings (table-file-format#867)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+workspace-edn = { path = "../core" }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }

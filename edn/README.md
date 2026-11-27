@@ -9,8 +9,13 @@ WebAssembly only where it doesn't.
 edn/
   crates/
     core/   the value model, reading (clojure-reader, within our limits),
-            the canonical printer, errors with line and column
+            the canonical printer, errors with line and column; formulas,
+            the workbook, and the value encodings (encoding.rs)
+    table/  the .table engine as one call (`call`), the way every binding
+            reaches it (table-file-format#867)
     wasm/   the WebAssembly binding: web, and Node (Linux's app)
+    node/   the native Node binding (N-API): Linux's app
+    ffi/    the C binding: the Apple and Android apps, through JSI
   js/       @workspace.sh/edn: one TypeScript API over the WebAssembly
   corpus/   cases.json: input → canonical form, or the error expected.
             Every binding runs it.
@@ -44,12 +49,36 @@ bytes:
 Refused: ratios (`1/2`, Clojure's, not EDN), duplicate map keys and set
 members, more than one value, nesting past 256, texts past 16 MB.
 
+## The .table engine: one call
+
+The `.table` engine is moving from TypeScript to Rust a module at a time
+(table-file-format#867). What has moved is reached through one call, in the
+shape of workspace-protocol's actions engine: an operation's name and its
+input as JSON text in, `{"value": …}` or `{"error": "…"}` out, never a
+throw. `crates/table/src/lib.rs` lists the operations (`OPS`), each named
+after the TypeScript module and export it serves (`encoding.isDate`).
+
+| | Every operation | Per-cell checks and numbers |
+| --- | --- | --- |
+| Rust | `workspace_table::call(op, input)` | `check(op, text)`, `number(op, text)` |
+| WebAssembly, Node, JSI | `call(op, input)` | `callCheck(op, text)`, `callNumber(op, text)` |
+| C | `edn_call` (freed with `edn_call_free`) | `edn_call_check`, `edn_call_number` |
+
+The second column is the one exception: an operation asked once per cell
+or row that takes one text and gives a yes or no, or a number, crosses with
+no JSON at all, several times faster (#867 has the timings). Each of those
+can be asked through `call` too. `computeWorkbook`, with its typed-array
+columns, stays as it is for the same reason. table-core reaches all of it
+through `packages/core/src/engine.ts`; it never imports a binding.
+
 ## Building and testing
 
 ```sh
 cargo test -p workspace-edn                 # the core and the corpus
 (cd js && sh build-native.sh)               # the native binding for this machine;
                                             # the Linux app's build runs it
+(cd js && sh build-native.sh --linux-x64)   # the committed linux-x64 one, from any
+                                            # machine (cargo-zigbuild and zig)
 (cd js && sh build-wasm.sh)                 # needs the wasm32 target,
                                             # wasm-bindgen 0.2.121, wasm-opt
 node --import tsx --test js/src/*.test.ts   # the corpus through WebAssembly
@@ -62,7 +91,10 @@ python3 bench/formulas.py /tmp && cargo run --release -p workspace-edn --example
 ```
 
 The built WebAssembly is committed in `js/wasm/`, so the web app doesn't
-need Rust to build. The Linux app's build compiles the native binding for
+need Rust to build. Each build writes a stamp of the Rust sources beside
+what it built (`js/wasm/edn.source`, `js/native/edn.linux-x64.node.source`,
+from `js/source-stamp.sh`), and CI fails a change to the Rust that doesn't
+rebuild and commit both. The Linux app's build compiles the native binding for
 the machine it runs on, so it needs Rust (cargo), and every chip it's built
 on gets its engine. The x64 Linux binding in `js/native/` is committed so a
 checkout runs and tests without building it first.

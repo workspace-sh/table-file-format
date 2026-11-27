@@ -30,6 +30,16 @@ typedef struct {
 int32_t edn_canonical(const uint8_t *text, size_t len, EdnBytes *out);
 int32_t edn_read(const uint8_t *text, size_t len, EdnBytes *out);
 int32_t edn_formula(const uint8_t *text, size_t len, EdnBytes *out);
+// The .table engine (edn/crates/table) as one call, in the shape of the actions
+// engine's: an operation's name and its input, NUL-terminated UTF-8 (the input
+// JSON), in; NUL-terminated JSON out, given back to edn_call_free. Never NULL:
+// a mistake is {"error": "..."}. edn/crates/table/src/lib.rs lists the operations.
+char *edn_call(const char *op, const char *input);
+void edn_call_free(char *text);
+// The exception for operations asked once per cell: a check of one text (1 yes,
+// 0 no) or a number from one (0, in out); -1 when op isn't one.
+int32_t edn_call_check(const char *op, const uint8_t *text, size_t len);
+int32_t edn_call_number(const char *op, const uint8_t *text, size_t len, double *out);
 // On 1, columns is untouched and error holds the error; on 0, error is untouched.
 int32_t edn_compute_workbook(const uint8_t *json, size_t len, const double *numbers, size_t numbers_len, EdnColumns *columns, EdnBytes *error);
 void edn_bytes_free(EdnBytes b);

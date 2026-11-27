@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 workspace-edn = { path = "../core" }
+workspace-table = { path = "../table" }
 napi = { version = "3", default-features = false, features = ["napi4"] }
 napi-derive = "3"
 

@@ -522,6 +522,7 @@ name = "workspace-edn-ffi"
 version = "0.1.0"
 dependencies = [
  "workspace-edn",
+ "workspace-table",
 ]
 
 [[package]]
@@ -532,6 +533,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "workspace-edn",
+ "workspace-table",
 ]
 
 [[package]]
@@ -539,6 +541,15 @@ name = "workspace-edn-wasm"
 version = "0.1.0"
 dependencies = [
  "wasm-bindgen",
+ "workspace-edn",
+ "workspace-table",
+]
+
+[[package]]
+name = "workspace-table"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
  "workspace-edn",
 ]
 

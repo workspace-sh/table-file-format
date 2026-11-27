@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { EdnError, loadEdn, type Edn } from "./index.ts";
 import { parseExpr } from "../../../packages/core/src/expr.ts";
 
@@ -65,7 +65,9 @@ const fixtureFormulas = (): string[] => {
   };
   for (const dir of readdirSync(new URL("../../../fixtures/", import.meta.url)).filter((d) => d.endsWith(".table"))) {
     const tables = new URL(`../../../fixtures/${dir}/tables/`, import.meta.url);
-    for (const t of readdirSync(tables)) walk(JSON.parse(readFileSync(new URL(`${t}/schema.json`, tables), "utf8")));
+    // A folder without schema.json isn't a table (schema-errors.table holds one on purpose).
+    for (const t of readdirSync(tables).filter((t) => existsSync(new URL(`${t}/schema.json`, tables))))
+      walk(JSON.parse(readFileSync(new URL(`${t}/schema.json`, tables), "utf8")));
   }
   return out;
 };

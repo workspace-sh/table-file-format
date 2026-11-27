@@ -1,5 +1,5 @@
-//! The native Node binding (N-API), for Linux's app: the same three calls as
-//! the WebAssembly binding, with the same results, so `@workspace.sh/edn`
+//! The native Node binding (N-API), for Linux's app: the same calls as the
+//! WebAssembly binding, with the same results, so `@workspace.sh/edn`
 //! can use either. An error is thrown with its message as JSON
 //! (`{message, line, column}`), as the WebAssembly binding throws it.
 
@@ -34,6 +34,25 @@ pub fn formula(text: String) -> Result<String> {
 #[napi]
 pub fn read(text: String) -> Result<String> {
     workspace_edn::read(&text).map(|v| value_json(&v)).map_err(error)
+}
+
+/// A `.table` engine operation (`workspace_table::call`): its input and answer JSON text. Never throws:
+/// a mistake is `{"error": "…"}`.
+#[napi]
+pub fn call(op: String, input: String) -> String {
+    workspace_table::call(&op, &input)
+}
+
+/// A `.table` engine check of one text (`workspace_table::check`); undefined when `op` isn't one.
+#[napi(js_name = "callCheck")]
+pub fn call_check(op: String, text: String) -> Option<bool> {
+    workspace_table::check(&op, &text)
+}
+
+/// A `.table` engine number from one text (`workspace_table::number`); undefined when `op` isn't one.
+#[napi(js_name = "callNumber")]
+pub fn call_number(op: String, text: String) -> Option<f64> {
+    workspace_table::number(&op, &text)
 }
 
 /// A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
