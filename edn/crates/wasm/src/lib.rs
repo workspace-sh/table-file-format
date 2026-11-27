@@ -43,6 +43,52 @@ pub fn call_number(op: &str, text: &str) -> Option<f64> {
     workspace_table::number(op, text)
 }
 
+/// A `.table` engine operation that takes a file's bytes (`workspace_table::call_bytes`): JSON
+/// answered, never thrown.
+#[wasm_bindgen(js_name = callBytes)]
+pub fn call_bytes(op: &str, input: &str, bytes: &[u8]) -> String {
+    workspace_table::call_bytes(op, input, bytes)
+}
+
+/// Rows as they cross back (`workspace_table::held::Window`); each getter copies, so read each once.
+#[wasm_bindgen]
+pub struct RowsWindow(workspace_table::held::Window);
+
+#[wasm_bindgen]
+impl RowsWindow {
+    #[wasm_bindgen(getter)]
+    pub fn entries(&self) -> Vec<u16> {
+        self.0.entries.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn kinds(&self) -> Vec<u8> {
+        self.0.kinds.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn numbers(&self) -> Vec<f64> {
+        self.0.numbers.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn texts(&self) -> String {
+        self.0.texts.clone()
+    }
+    #[wasm_bindgen(getter)]
+    pub fn ends(&self) -> Vec<u32> {
+        self.0.ends.clone()
+    }
+}
+
+/// A `.table` engine operation that gives rows (`workspace_table::window`), or throws `{"error": "…"}`.
+#[wasm_bindgen(js_name = callWindow)]
+pub fn call_window(op: &str, input: &str) -> Result<RowsWindow, JsValue> {
+    workspace_table::window(op, input).map(RowsWindow).map_err(|e| {
+        let mut out = String::from("{\"error\":");
+        json_string(&mut out, &e);
+        out.push('}');
+        JsValue::from_str(&out)
+    })
+}
+
 fn error_json(e: Error) -> JsValue {
     let mut out = String::from("{\"message\":");
     json_string(&mut out, &e.message);

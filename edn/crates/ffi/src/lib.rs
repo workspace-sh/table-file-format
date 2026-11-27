@@ -21,6 +21,32 @@ pub struct EdnBytes {
     pub len: usize,
 }
 
+/// Rows as they cross back (`workspace_table::held::Window`), given back once to `edn_window_free`.
+#[repr(C)]
+pub struct EdnWindow {
+    pub entries: *mut u16,
+    pub entries_len: usize,
+    pub kinds: EdnBytes,
+    pub numbers: *mut f64,
+    pub numbers_len: usize,
+    pub texts: EdnBytes,
+    pub ends: *mut u32,
+    pub ends_len: usize,
+}
+
+fn leaked<T>(v: Vec<T>) -> (*mut T, usize) {
+    let len = v.len();
+    (Box::into_raw(v.into_boxed_slice()) as *mut T, len)
+}
+
+/// # Safety
+/// `ptr` and `len` came from `leaked` and haven't been given back.
+unsafe fn unleak<T>(ptr: *mut T, len: usize) {
+    if !ptr.is_null() {
+        drop(Box::from_raw(slice::from_raw_parts_mut(ptr, len)));
+    }
+}
+
 /// A workbook's computed columns, encoded as `workspace_edn::column::compute` describes.
 #[repr(C)]
 pub struct EdnColumns {
@@ -147,6 +173,65 @@ pub unsafe extern "C" fn edn_call_number(op: *const c_char, text_ptr: *const u8,
         }
         None => -1,
     }
+}
+
+/// A `.table` engine operation that takes a file's bytes (`workspace_table::call_bytes`). `op` and
+/// `input` as `edn_call` takes them, `bytes` its `len` bytes. Returns JSON as `edn_call` does.
+///
+/// # Safety
+/// `op` and `input` are null or NUL-terminated; `bytes` points at `len` readable bytes (or `len` is 0).
+#[no_mangle]
+pub unsafe extern "C" fn edn_call_bytes(op: *const c_char, input: *const c_char, bytes: *const u8, len: usize) -> *mut c_char {
+    let utf8 = |p: *const c_char| if p.is_null() { None } else { CStr::from_ptr(p).to_str().ok() };
+    let data = if len == 0 { &[][..] } else { slice::from_raw_parts(bytes, len) };
+    let answer = match (utf8(op), utf8(input)) {
+        (Some(op), Some(input)) => workspace_table::call_bytes(op, input, data),
+        _ => r#"{"error":"the operation and its input are UTF-8 text"}"#.to_string(),
+    };
+    CString::new(answer).map_or(std::ptr::null_mut(), CString::into_raw)
+}
+
+/// A `.table` engine operation that gives rows (`workspace_table::window`): 0 with them in `out`,
+/// or 1 with `{"error": "…"}` in `error` (given back to `edn_call_free`). Each is untouched otherwise.
+///
+/// # Safety
+/// `op` and `input` are null or NUL-terminated; `out` and `error` are writable.
+#[no_mangle]
+pub unsafe extern "C" fn edn_call_window(op: *const c_char, input: *const c_char, out: *mut EdnWindow, error: *mut *mut c_char) -> i32 {
+    let utf8 = |p: *const c_char| if p.is_null() { None } else { CStr::from_ptr(p).to_str().ok() };
+    let got = match (utf8(op), utf8(input)) {
+        (Some(op), Some(input)) => workspace_table::window(op, input),
+        _ => Err("the operation and its input are UTF-8 text".to_string()),
+    };
+    match got {
+        Ok(w) => {
+            let (entries, entries_len) = leaked(w.entries);
+            let (numbers, numbers_len) = leaked(w.numbers);
+            let (ends, ends_len) = leaked(w.ends);
+            *out = EdnWindow { entries, entries_len, kinds: bytes(w.kinds), numbers, numbers_len, texts: bytes(w.texts.into_bytes()), ends, ends_len };
+            0
+        }
+        Err(e) => {
+            let mut text = String::from("{\"error\":");
+            json_string(&mut text, &e);
+            text.push('}');
+            *error = CString::new(text).map_or(std::ptr::null_mut(), CString::into_raw);
+            1
+        }
+    }
+}
+
+/// Gives back rows `edn_call_window` returned.
+///
+/// # Safety
+/// `w` came from `edn_call_window` and hasn't been given back.
+#[no_mangle]
+pub unsafe extern "C" fn edn_window_free(w: EdnWindow) {
+    unleak(w.entries, w.entries_len);
+    edn_bytes_free(w.kinds);
+    unleak(w.numbers, w.numbers_len);
+    edn_bytes_free(w.texts);
+    unleak(w.ends, w.ends_len);
 }
 
 /// A workbook's formulas computed (see `workspace_edn::workbook::workbook_from`).

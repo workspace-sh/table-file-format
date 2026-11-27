@@ -71,6 +71,34 @@ can be asked through `call` too. `computeWorkbook`, with its typed-array
 columns, stays as it is for the same reason. table-core reaches all of it
 through `packages/core/src/engine.ts`; it never imports a binding.
 
+### A table's rows, held by the engine
+
+`crates/table/src/rows.rs` holds a table's rows as their files were read:
+every row a span of its file, every cell a span of its row with its JSON
+kind, decoded only when asked for. Nothing is rewritten, so a row nobody
+edits can be written back byte for byte. `crates/table/src/held.rs` keeps
+tables by handle, and two more shapes reach them:
+
+| | A file's bytes in | Rows out |
+| --- | --- | --- |
+| Rust | `call_bytes(op, input, bytes)` | `window(op, input)` |
+| WebAssembly, Node, JSI | `callBytes(op, input, bytes)` | `callWindow(op, input)` |
+| C | `edn_call_bytes` | `edn_call_window` (freed with `edn_window_free`) |
+
+- `rows.new {fields}` gives a handle.
+- `rows.read {handle, file, stripBom, method?, size?, crc?}` with a rows
+  file's bytes reads them in: as a zip entry holds them when `method` is
+  given (the engine inflates and checks them), else as text.
+- `rows.window {handle, from, to}` gives rows as typed arrays, each row's
+  keys in the order its line writes them (`held::Window`).
+- `rows.lines` gives the lines that weren't rows, `rows.count`, `rows.bytes`,
+  and `rows.free` ends the handle.
+
+table-core reads rows this way when `setRowsThroughEngine(true)` is set
+(`packages/core/src/engineRows.ts`). It's off by default until a table can
+be shown through the handle without its rows rebuilt as objects (#867).
+`bench/engine-rows.mts` times it against the TypeScript reader.
+
 ## Building and testing
 
 ```sh

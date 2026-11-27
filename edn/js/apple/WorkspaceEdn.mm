@@ -95,6 +95,54 @@ jsi::Object typedArray(jsi::Runtime &rt, const char *type, const void *bytes, si
   return array;
 }
 
+// `callBytes(op, input, bytes)`: an operation that takes a file's bytes (a Uint8Array).
+// `callWindow(op, input)`: rows as typed arrays and one string, or throws {"error": ...}.
+jsi::Function tableBytesCall(jsi::Runtime &rt)
+{
+  return jsi::Function::createFromHostFunction(
+      rt, jsi::PropNameID::forAscii(rt, "callBytes"), 3,
+      [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) -> jsi::Value {
+        if (count < 3 || !args[0].isString() || !args[1].isString() || !args[2].isObject()) throw jsi::JSError(rt, "expected two strings and a Uint8Array");
+        std::string op = args[0].asString(rt).utf8(rt);
+        std::string input = args[1].asString(rt).utf8(rt);
+        jsi::Object bytes = args[2].asObject(rt);
+        jsi::ArrayBuffer buffer = bytes.getPropertyAsObject(rt, "buffer").getArrayBuffer(rt);
+        size_t offset = static_cast<size_t>(bytes.getProperty(rt, "byteOffset").asNumber());
+        size_t length = static_cast<size_t>(bytes.getProperty(rt, "length").asNumber());
+        char *out = edn_call_bytes(op.c_str(), input.c_str(), buffer.data(rt) + offset, length);
+        if (!out) throw jsi::JSError(rt, "the engine gave no answer");
+        jsi::String answer = jsi::String::createFromUtf8(rt, out);
+        edn_call_free(out);
+        return answer;
+      });
+}
+
+jsi::Function tableWindowCall(jsi::Runtime &rt)
+{
+  return jsi::Function::createFromHostFunction(
+      rt, jsi::PropNameID::forAscii(rt, "callWindow"), 2,
+      [](jsi::Runtime &rt, const jsi::Value &, const jsi::Value *args, size_t count) -> jsi::Value {
+        if (count < 2 || !args[0].isString() || !args[1].isString()) throw jsi::JSError(rt, "expected two strings");
+        std::string op = args[0].asString(rt).utf8(rt);
+        std::string input = args[1].asString(rt).utf8(rt);
+        EdnWindow w;
+        char *error = nullptr;
+        if (edn_call_window(op.c_str(), input.c_str(), &w, &error) != 0) {
+          std::string message = error ? error : "{\"error\":\"the engine gave no answer\"}";
+          edn_call_free(error);
+          throw jsi::JSError(rt, message);
+        }
+        jsi::Object out(rt);
+        out.setProperty(rt, "entries", typedArray(rt, "Uint16Array", w.entries, w.entries_len, sizeof(uint16_t)));
+        out.setProperty(rt, "kinds", typedArray(rt, "Uint8Array", w.kinds.ptr, w.kinds.len, 1));
+        out.setProperty(rt, "numbers", typedArray(rt, "Float64Array", w.numbers, w.numbers_len, sizeof(double)));
+        out.setProperty(rt, "texts", jsi::String::createFromUtf8(rt, w.texts.ptr, w.texts.len));
+        out.setProperty(rt, "ends", typedArray(rt, "Uint32Array", w.ends, w.ends_len, sizeof(uint32_t)));
+        edn_window_free(w);
+        return out;
+      });
+}
+
 jsi::Function computeWorkbook(jsi::Runtime &rt)
 {
   return jsi::Function::createFromHostFunction(
@@ -160,6 +208,8 @@ RCT_EXPORT_MODULE()
   edn.setProperty(rt, "call", tableCall(rt));
   edn.setProperty(rt, "callCheck", tableTextCall(rt, "callCheck", true));
   edn.setProperty(rt, "callNumber", tableTextCall(rt, "callNumber", false));
+  edn.setProperty(rt, "callBytes", tableBytesCall(rt));
+  edn.setProperty(rt, "callWindow", tableWindowCall(rt));
   rt.global().setProperty(rt, "__workspaceEdn", edn);
 }
 

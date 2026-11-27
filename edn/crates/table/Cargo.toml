@@ -9,4 +9,9 @@ publish = false
 
 [dependencies]
 workspace-edn = { path = "../core" }
-serde_json = { version = "1", features = ["float_roundtrip", "preserve_order"] }
+serde = "1"
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order", "raw_value"] }
+# Rows files as a zip holds them (deflate), inflated by the engine.
+miniz_oxide = "0.8"
+# The CRC-32 a zip entry declares, checked a word at a time (SIMD where the chip has it).
+crc32fast = "1"
