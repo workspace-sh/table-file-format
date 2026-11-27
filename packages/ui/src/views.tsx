@@ -288,10 +288,11 @@ const styles = css.create({
   cellSelected: {
     boxShadow: "inset 0 0 0 2px #0a84ff",
   },
-  // A cell a fix just changed: a wash of the system's green, gone in a second.
-  cellFlashed: {
-    backgroundColor: "rgba(52, 199, 89, 0.32)",
-  },
+  // A cell a fix just changed: the system's green, bright, fading out in steps (FLASH_STEPS).
+  cellFlash0: { backgroundColor: "rgba(48, 209, 88, 0.62)" },
+  cellFlash1: { backgroundColor: "rgba(48, 209, 88, 0.46)" },
+  cellFlash2: { backgroundColor: "rgba(48, 209, 88, 0.3)" },
+  cellFlash3: { backgroundColor: "rgba(48, 209, 88, 0.16)" },
   tableGrow: {
     flex: 1,
     minWidth: 0,
@@ -3294,6 +3295,9 @@ function BodyBadge({ onClick, besideTitle }: { onClick?: () => void; besideTitle
  * margins to the screen's edges, starting and ending in line with the
  * page. Off: as it is.
  */
+/** The flash of a changed cell, brightest first (styles.cellFlash0…3). */
+const FLASH_STEPS = [0, 1, 2, 3].map((n) => (styles as unknown as Record<string, unknown>)[`cellFlash${n}`]) as unknown as (typeof styles)["cellFlash0"][];
+
 function EdgeToEdge({
   on,
   fill,
@@ -3876,7 +3880,7 @@ export function TableView({
   const paneScroll = { ref: useRef<unknown>(null), x: useRef(0) };
   const pageReveal = useContext(PageReveal);
   // A cell just changed from outside it (a fix), washed green for a moment.
-  const [flashed, setFlashed] = useState<string | null>(null);
+  const [flashed, setFlashed] = useState<{ key: string; step: number } | null>(null);
   const gutter = useContext(PageGutter);
   const groupTitle = view.group ? (fieldMap.get(view.group.field)?.title ?? view.group.field) : "";
   // Typed and shown against the grid as saved, so =C3 means the same row
@@ -4742,7 +4746,7 @@ export function TableView({
           tintOf(colorsOf(row).cells[name]),
           note !== undefined && styles.noted,
           isSelected && styles.cellSelected,
-          flashed === cellKey && styles.cellFlashed,
+          flashed?.key === cellKey && FLASH_STEPS[flashed.step],
         ]}
         {...(note !== undefined ? { title: note } : {})}
       >
@@ -4822,9 +4826,11 @@ export function TableView({
       setSel({ rowId: p.rowId, name: p.field });
       if (restorePlace?.flash) {
         const key = `${p.rowId}\u0000${p.field}`;
-        setFlashed(key);
-        // Long enough to be seen as the table settles on it; a new flash takes its place.
-        setTimeout(() => setFlashed((was) => (was === key ? null : was)), 1100);
+        // Bright as the table settles on it (0.7 s), then fading out in steps (0.9 s); a new flash takes its place.
+        setFlashed({ key, step: 0 });
+        FLASH_STEPS.forEach((_, i) =>
+          setTimeout(() => setFlashed((was) => (was?.key === key ? (i + 1 < FLASH_STEPS.length ? { key, step: i + 1 } : null) : was)), 700 + i * 220),
+        );
       }
     } else setSel(null);
     // Each place once, as it arrives.
@@ -5389,7 +5395,9 @@ export function TableView({
     const entry = entryAt(place);
     const selected = entry && sel?.rowId === entry.row.id ? sel.name : null;
     const dragged = entry && liveRow?.rowId === entry.row.id ? liveRow : null;
-    return [entry?.row, entry?.starts?.label, entry?.starts?.count, selected, dragged];
+    // A cell of it flashing after a fix, and how far it has faded: each step draws the row again.
+    const flashing = entry && flashed?.key.startsWith(`${entry.row.id}\u0000`) ? flashed.step : null;
+    return [entry?.row, entry?.starts?.label, entry?.starts?.count, selected, dragged, flashing];
   };
 
   // The header and the view's frozen rows (D58), over the top of whatever scrolls the page once the
