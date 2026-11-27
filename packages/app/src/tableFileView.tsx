@@ -34,6 +34,7 @@ import type { IndexDatabase } from "./indexHost.ts";
 import { useIndexedTables } from "./useIndexedTables.ts";
 import { readingText } from "./reading.ts";
 import { askName } from "./askName";
+import { problemItems, type ProblemItem } from "./problemWords";
 
 /** What the host draws around the view: the file's tables and views, and what can be done to them. */
 export interface TableFileChrome {
@@ -79,6 +80,8 @@ export interface TableFileChrome {
   valid: boolean;
   /** Every problem the table on screen has, with its place and fixes (table-core's problemsOf). */
   problems: Problem[];
+  /** The same in a person's words, a merge conflict as one decision, in the order they're listed (problemWords). */
+  problemItems: ProblemItem[];
   /** Whether fixes can be made here: not to look at only, nor in a table held in its index. */
   canFix: boolean;
   /** Makes `fixes` as one edit called `name` ("Make It 0"), undone as any other. */
@@ -408,6 +411,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
     breadcrumb: derived.breadcrumb.text,
     valid: derived.summary.valid,
     problems: derived.summary.problems,
+    problemItems: itemsOf(table, derived.summary.problems),
     canFix: !lookOnly && !table.indexed,
     fix: (fixes, name) => {
       if (!lookOnly) dispatch({ type: "applyFixes", fixes, name });
@@ -508,3 +512,13 @@ function ProblemText({ text }: { text: string }) {
 const styles = css.create({
   problem: { paddingBlock: 16, fontSize: 15, color: { default: "#6e6e73", "@media (prefers-color-scheme: dark)": "#8a8a93" } },
 });
+
+/** A table's problems in words, once for each table object (an edit makes a new one). */
+const worded = new WeakMap<ParsedTable, { problems: Problem[]; items: ProblemItem[] }>();
+function itemsOf(table: ParsedTable, problems: Problem[]): ProblemItem[] {
+  const had = worded.get(table);
+  if (had && had.problems === problems) return had.items;
+  const items = problemItems(table, problems);
+  worded.set(table, { problems, items });
+  return items;
+}
