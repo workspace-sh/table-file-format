@@ -3,7 +3,7 @@
 // never runs on the thread that draws.
 
 import type { HeldRows, RowsRequest } from "@workspace.sh/table-app";
-import type { Row, SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
+import type { IndexCheck, Row, SqlDriver, SqlValue, TableSchema } from "@workspace.sh/table-core";
 import type { OpenedLarge, Request, Response } from "./worker";
 
 export interface WebDatabase extends SqlDriver {
@@ -38,6 +38,10 @@ export interface WebDatabase extends SqlDriver {
   timings(): Promise<{ what: string; ms: number; waited: number }[]>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /** Its rows as checked once its index was made (#867, step 2c), stale or not; null when there's none to go by. */
+  checked(name: string): Promise<IndexCheck | null>;
+  /** Check its rows from the index, a step at a time behind whatever else is asked, unless they've been checked as they are. */
+  check(name: string, schema: TableSchema, pages?: readonly string[]): Promise<IndexCheck | null>;
   /** After a change to a table's fields from `from` to `to`: its index changed where it is (core's alterIndex). False when it can't be, and it's built again. */
   alter(name: string, from: TableSchema, to: TableSchema, options?: { restore?: string[] }): Promise<boolean>;
   /** Work out what a change of fields left to work out (core's fillIndex), a step at a time behind whatever else is asked. */
@@ -118,6 +122,8 @@ function database(bundle: string): WebDatabase {
     heldRows: (name) => ask<HeldRows | null>({ op: "held", name }),
     save: (name, schema, rows, omit, whole) => ask({ op: "save", name, schema, rows, ...(omit ? { omit } : {}), ...(whole ? { whole } : {}) }) as Promise<boolean>,
     search: (name) => ask({ op: "search", name }),
+    checked: (name) => ask<IndexCheck | null>({ op: "checked", name }),
+    check: (name, schema, pages) => ask<IndexCheck | null>({ op: "check", name, schema, ...(pages ? { pages: [...pages] } : {}) }),
     alter: (name, from, to, options) => ask<boolean>({ op: "alter", name, from, to, ...(options?.restore ? { restore: options.restore } : {}) }),
     fill: (name, schema) => ask({ op: "fill", name, schema }),
     rows: (request) => ask({ op: "rows", request }),

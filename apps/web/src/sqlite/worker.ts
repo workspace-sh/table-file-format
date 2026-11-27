@@ -13,12 +13,15 @@
 
 import sqlite3InitModule from "@sqlite.org/sqlite-wasm";
 import { loadEdn } from "@workspace.sh/edn";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app/worker";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, openArchive, pagesOf, readHeldRows, rowsServer, type OpenedBundle, type RowsRequest } from "@workspace.sh/table-app/worker";
 import {
   FIRST_ROWS_FILE,
   alterIndex,
   buildSearchIndex,
+  checkOf,
   fillIndex,
+  indexCheck,
+  type IndexCheckRun,
   indexKey,
   oo1Driver,
   queryIndex,
@@ -48,6 +51,8 @@ export type Request = { id: number } & (
       | { op: "build"; name: string; schema: TableSchema }
       | { op: "save"; name: string; schema: TableSchema; rows: boolean; omit?: string[]; whole?: boolean }
       | { op: "search"; name: string }
+      | { op: "checked"; name: string }
+      | { op: "check"; name: string; schema: TableSchema; pages?: string[] }
       | { op: "alter"; name: string; from: TableSchema; to: TableSchema; restore?: string[] }
       | { op: "fill"; name: string; schema: TableSchema }
       | { op: "rows"; request: RowsRequest }
@@ -339,6 +344,8 @@ async function handle(req: Request & { bundle: string }): Promise<unknown> {
       return serve!(req.request);
     case "peek":
       return rowsBeingBuilt(driver, req.name, req.start, req.end);
+    case "checked":
+      return checkOf(driver, req.name);
     case "alter":
       return alterIndex(driver, req.name, req.from, req.to, req.restore ? { restore: req.restore } : {});
     case "close":
@@ -365,7 +372,7 @@ const inTurn = <T,>(run: () => Promise<T>): Promise<T> => {
 // a build is one transaction, and would take the write with it if it failed.
 const building = new Map<string, Promise<unknown>>();
 const writes = (req: Request): boolean =>
-  req.op === "ensure" || req.op === "build" || req.op === "save" || req.op === "search" || req.op === "alter" || req.op === "fill" || req.op === "run" || req.op === "exec" || req.op === "batch" || (req.op === "rows" && req.request.ask === "edits");
+  req.op === "ensure" || req.op === "build" || req.op === "save" || req.op === "search" || req.op === "check" || req.op === "alter" || req.op === "fill" || req.op === "run" || req.op === "exec" || req.op === "batch" || (req.op === "rows" && req.request.ask === "edits");
 
 /** Resolves once the messages already sent to this worker have been taken in. (A channel to itself: a timer would be held back to 4 ms a time.) */
 const turnstile = new MessageChannel();
@@ -509,9 +516,33 @@ function step(req: Request & { op: "search" | "fill" }): void {
   );
 }
 
+/**
+ * A table's rows checked from its index (#867, step 2c), a step at a time in the same way, behind
+ * whatever the page asks; answered with the check kept, or null when none could be made.
+ */
+function checkStep(req: Request & { op: "check" }, run?: IndexCheckRun): void {
+  if (savesUnderWay > 0 || Date.now() - lastAsked < QUIET_MS) return void setTimeout(() => checkStep(req, run), QUIET_MS / 2);
+  let r = run;
+  inTurn(async () => {
+    const { driver: db } = await open(req.bundle);
+    r ??= indexCheck(db, { name: req.name, schema: req.schema, ...(req.pages ? { bodies: pagesOf(req.pages) } : {}), batchSize: SEARCH_STEP });
+    const from = performance.now();
+    const more = await r.step();
+    timed({ what: "check step", ms: Math.round((performance.now() - from) * 10) / 10, waited: 0 });
+    return more ? undefined : { value: await checkOf(db, req.name) };
+  }).then(
+    (done) => {
+      if (!done) setTimeout(() => checkStep(req, r), 0);
+      else post({ id: req.id, ok: true, value: done.value });
+    },
+    (err: unknown) => post({ id: req.id, ok: false, error: String(err instanceof Error ? err.message : err) }),
+  );
+}
+
 function take(req: Request): void {
   if (req.op === "ensure" || req.op === "build") return build(req);
   if (req.op === "search" || req.op === "fill") return step(req);
+  if (req.op === "check") return checkStep(req);
   if (req.op === "save") return save(req);
   lastAsked = Date.now();
   void inTurn(async () => {

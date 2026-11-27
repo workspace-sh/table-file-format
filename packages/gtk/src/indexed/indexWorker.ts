@@ -5,7 +5,8 @@
 
 import { parentPort, workerData } from "node:worker_threads";
 import { openIndexHost } from "@workspace.sh/table-app/node";
-import { alterIndex, buildSearchIndex, fillIndex, setFormulaEngine } from "@workspace.sh/table-core";
+import { alterIndex, buildSearchIndex, checkOf, fillIndex, indexCheck, setFormulaEngine, type IndexCheckRun } from "@workspace.sh/table-core";
+import { pagesOf } from "@workspace.sh/table-app";
 import { loadEdn } from "@workspace.sh/edn";
 import type { RowsRequest } from "@workspace.sh/table-app";
 import type { SqlValue, TableSchema } from "@workspace.sh/table-core";
@@ -23,6 +24,8 @@ export type IndexRequest = { id: number } & (
   | { op: "save"; name: string; tableDir: string; rows: boolean; omit?: string[]; whole?: boolean }
   | { op: "alter"; name: string; from: TableSchema; to: TableSchema; restore?: string[] }
   | { op: "fill"; name: string; schema: TableSchema }
+  | { op: "checked"; name: string }
+  | { op: "check"; name: string; schema: TableSchema; pages?: string[] }
   | { op: "close" }
 );
 
@@ -66,7 +69,10 @@ async function answer(request: IndexRequest): Promise<unknown> {
       return host.rows(request.request);
     case "peek":
       return host.peek(request.name, request.start, request.end);
+    case "checked":
+      return checkOf(host, request.name);
     case "search":
+    case "check":
       // Not reached: made a step at a time, below.
       return undefined;
     case "build":
@@ -93,6 +99,7 @@ const writes = (request: IndexRequest): boolean =>
   request.op === "search" ||
   request.op === "alter" ||
   request.op === "fill" ||
+  request.op === "check" ||
   request.op === "run" ||
   request.op === "exec" ||
   request.op === "batch" ||
@@ -177,9 +184,27 @@ function fillStep(request: IndexRequest & { op: "fill" }): void {
   );
 }
 
+/**
+ * A table's rows checked from its index (#867, step 2c), a step at a time in the same way as a
+ * search index; answered with the check kept, or null when none could be made.
+ */
+function checkStep(request: IndexRequest & { op: "check" }, run?: IndexCheckRun): void {
+  if (savesUnderWay > 0 || Date.now() - lastAsked < 250) return void setTimeout(() => checkStep(request, run), 125);
+  const r = run ?? indexCheck(host, { name: request.name, schema: request.schema, ...(request.pages ? { bodies: pagesOf(request.pages) } : {}), batchSize: 5000 });
+  inTurn(() => r.step()).then(
+    async (more) => {
+      if (more) return void setImmediate(() => checkStep(request, r));
+      const value = await inTurn(() => checkOf(host, request.name));
+      port.postMessage({ id: request.id, ok: true, value } satisfies IndexResponse);
+    },
+    (error: unknown) => port.postMessage({ id: request.id, ok: false, error: error instanceof Error ? error.message : String(error) } satisfies IndexResponse),
+  );
+}
+
 function take(request: IndexRequest): void {
   if (request.op === "ensure" || request.op === "build") return build(request);
   if (request.op === "search") return searchStep(request);
+  if (request.op === "check") return checkStep(request);
   if (request.op === "fill") return fillStep(request);
   if (request.op === "save") return save(request);
   // Closing waits for a save to finish its file.

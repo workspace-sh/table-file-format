@@ -3,7 +3,7 @@
 
 import { Worker } from "node:worker_threads";
 import type { IndexHost } from "@workspace.sh/table-app/node";
-import type { SqlValue } from "@workspace.sh/table-core";
+import type { IndexCheck, SqlValue } from "@workspace.sh/table-core";
 import type { IndexRequest, IndexResponse } from "./indexWorker.js";
 
 type Call = IndexRequest extends infer R ? (R extends { id: number } ? Omit<R, "id"> : never) : never;
@@ -45,6 +45,8 @@ export function openWorkerIndexHost(bundleDir: string): IndexHost {
     batch: (sql, params) => call({ op: "batch", sql, params }),
     ensure: (name, tableDir, onProgress) => call<number>({ op: "ensure", name, tableDir }, onProgress),
     search: (name) => call({ op: "search", name }),
+    checked: (name) => call<IndexCheck | null>({ op: "checked", name }),
+    check: (name, schema, pages) => call<IndexCheck | null>({ op: "check", name, schema, ...(pages ? { pages: [...pages] } : {}) }),
     rows: (request) => call({ op: "rows", request }),
     peek: (name, start, end) => call({ op: "peek", name, start, end }),
     build: (name, tableDir, onProgress) => call<number>({ op: "build", name, tableDir }, onProgress),

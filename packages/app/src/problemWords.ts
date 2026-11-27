@@ -7,7 +7,7 @@
 // Only what is the same on every platform is here; how each app draws it is
 // its own (table-file-format#858, part 3).
 
-import { canApplyFix, enumValues, type Fix, type ParsedTable, type Problem, type Severity } from "@workspace.sh/table-core";
+import { canApplyFix, enumValues, type Fix, type ParsedTable, type Problem, type Row, type Severity } from "@workspace.sh/table-core";
 
 /** Where a problem is listed: what has to be decided first, the values, then the rest, warnings and notes last. */
 export type ProblemGroup = "decisions" | "values" | "repeated" | "lines" | "formulas" | "file" | "notes";
@@ -114,11 +114,15 @@ const list = (items: string[]) => (items.length < 2 ? (items[0] ?? "") : `${item
 
 /** The table's problems as a person reads them, in the order they're listed. */
 export function problemItems(table: ParsedTable, problems: readonly Problem[]): ProblemItem[] {
-  const rowNumber = new Map(table.rows.map((r, i) => [r.id, i + 1]));
-  const rowOf = (id: string) => table.rows.find((r) => r.id === id);
+  // An indexed table's rows aren't here: the rows its check's problems are of are, with their places (#867).
+  const checked = table.indexed && typeof table.indexed.checked === "object" ? table.indexed.checked : undefined;
+  const held = checked ? checked.lines.map((line) => JSON.parse(line) as Row) : table.rows;
+  const rowNumber = checked ? new Map(Object.entries(checked.at ?? {}).map(([id, at]) => [id, at + 1])) : new Map(held.map((r, i) => [r.id, i + 1]));
+  const rowOf = (id: string) => held.find((r) => r.id === id);
   const fieldOf = (name: string) => table.schema.fields.find((f) => f.name === name);
   const n = (id: string | undefined) => (id !== undefined ? rowNumber.get(id) : undefined);
-  const rowWords = (id: string | undefined) => (n(id) !== undefined ? `row ${n(id)}` : "a deleted row");
+  // A row of an indexed table that isn't among those is there, not deleted: said by its id.
+  const rowWords = (id: string | undefined) => (n(id) !== undefined ? `row ${n(id)}` : table.indexed && id !== undefined ? `row “${id}”` : "a deleted row");
 
   const used = new Set<Problem>();
   const items: ProblemItem[] = [];

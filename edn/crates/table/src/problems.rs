@@ -691,7 +691,10 @@ const BATCH: usize = 4 << 20;
 /// (what its fixes read), when it's a row's.
 struct Said {
     json: String,
-    row: Option<(String, Box<[u8]>)>,
+    /// Its row's id, line, and place among the table's rows (from 0).
+    row: Option<(String, Box<[u8]>, usize)>,
+    /// The row that holds its value or key first, by what `Seen` keeps for it.
+    other: Option<u32>,
 }
 
 /// A table's problems found as its rows files are read, a few megabytes at a time (#867, step 2c): what
@@ -710,6 +713,8 @@ pub struct Checker {
     seen: Seen,
     /// The ids of the rows that held a unique value or a key first, by what `Seen` keeps for them.
     firsts: Vec<Box<str>>,
+    /// Their places among the table's rows, from 0.
+    first_places: Vec<u32>,
     rows: usize,
     said: Vec<Said>,
     row_found: usize,
@@ -757,6 +762,7 @@ impl Checker {
             attachments,
             window,
             firsts: Vec::new(),
+            first_places: Vec::new(),
             rows: 0,
             said: Vec::new(),
             row_found: 0,
@@ -829,12 +835,14 @@ impl Checker {
             return Err(format!("{}: line {} {why}", self.reading, self.lines_before + l.line as usize + 1));
         }
         self.lines_before += count;
-        let Checker { spec, seen, firsts, said, found, window, row_counts, row_found: count, body_of, body_held, choices, attachment_of, attachment_held, bodies, attachments, .. } = self;
+        let Checker { spec, seen, firsts, first_places, said, found, window, row_counts, row_found: count, body_of, body_held, choices, attachment_of, attachment_held, bodies, attachments, rows: before, .. } = self;
+        let before = *before;
         let attachment_fields: Vec<&Field> = spec.fields.iter().filter(|f| f.attachment).collect();
         for row in 0..r.len() {
             found.clear();
             row_found(spec, &r, row, seen, &mut |row| {
                 firsts.push(r.id(row).into());
+                first_places.push((before + row) as u32);
                 (firsts.len() - 1) as u32
             }, found);
             for f in found.iter() {
@@ -846,7 +854,8 @@ impl Checker {
                 if said.len() < *window {
                     let mut json = String::new();
                     render(&mut json, f, spec, bodies, attachments.as_deref().unwrap_or_default(), Some(&r), &|at| firsts[at as usize].to_string());
-                    said.push(Said { json, row: Some((r.id(row), r.line(row).into())) });
+                    let other = matches!(f.code, Code::Unique | Code::KeyPrimary | Code::KeyUnique).then_some(f.at);
+                    said.push(Said { json, row: Some((r.id(row), r.line(row).into(), before + row)), other });
                 }
             }
             if !body_of.is_empty() {
@@ -933,16 +942,40 @@ impl Checker {
         }
         // The rows the problems said are of, once each: their fixes read their values.
         out.push_str("],\"lines\":[");
-        let mut lines: HashSet<&str> = HashSet::new();
-        for (id, line) in self.said.iter().filter_map(|s| s.row.as_ref()) {
-            if lines.insert(id) {
-                if lines.len() > 1 {
+        let mut lines: Vec<&str> = Vec::new();
+        for (id, line, _) in self.said.iter().filter_map(|s| s.row.as_ref()) {
+            if !lines.contains(&id.as_str()) {
+                if !lines.is_empty() {
                     out.push(',');
                 }
+                lines.push(id);
                 json_string(&mut out, &String::from_utf8_lossy(line));
             }
         }
-        out.push_str("]}");
+        // Where each row the problems name is among the table's rows, from 0, by id: for saying "row 8".
+        out.push_str("],\"at\":{");
+        let mut named: Vec<(&str, usize)> = Vec::new();
+        for s in &self.said {
+            if let Some((id, _, at)) = &s.row {
+                named.push((id, *at));
+            }
+            if let Some(o) = s.other {
+                named.push((&self.firsts[o as usize], self.first_places[o as usize] as usize));
+            }
+        }
+        let mut written: Vec<&str> = Vec::new();
+        for (id, at) in named {
+            if !written.contains(&id) {
+                if !written.is_empty() {
+                    out.push(',');
+                }
+                json_string(&mut out, id);
+                out.push(':');
+                out.push_str(&at.to_string());
+                written.push(id);
+            }
+        }
+        out.push_str("}}");
         out
     }
 }
@@ -999,6 +1032,8 @@ mod tests {
         assert_eq!(got["rules"], RULES);
         // Rows z repeats x's n and its key, and y is over its maximum: their lines, once each.
         assert_eq!(got["lines"], serde_json::json!(["{\"id\":\"y\",\"n\":9}", "{\"id\":\"z\",\"n\":1,\"s\":\"a\"}"]));
+        // y is the table's second row and z its third, across the files; x (the first) holds what z repeats.
+        assert_eq!(got["at"], serde_json::json!({"y": 1, "z": 2, "x": 0}));
         let counts: Vec<(&str, usize)> = got["counts"].as_object().unwrap().iter().map(|(k, v)| (k.as_str(), v.as_u64().unwrap() as usize)).collect();
         assert_eq!(counts.iter().map(|c| c.1).sum::<usize>(), p.found.len());
     }

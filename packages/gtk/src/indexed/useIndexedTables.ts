@@ -42,6 +42,8 @@ function nodeDatabase(host: IndexHost, bundleDir: string): IndexedTablesDatabase
     peek: (name, start, end) => host.peek(name, start, end),
     rows: (request) => host.rows(request),
     search: (name) => host.search(name),
+    checked: (name) => host.checked(name),
+    check: (name, schema, pages) => host.check(name, schema, pages),
     alter: (name, from, to, options) => host.alter(name, from, to, options),
     fill: (name, schema) => host.fill(name, schema),
     // With their formulas worked out, as the rows in the index are.

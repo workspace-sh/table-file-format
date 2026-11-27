@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { BundleMeta, ParsedTable } from "@workspace.sh/table-core";
+import { checkStamp, type BundleMeta, type IndexCheck, type ParsedTable } from "@workspace.sh/table-core";
 import { bundles as fixtures } from "@workspace.sh/table-fixtures";
 
 import { derive, initialAppState, isEditable, tableApp, viewCallbacks, viewIdOf, type AppAction, type AppState } from "./appState.ts";
@@ -737,6 +737,24 @@ test("an indexed table's summary counts what the index holds, and says its rows 
   const searching = run(s, { type: "search", text: "x" });
   assert.equal(derive(searching, { indexedShown: { count: 3, inView: 12 } }).summary.count, "3 of 12 matching");
   assert.deepEqual(derive(s).shown.rows, []);
+});
+
+test("an indexed table's rows checked: said while checking, then its problems; an edit landing leaves the check as from before it", () => {
+  const key = "projects/projects";
+  const s = indexedStart();
+  const table = s.tables[key]!;
+  const checking = run(s, { type: "checked", key, checked: "checking" });
+  assert.equal(derive(checking).summary.validity, "checking");
+  const check: IndexCheck = { rules: 1, stamp: checkStamp(table), rows: 17, total: 0, counts: {}, found: [], lines: [] };
+  const checked = run(checking, { type: "checked", key, checked: check });
+  assert.equal(derive(checked).summary.validity, "schema valid");
+  // A build's count (or a fill's) keeps it as it is.
+  assert.deepEqual(run(checked, { type: "indexed", key, count: 17 }).tables[key]!.indexed!.checked, check);
+  // An edit landing: from before it.
+  const edited = run(checked, { type: "indexed", key, count: 17, done: 1 });
+  assert.equal(derive(edited).summary.validity, "not checked since edited");
+  // None to go by: not checked.
+  assert.equal(derive(run(checked, { type: "checked", key, checked: null })).summary.validity, "not checked");
 });
 
 // Undo and redo

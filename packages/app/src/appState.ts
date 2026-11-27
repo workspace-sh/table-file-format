@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { applyChanges, applyFixes, type BundleChange, type Fix, type ParsedBundle } from "@workspace.sh/table-core";
+import { applyChanges, applyFixes, type BundleChange, type Fix, type IndexCheck, type ParsedBundle } from "@workspace.sh/table-core";
 import { coordinateOf, isSheet, mergeOfRange, mergeOver, renameField, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
 import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
@@ -325,6 +325,8 @@ export type AppAction =
    * table (its summary), not as an alert.
    */
   | { type: "reloaded"; key: string; table: ParsedTable; held?: string }
+  /** An indexed table's rows as checked (#867, step 2c): being checked, the check kept, or none to go by (null). */
+  | { type: "checked"; key: string; checked: IndexCheck | "checking" | null }
   /**
    * A table opened without its rows (`loading`, a reader's rows: "later")
    * has them now, with what the reader said of them: it can be edited.
@@ -613,7 +615,7 @@ function stepBack(state: AppState, from: "past" | "future"): AppState {
   // Fields that come back come back with their values, which the index kept hidden (#562).
   const restore = step.table.schema.fields.filter((f) => !now.schema.fields.some((g) => g.name === f.name)).map((f) => f.name);
   const table = now.indexed
-    ? { ...now, views: step.table.views, schema: step.table.schema, indexed: { count: now.indexed.count, version: now.indexed.version, ...(restore.length > 0 ? { restore } : {}) } }
+    ? { ...now, views: step.table.views, schema: step.table.schema, indexed: { count: now.indexed.count, version: now.indexed.version, ...(restore.length > 0 ? { restore } : {}), ...(now.indexed.checked ? { checked: now.indexed.checked } : {}) } }
     : step.table;
   // Other tables the edit changed with this one go back (or forward) with it, and are kept as they are now for the way back.
   const others = step.others ? Object.fromEntries(Object.keys(step.others).flatMap((k) => (state.tables[k] ? [[k, state.tables[k]!]] : []))) : undefined;
@@ -1117,11 +1119,20 @@ function step(state: AppState, action: AppAction): AppState {
       return stepBack(state, "past");
     case "redo":
       return stepBack(state, "future");
+    case "checked": {
+      const table = state.tables[action.key];
+      if (!table?.indexed) return state;
+      const { checked: _was, ...indexed } = table.indexed;
+      return { ...state, tables: { ...state.tables, [action.key]: { ...table, indexed: { ...indexed, ...(action.checked ? { checked: action.checked } : {}) } } } };
+    }
     case "indexed": {
       const table = state.tables[action.key];
       if (!table) return state;
       // What an undo brought back stays said until the app has changed the index for it (a later edit to the fields clears it).
-      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1, ...(table.indexed?.restore ? { restore: table.indexed.restore } : {}) };
+      // Its rows' check stays too: from before this edit, once an edit has landed.
+      const was = table.indexed?.checked;
+      const checked = was && was !== "checking" && action.done !== undefined && !was.stale ? { ...was, stale: true as const } : was;
+      const indexed = { count: action.count, version: (table.indexed?.version ?? 0) + 1, ...(table.indexed?.restore ? { restore: table.indexed.restore } : {}), ...(checked ? { checked } : {}) };
       const tables = { ...state.tables, [action.key]: { ...table, indexed } };
       // Its rows have just gone to the index: the steps kept list them as they were here.
       if (action.done === undefined) return { ...state, tables, undo: table.indexed ? state.undo : without(state.undo, [action.key]) };

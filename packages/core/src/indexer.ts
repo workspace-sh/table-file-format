@@ -477,8 +477,8 @@ export interface IndexCheckRun {
 /**
  * A check of table `name`'s rows, read back out of its index a batch at a time, for a host to run
  * the way it makes the search's own index (`buildSearchIndex`): after the build, off the way to
- * showing the table. Kept in `_checks` when done. Nothing to do when the index has a check already
- * (stale or not), or the engine can't make one. A rows edit made while it runs leaves the check it
+ * showing the table. Kept in `_checks` when done, in place of one from before an edit or from other
+ * rules. Nothing to do when the index has a check of its rows as they are, or the engine can't make one. A rows edit made while it runs leaves the check it
  * makes from before that edit. Its failing fails nothing: the table reads as not checked, and why
  * is said to the console.
  */
@@ -503,9 +503,12 @@ export function indexCheck(
         if (!run) {
           const n = await tableNumber(db, name, false);
           const key = n === null ? null : await indexKey(db, name);
-          if (n === null || key === null || checkRules() === null) return (end(), false);
+          const rules = checkRules();
+          if (n === null || key === null || rules === null) return (end(), false);
           await checksTable(db);
-          if ((await db.all("select 1 from _checks where n = ?", [n])).length > 0) return (end(), false);
+          // Checked already, as the rows are now: nothing to do. One from before an edit, or from other rules, is made again.
+          const had = (await db.all("select rules, stale from _checks where n = ?", [n]))[0];
+          if (had && had.rules === rules && !had.stale) return (end(), false);
           const cells = await indexedCells(db, name);
           const check = startCheck({ schema, bodies: options.bodies, cells }, options.attachments ? { attachments: options.attachments } : {});
           if (!check) return (end(), false);
