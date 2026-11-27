@@ -32,6 +32,8 @@ jobs:
         run: npm run typecheck
       - name: Test core
         run: npm run core:test
+      - name: Test core with tables' rows read by the engine (#867, behind a switch)
+        run: npm run core:test:engine-rows
       - name: Test table-ui
         run: npm run ui:test
       - name: Test table-app

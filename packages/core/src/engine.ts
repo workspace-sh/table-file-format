@@ -52,3 +52,36 @@ export function numberOf(op: string, text: string): number {
   if (answer == null) throw new Error(`${op} isn't a number the engine has`);
   return answer;
 }
+
+/** An operation that takes a file's bytes beside its input, and its answer. A mistake is thrown. */
+export function callBytes<T>(op: string, input: Record<string, unknown>, bytes: Uint8Array): T {
+  const answer = JSON.parse(loaded(op).callBytes(op, JSON.stringify(input), bytes)) as { value: T } | { error: string };
+  if ("error" in answer) throw new Error(`${op}: ${answer.error}`);
+  return answer.value;
+}
+
+/** An operation that gives rows, as the engine sends them. A mistake is thrown. */
+export function callWindow(op: string, input: Record<string, unknown>): ReturnType<FormulaEngine["callWindow"]> {
+  try {
+    return loaded(op).callWindow(op, JSON.stringify(input));
+  } catch (thrown) {
+    const text = typeof thrown === "string" ? thrown : thrown instanceof Error ? thrown.message : "";
+    if (text.startsWith("{")) throw new Error(`${op}: ${(JSON.parse(text) as { error: string }).error}`);
+    throw thrown;
+  }
+}
+
+let rowsThrough = false;
+
+/**
+ * Whether tables' rows are read by the engine (table-file-format#867, step 1): their files'
+ * bytes go to it, and the rows come back from it. Off unless an app or a test turns it on.
+ */
+export function setRowsThroughEngine(on: boolean): void {
+  rowsThrough = on;
+}
+
+/** Whether tables' rows are read by the engine: set, and an engine to read them. */
+export function rowsThroughEngine(): boolean {
+  return rowsThrough && engine !== null;
+}

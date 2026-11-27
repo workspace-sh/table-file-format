@@ -7,6 +7,8 @@
 import type { BundleMeta, CellFormula, ParsedBundle, ParsedTable, Row, TableMeta, TableSchema, UnreadLine, ValidationError, View } from "./types.js";
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import { parseOptionalJsonText, parseRowsText, parseSchemaText, UnreadableSchemaError } from "./parse-text.js";
+import { rowsThroughEngine } from "./engine.js";
+import { readRowsThroughEngine, type RowsFileBytes } from "./engineRows.js";
 import { repeatedFieldIds, withFieldIds } from "./fieldIds.js";
 import { canonicalSchema } from "./fieldForm.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
@@ -203,7 +205,7 @@ export async function readTable(fs: TableFs, dir: string, options: ReadOptions =
   const later = options.rows === "later";
   const elsewhere = !later && (await options.rowsElsewhere?.(dir)) === true;
   const unread: UnreadLine[] = [];
-  const read = elsewhere || later ? { rows: [], rowFiles: [] } : await readRowsFiles(fs, dir, diagnostics, unread);
+  const read = elsewhere || later ? { rows: [], rowFiles: [] } : await readRowsFiles(fs, dir, diagnostics, unread, undefined, schema.fields.map((f) => f.name));
   const rows = read.rows;
   const views = parseOptionalJsonText<View[]>(TableEntry.views, (await fs.readText(joinPath(dir, TableEntry.views))) ?? undefined, diagnostics) ?? [];
   const meta = parseOptionalJsonText<TableMeta>(TableEntry.meta, (await fs.readText(joinPath(dir, TableEntry.meta))) ?? undefined, diagnostics) ?? {};
@@ -285,7 +287,28 @@ async function readRowsFiles(
   diagnostics: ValidationError[],
   unread: UnreadLine[],
   onRows?: (rows: Row[]) => void,
+  /** The schema's fields, when it's known: the engine keeps their cells as columns (#867). */
+  fields: readonly string[] = [],
 ): Promise<{ rows: Row[]; rowFiles: { name: string; ids: string[] }[] }> {
+  if (rowsThroughEngine()) {
+    // Read as text, as the TypeScript reader reads it, then handed over as its bytes: the engine
+    // reads the same characters, whatever this file system does with a byte order mark.
+    const encoder = new TextEncoder();
+    const files: RowsFileBytes[] = [];
+    for (const file of await rowsFilesOf(fs, dir)) {
+      const label = file.path.endsWith(LEGACY_ROWS_FILE) ? LEGACY_ROWS_FILE : `${ROWS_DIR}/${file.name}`;
+      files.push({ name: file.name, label, bytes: encoder.encode((await fs.readText(file.path)) ?? ""), stripBom: false });
+    }
+    const read = readRowsThroughEngine(fields, files, diagnostics, unread);
+    if (onRows) {
+      let at = 0;
+      for (const f of read.rowFiles) {
+        onRows(read.rows.slice(at, at + f.ids.length));
+        at += f.ids.length;
+      }
+    }
+    return read;
+  }
   const rows: Row[] = [];
   const rowFiles: { name: string; ids: string[] }[] = [];
   const seen = new Map<string, Row>();

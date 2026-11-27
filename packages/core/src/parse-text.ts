@@ -26,11 +26,7 @@ export function parseRowsText(
   const rows: Row[] = [];
   const seen = from.seen ?? new Map<string, Row>();
   const lines = raw.split("\n");
-  const where = from.file ? `${from.file}: ` : "";
-  const skip = (i: number, line: string, why: string, code: string) => {
-    diagnostics.push({ rowIndex: i, code, ...(from.file ? { file: from.file } : {}), text: line, message: `${where}line ${i + 1} ${why}, and is kept as it is: ${line.slice(0, 60)}` });
-    unread?.push({ after: rows.at(-1)?.id ?? from.after ?? null, text: line });
-  };
+  const at = (i: number, line: string): KeptLineAt => ({ line: i, text: line, ...(from.file ? { file: from.file } : {}), after: rows.at(-1)?.id ?? from.after ?? null });
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (line.trim().length === 0) continue;
@@ -38,33 +34,58 @@ export function parseRowsText(
     try {
       obj = JSON.parse(line) as Row;
     } catch (err) {
-      // A merge's conflict markers (`<<<<<<< ours`, `=======`, `>>>>>>> theirs`) are said as what they are.
-      skip(i, line, `isn't JSON (${message(err)})`, CONFLICT_MARKER.test(line) ? "line.conflict-marker" : "line.not-json");
+      keepLine(diagnostics, unread, at(i, line), ...notJson(line, err));
       continue;
     }
     if (obj === null || typeof obj !== "object" || Array.isArray(obj)) {
-      skip(i, line, "isn't a row", "line.not-row");
+      keepLine(diagnostics, unread, at(i, line), "isn't a row", "line.not-row");
       continue;
     }
     if (typeof obj.id !== "string" || obj.id.length === 0) {
-      skip(i, line, "is a row without an id", "id.missing");
+      keepLine(diagnostics, unread, at(i, line), "is a row without an id", "id.missing");
       continue;
     }
     // A row whose id an earlier line has (both sides of a merge, D54): the first is the row.
     const first = seen.get(obj.id);
     if (first) {
-      // The same row again loses nothing when it goes; a different one is kept as it is.
-      if (JSON.stringify(first) === JSON.stringify(obj)) diagnostics.push({ rowIndex: i, code: "line.repeat-left-out", rowId: obj.id, ...(from.file ? { file: from.file } : {}), text: line, message: `${where}line ${i + 1} repeats the row ${JSON.stringify(obj.id)} before it exactly, and is left out` });
-      else {
-        skip(i, line, `repeats the id ${JSON.stringify(obj.id)} of a row before it`, "line.id-repeated");
-        diagnostics.at(-1)!.rowId = obj.id;
-      }
+      repeatedRow(diagnostics, unread, at(i, line), first, obj);
       continue;
     }
     seen.set(obj.id, obj);
     rows.push(obj);
   }
   return rows;
+}
+
+/** Where a line that isn't a row is: its line number from 0, its text, its file, and the id of the row before it. */
+export interface KeptLineAt {
+  line: number;
+  text: string;
+  file?: string;
+  after: string | null;
+}
+
+/** Says a line that isn't a row, and keeps it as it is (SPEC section 3, skip-and-collect). */
+export function keepLine(diagnostics: ValidationError[], unread: UnreadLine[] | undefined, at: KeptLineAt, why: string, code: string): void {
+  const where = at.file ? `${at.file}: ` : "";
+  diagnostics.push({ rowIndex: at.line, code, ...(at.file ? { file: at.file } : {}), text: at.text, message: `${where}line ${at.line + 1} ${why}, and is kept as it is: ${at.text.slice(0, 60)}` });
+  unread?.push({ after: at.after, text: at.text });
+}
+
+/** Why a line that isn't JSON isn't, and its code: a merge's conflict markers (`<<<<<<< ours`, `=======`, `>>>>>>> theirs`) are said as what they are. */
+export function notJson(line: string, err: unknown): [why: string, code: string] {
+  return [`isn't JSON (${message(err)})`, CONFLICT_MARKER.test(line) ? "line.conflict-marker" : "line.not-json"];
+}
+
+/** A row whose id a row before it has: the same row again loses nothing when it goes; a different one is kept as it is. */
+export function repeatedRow(diagnostics: ValidationError[], unread: UnreadLine[] | undefined, at: KeptLineAt, first: Row, again: Row): void {
+  const where = at.file ? `${at.file}: ` : "";
+  if (JSON.stringify(first) === JSON.stringify(again)) {
+    diagnostics.push({ rowIndex: at.line, code: "line.repeat-left-out", rowId: again.id, ...(at.file ? { file: at.file } : {}), text: at.text, message: `${where}line ${at.line + 1} repeats the row ${JSON.stringify(again.id)} before it exactly, and is left out` });
+    return;
+  }
+  keepLine(diagnostics, unread, at, `repeats the id ${JSON.stringify(again.id)} of a row before it`, "line.id-repeated");
+  diagnostics.at(-1)!.rowId = again.id;
 }
 
 /**
