@@ -15,6 +15,22 @@ export class ColumnResults {
 }
 
 /**
+ * A `.table` engine operation (`workspace_table::call`): its input and answer JSON text. Never throws:
+ * a mistake is `{"error": "…"}`.
+ */
+export function call(op: string, input: string): string;
+
+/**
+ * A `.table` engine check of one text (`workspace_table::check`); undefined when `op` isn't one.
+ */
+export function callCheck(op: string, text: string): boolean | undefined;
+
+/**
+ * A `.table` engine number from one text (`workspace_table::number`); undefined when `op` isn't one.
+ */
+export function callNumber(op: string, text: string): number | undefined;
+
+/**
  * The canonical form of `text`, or throws `{message, line, column}` as JSON.
  */
 export function canonical(text: string): string;
@@ -39,6 +55,9 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_columnresults_free: (a: number, b: number) => void;
+    readonly call: (a: number, b: number, c: number, d: number, e: number) => void;
+    readonly callCheck: (a: number, b: number, c: number, d: number) => number;
+    readonly callNumber: (a: number, b: number, c: number, d: number, e: number) => void;
     readonly canonical: (a: number, b: number, c: number) => void;
     readonly columnresults_extra: (a: number, b: number) => void;
     readonly columnresults_index: (a: number, b: number) => void;

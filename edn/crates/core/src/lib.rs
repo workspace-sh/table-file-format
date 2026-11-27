@@ -17,6 +17,7 @@
 //!   `\return`), control characters as `\uXXXX`, the rest as themselves.
 
 pub mod column;
+pub mod encoding;
 pub mod eval;
 pub mod formula;
 pub mod holds;

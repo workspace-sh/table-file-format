@@ -10,6 +10,9 @@
 # the script names any targets that are missing.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Dependencies' and the standard library's paths are written into the binary
+# (their panic messages): name them /cargo and /rustc there, not this machine's.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$(rustc --print sysroot)=/rustc"
 
 # minSdk in android/build.gradle.
 API=24

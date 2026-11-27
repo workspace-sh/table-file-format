@@ -94,6 +94,71 @@ export class ColumnResults {
 if (Symbol.dispose) ColumnResults.prototype[Symbol.dispose] = ColumnResults.prototype.free;
 
 /**
+ * A `.table` engine operation (`workspace_table::call`): its input and answer JSON text. Never throws:
+ * a mistake is `{"error": "…"}`.
+ * @param {string} op
+ * @param {string} input
+ * @returns {string}
+ */
+export function call(op, input) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(op, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(input, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.call(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r1 = getDataViewMemory0().getInt32(retptr + 4 * 1, true);
+        deferred3_0 = r0;
+        deferred3_1 = r1;
+        return getStringFromWasm0(r0, r1);
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+        wasm.__wbindgen_export3(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * A `.table` engine check of one text (`workspace_table::check`); undefined when `op` isn't one.
+ * @param {string} op
+ * @param {string} text
+ * @returns {boolean | undefined}
+ */
+export function callCheck(op, text) {
+    const ptr0 = passStringToWasm0(op, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(text, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.callCheck(ptr0, len0, ptr1, len1);
+    return ret === 0xFFFFFF ? undefined : ret !== 0;
+}
+
+/**
+ * A `.table` engine number from one text (`workspace_table::number`); undefined when `op` isn't one.
+ * @param {string} op
+ * @param {string} text
+ * @returns {number | undefined}
+ */
+export function callNumber(op, text) {
+    try {
+        const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+        const ptr0 = passStringToWasm0(op, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(text, wasm.__wbindgen_export, wasm.__wbindgen_export2);
+        const len1 = WASM_VECTOR_LEN;
+        wasm.callNumber(retptr, ptr0, len0, ptr1, len1);
+        var r0 = getDataViewMemory0().getInt32(retptr + 4 * 0, true);
+        var r2 = getDataViewMemory0().getFloat64(retptr + 8 * 1, true);
+        return r0 === 0 ? undefined : r2;
+    } finally {
+        wasm.__wbindgen_add_to_stack_pointer(16);
+    }
+}
+
+/**
  * The canonical form of `text`, or throws `{message, line, column}` as JSON.
  * @param {string} text
  * @returns {string}

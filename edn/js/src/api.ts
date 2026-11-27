@@ -60,6 +60,16 @@ export interface Edn {
     views: readonly string[],
     options?: { now?: Date; seed?: number; columns?: boolean },
   ): { fields: Record<string, FormulaResult[]>; grids: Record<string, SheetGridOut | null> } | "host";
+  /**
+   * A `.table` engine operation (`module.function`, edn/crates/table): its input and answer
+   * JSON text, the answer `{"value": …}` or `{"error": "…"}`. Never throws for a mistake in the
+   * input. table-core's wrappers ask it (engine.ts).
+   */
+  call(op: string, input: string): string;
+  /** A `.table` check of one text, with no JSON either way: the shape for checks asked once per cell. Undefined (or null) when `op` isn't one. */
+  callCheck(op: string, text: string): boolean | undefined | null;
+  /** A `.table` number from one text (NaN included), with no JSON either way. Undefined (or null) when `op` isn't one. */
+  callNumber(op: string, text: string): number | undefined | null;
   /** Which binding is answering: the native library, or WebAssembly. */
   readonly binding: "native" | "wasm";
 }
@@ -98,14 +108,25 @@ export interface TableIn {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
-/** The four calls a binding answers. */
+/** The calls a binding answers. */
 export type Calls = {
   read(text: string): string;
   canonical(text: string): string;
   formula(text: string): string;
   computeWorkbook(json: string, numbers: Float64Array): ColumnResults;
+  /** These three are absent from a native module built before it had them. */
+  call?(op: string, input: string): string;
+  callCheck?(op: string, text: string): boolean | undefined | null;
+  callNumber?(op: string, text: string): number | undefined | null;
 };
 
+/** A binding's call, or one that says the binding was built before it had it. */
+function present<F>(f: F | undefined, name: string, binding: string): F {
+  if (f) return f;
+  return (() => {
+    throw new Error(`this build's ${binding} engine has no ${name}: rebuild it (edn/README.md, "Building and testing")`);
+  }) as F;
+}
 
 export const engineFrom = (c: Calls, binding: "native" | "wasm"): Edn => ({
   read: (text) => JSON.parse(call(c.read, text)) as EdnValue,
@@ -121,6 +142,9 @@ export const engineFrom = (c: Calls, binding: "native" | "wasm"): Edn => ({
     if (!got || got === "host") return "host";
     return { fields: got.fields, grids: got.grids ?? {} };
   },
+  call: present(c.call, "call", binding),
+  callCheck: present(c.callCheck, "callCheck", binding),
+  callNumber: present(c.callNumber, "callNumber", binding),
   binding,
 });
 

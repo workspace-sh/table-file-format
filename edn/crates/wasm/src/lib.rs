@@ -24,6 +24,25 @@ pub fn formula(text: &str) -> Result<String, JsValue> {
     workspace_edn::formula::read_formula(text).map(|e| workspace_edn::formula::expr_json(&e)).map_err(error_json)
 }
 
+/// A `.table` engine operation (`workspace_table::call`): its input and answer JSON text. Never throws:
+/// a mistake is `{"error": "…"}`.
+#[wasm_bindgen]
+pub fn call(op: &str, input: &str) -> String {
+    workspace_table::call(op, input)
+}
+
+/// A `.table` engine check of one text (`workspace_table::check`); undefined when `op` isn't one.
+#[wasm_bindgen(js_name = callCheck)]
+pub fn call_check(op: &str, text: &str) -> Option<bool> {
+    workspace_table::check(op, text)
+}
+
+/// A `.table` engine number from one text (`workspace_table::number`); undefined when `op` isn't one.
+#[wasm_bindgen(js_name = callNumber)]
+pub fn call_number(op: &str, text: &str) -> Option<f64> {
+    workspace_table::number(op, text)
+}
+
 fn error_json(e: Error) -> JsValue {
     let mut out = String::from("{\"message\":");
     json_string(&mut out, &e.message);

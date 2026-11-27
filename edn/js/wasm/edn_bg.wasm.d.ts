@@ -2,6 +2,9 @@
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
 export const __wbg_columnresults_free: (a: number, b: number) => void;
+export const call: (a: number, b: number, c: number, d: number, e: number) => void;
+export const callCheck: (a: number, b: number, c: number, d: number) => number;
+export const callNumber: (a: number, b: number, c: number, d: number, e: number) => void;
 export const canonical: (a: number, b: number, c: number) => void;
 export const columnresults_extra: (a: number, b: number) => void;
 export const columnresults_index: (a: number, b: number) => void;

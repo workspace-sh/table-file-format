@@ -1,48 +1,34 @@
 /**
  * Value encodings — one JSON spelling per field type (SPEC section 2
- * "Value encodings", DECISIONS D30). Pure checks, no dependencies, so
- * a reader in any runtime can mirror them line for line.
+ * "Value encodings", DECISIONS D30), answered by the engine
+ * (edn/crates/core/src/encoding.rs), which every app shares.
  */
 
-const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-const TIME = "([01]\\d|2[0-3]):[0-5]\\d:([0-5]\\d|60)(\\.\\d+)?";
-const TIME_ONLY = new RegExp(`^${TIME}$`);
-const DATETIME = new RegExp(`^(\\d{4}-\\d{2}-\\d{2})[Tt]${TIME}(Z|z|[+-]([01]\\d|2[0-3]):[0-5]\\d)?$`);
-const N = "\\d+(?:[.,]\\d+)?";
-const DURATION = new RegExp(`^P(?:${N}Y)?(?:${N}M)?(?:${N}W)?(?:${N}D)?(?:T(?:${N}H)?(?:${N}M)?(?:${N}S)?)?$`);
+import { call, check, numberOf } from "./engine.js";
 
 /** RFC 3339 full-date, and a real calendar day (`2026-02-30` is not). */
 export function isDate(value: string): boolean {
-  const m = DATE.exec(value);
-  if (!m) return false;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  // setUTCFullYear, not Date.UTC: Date.UTC reads years 0 to 99 as 1900 to 1999.
-  const probe = new Date(0);
-  probe.setUTCFullYear(y, mo - 1, d);
-  return probe.getUTCFullYear() === y && probe.getUTCMonth() === mo - 1 && probe.getUTCDate() === d;
+  return check("encoding.isDate", value);
 }
 
 /** RFC 3339 partial-time: `HH:MM:SS`, optional fraction, no offset. */
 export function isTime(value: string): boolean {
-  return TIME_ONLY.test(value);
+  return check("encoding.isTime", value);
 }
 
 /** RFC 3339 date-time; the offset is optional (none = floating). */
 export function isDateTime(value: string): boolean {
-  const m = DATETIME.exec(value);
-  return m !== null && isDate(m[1]);
+  return check("encoding.isDateTime", value);
 }
 
 /** ISO 8601 duration with at least one component (`P` and `PT` alone are not). */
 export function isDuration(value: string): boolean {
-  if (!DURATION.test(value)) return false;
-  if (value.endsWith("T")) return false;
-  return /\d/.test(value);
+  return check("encoding.isDuration", value);
 }
 
 /** A year and month, `YYYY-MM` (SPEC section 2). */
 export function isYearMonth(value: string): boolean {
-  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+  return check("encoding.isYearMonth", value);
 }
 
 /**
@@ -51,10 +37,13 @@ export function isYearMonth(value: string): boolean {
  * value is not a datetime.
  */
 export function instantOf(value: string): number {
-  if (!isDateTime(value)) return NaN;
-  const hasOffset = /(Z|z|[+-]\d{2}:\d{2})$/.test(value);
-  return Date.parse(hasOffset ? value : `${value}Z`);
+  return numberOf("encoding.instantOf", value);
 }
+
+// The two checks of a value that isn't text stay here until their caller, the validator, moves
+// (table-file-format#867, batch 2). Asked of the engine once per cell, each value would cross as
+// JSON: validating 100,000 rows with a 200-point polygon each went from 80 ms to 8.9 s. The
+// engine's own copies (edn/crates/core/src/encoding.rs) are what it checks a formula's result by.
 
 /** `[longitude, latitude]`, WGS 84 ranges. */
 export function isGeopoint(value: unknown): boolean {
@@ -96,7 +85,5 @@ export function isGeoJSON(value: unknown): boolean {
  * value that isn't a time at all, so validation still reports it.
  */
 export function completeSeconds(type: string, raw: string): string {
-  if (type === "time" && /^([01]\d|2[0-3]):[0-5]\d$/.test(raw)) return `${raw}:00`;
-  if (type === "datetime" && /^\d{4}-\d{2}-\d{2}[Tt]([01]\d|2[0-3]):[0-5]\d$/.test(raw)) return `${raw}:00`;
-  return raw;
+  return call("encoding.completeSeconds", { type, raw });
 }

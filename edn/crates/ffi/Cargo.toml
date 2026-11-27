@@ -14,3 +14,4 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 workspace-edn = { path = "../core" }
+workspace-table = { path = "../table" }

@@ -12,6 +12,9 @@ import { applyFilters } from "./arrange.js";
 import type { GridGroup } from "./grid.js";
 import type { CellFormula, Field, ParsedTable, Row, TableSchema, ValidationError, View } from "./types.js";
 import { cellFormulas } from "./cells.js";
+import { formulaEngine } from "./engine.js";
+
+export { formulaEngineSet, setFormulaEngine } from "./engine.js";
 
 /** What computing a table can see beyond its own rows (D36). */
 export interface ComputeOptions {
@@ -39,7 +42,11 @@ export interface ComputeOptions {
 
 type EngineTable = { schema: TableSchema; rows: readonly Row[]; views?: readonly View[]; cells?: readonly CellFormula[]; meta?: { iteration?: unknown } };
 
-/** The evaluator: the EDN core, as `@workspace.sh/edn`'s `computeTables` and `computeGrids` give it. */
+/**
+ * The engine: the Rust core (edn/), as `@workspace.sh/edn`'s engine gives it. It works out
+ * formulas (`computeTables`, `computeGrids`) and answers the `.table` operations that have
+ * moved to Rust (`call`, `callCheck`, `callNumber`, through engine.ts).
+ */
 export interface FormulaEngine {
   computeTables(tables: Record<string, EngineTable>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, unknown[]> | "host">;
   /** A Sheet view's grid, and with `columns` the table's formula columns in the same pass (as sheetGrid). */
@@ -49,18 +56,12 @@ export interface FormulaEngine {
     views: readonly string[],
     options?: { now?: Date; seed?: number; columns?: boolean },
   ): { fields: Record<string, unknown[]>; grids: Record<string, { order: number[]; groups: GridGroup[]; loop: boolean } | null> } | "host";
-}
-
-let engine: FormulaEngine | null = null;
-
-/** The evaluator formulas are worked out by from now on; null, none (formulas stay empty, and say why). */
-export function setFormulaEngine(next: FormulaEngine | null): void {
-  engine = next;
-}
-
-/** Whether an evaluator is set, so formulas are worked out. */
-export function formulaEngineSet(): boolean {
-  return engine !== null;
+  /** A `.table` operation (`module.function`): its input and answer JSON text, `{"value": …}` or `{"error": "…"}`. */
+  call(op: string, input: string): string;
+  /** A `.table` check of one text, with no JSON either way, for checks asked once per cell. Undefined (or null) when `op` isn't one. */
+  callCheck(op: string, text: string): boolean | undefined | null;
+  /** A `.table` number from one text (NaN included), with no JSON either way. Undefined (or null) when `op` isn't one. */
+  callNumber(op: string, text: string): number | undefined | null;
 }
 
 /** Said once of a table whose formulas wait for the core: the app hasn't loaded it (yet). */
@@ -123,6 +124,7 @@ export function computeRows(
   const ownFields = withCells ? new Set(cells.map((c) => c.field)) : undefined;
   const computed = schema.fields.filter((f) => f.computed || ownFields?.has(f.name));
   if (computed.length === 0) return { rows, diagnostics: [] };
+  const engine = formulaEngine();
   if (!engine) return { rows, diagnostics: [NO_ENGINE, ...formulaDiagnostics(schema, rows, cells)] };
   const iterating = (iterationOf(options)?.max ?? 0) > 0;
   // Those that read only their own row keep a memo, so an edit computes one row.
@@ -300,6 +302,7 @@ function engineTables(table: ParsedTable, options: ComputeOptions, self: string)
 function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: true): SheetGrid | null | undefined;
 function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: false): { ids: string[]; loop: boolean } | null | undefined;
 function gridByEngine(table: ParsedTable, viewId: string, options: ComputeOptions, fill: boolean): SheetGrid | { ids: string[]; loop: boolean } | null | undefined {
+  const engine = formulaEngine();
   if (!engine) return undefined;
   const self = options.self ?? "";
   const got = engine.computeGrids(engineTables(table, options, self), self, [viewId], { ...clockOf(options), columns: fill });

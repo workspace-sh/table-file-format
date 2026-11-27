@@ -72,3 +72,25 @@ fn a_workbook_is_computed_as_the_core_computes_it() {
     unsafe { edn_bytes_free(err) };
     assert!(s.starts_with("{\"message\":"), "{s}");
 }
+
+#[test]
+fn the_table_engine_answers_through_one_call() {
+    use std::ffi::{CStr, CString};
+    let ask = |op: &str, input: &str| {
+        let (op, input) = (CString::new(op).unwrap(), CString::new(input).unwrap());
+        let out = unsafe { edn_call(op.as_ptr(), input.as_ptr()) };
+        let s = unsafe { CStr::from_ptr(out) }.to_str().unwrap().to_string();
+        unsafe { edn_call_free(out) };
+        s
+    };
+    assert_eq!(ask("encoding.isDate", r#"{"value":"2026-02-30"}"#), r#"{"value":false}"#);
+    assert!(ask("encoding.nothing", "{}").starts_with(r#"{"error":"#));
+    let date = "2026-02-28";
+    let (check, instant, nothing) = (CString::new("encoding.isDate").unwrap(), CString::new("encoding.instantOf").unwrap(), CString::new("x").unwrap());
+    assert_eq!(unsafe { edn_call_check(check.as_ptr(), date.as_ptr(), date.len()) }, 1);
+    assert_eq!(unsafe { edn_call_check(nothing.as_ptr(), date.as_ptr(), date.len()) }, -1);
+    let at = "2026-04-01T09:30:00Z";
+    let mut n = 0.0;
+    assert_eq!(unsafe { edn_call_number(instant.as_ptr(), at.as_ptr(), at.len(), &mut n) }, 0);
+    assert_eq!(n, 1_775_035_800_000.0);
+}

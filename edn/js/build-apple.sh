@@ -4,6 +4,9 @@
 # Apple silicon only: no Intel slice. Runs on a Mac with Xcode and rustup.
 set -eu
 cd "$(dirname "$0")/.."
+# Dependencies' and the standard library's paths are written into the binary
+# (their panic messages): name them /cargo and /rustc there, not this machine's.
+export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$(rustc --print sysroot)=/rustc"
 targets="aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-darwin"
 rustup target add $targets
 for t in $targets; do
