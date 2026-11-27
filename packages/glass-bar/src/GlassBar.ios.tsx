@@ -735,7 +735,7 @@ function Capsule(props: Part) {
             </HStack>
             {/* What's wrong with it, when it breaks the table's rules; otherwise the field's own help, as the web shows it on hover. */}
             {state.fix ? (
-              <Text modifiers={[font({ size: 11 }), foregroundStyle("red"), lineLimit(1)]}>{state.fix.problem}</Text>
+              <Text modifiers={[font({ size: 11 }), foregroundStyle({ type: "color", color: systemColor("systemRed") }), lineLimit(1)]}>{state.fix.problem}</Text>
             ) : state.about ? (
               <Text modifiers={[font({ size: 11 }), secondary, lineLimit(1)]}>{state.about}</Text>
             ) : null}
