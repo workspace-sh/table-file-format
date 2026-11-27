@@ -20,6 +20,14 @@ test("the schema-errors example in words: the conflict first, then values, warni
   assert.equal(items.reduce((n, i) => n + i.count, 0), problems.length);
   assert.equal(items[0]!.group, "decisions");
   assert.equal(items[0]!.title, "Two versions of row 35");
+  // Plain words for anyone; the file and its lines for whoever looks closer.
+  assert.equal(items[0]!.where, "row 35");
+  assert.match(items[0]!.technical!.where, /^rows\/0001\.ndjson · lines /);
+  assert.equal(items[0]!.technical!.lines.length, 5);
+  assert.match(items[0]!.technical!.lines[0]!.text, /^<<<<<<</);
+  const notJson = items.find((i) => i.title === "A line that isn’t JSON")!;
+  assert.equal(notJson.where, "a line the table can’t show");
+  assert.match(notJson.technical!.where, /line \d+$/);
   assert.equal(items.at(-1)!.group, "notes");
   const below = items.find((i) => i.title === "Below the minimum of 0")!;
   assert.equal(below.where, "amount · row 8 · −5");
