@@ -1109,3 +1109,21 @@ test("a table opened without its rows can't be edited until they're read; then i
   assert.equal(isEditable(read.tables[key], true), false);
   assert.equal(isEditable(undefined), false);
 });
+
+test("fixes chosen together are one edit, undone at once, named as chosen", () => {
+  const before = run(start(), { type: "showTable", key: "crm/deals" });
+  const id = "jddy8scd44w9r1kqur3j4meoii";
+  const fixed = run(before, {
+    type: "applyFixes",
+    name: "Make It 0",
+    fixes: [
+      { kind: "set-value", row: id, field: "title", value: "Fixed", label: "Make it Fixed", changesSchema: false },
+      { kind: "clear-value", row: "dl-none", field: "title", label: "Clear it", changesSchema: false },
+    ],
+  });
+  assert.equal(titleOf(fixed, id), "Fixed");
+  assert.equal(derive(fixed).undoName, "Make It 0");
+  assert.equal(fixed.dirty.includes("crm"), true);
+  const undone = run(fixed, { type: "undo" });
+  assert.equal(undone.tables["crm/deals"], before.tables["crm/deals"]);
+});

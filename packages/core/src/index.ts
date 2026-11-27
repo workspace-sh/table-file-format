@@ -104,6 +104,7 @@ export {
 } from "./address.js";
 export { parseRowsText, UnreadableSchemaError } from "./parse-text.js";
 export { schemaRepair, type SchemaRepair } from "./schema-repair.js";
+export { applyFix, applyFixes, canApplyFix } from "./fixes.js";
 export { tableProblems, problemsOf, type Problem, type ProblemCode, type ProblemContext, type Severity, type ProblemPlace, type Fix } from "./problems.js";
 export { serializeRows } from "./serialize.js";
 export {

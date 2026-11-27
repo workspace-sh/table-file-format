@@ -11,7 +11,7 @@
 // View Settings and undo. A single-file .table has nowhere to be written, and is to
 // look at.
 
-import type { BundleChange } from "@workspace.sh/table-core";
+import type { BundleChange, Fix, Problem } from "@workspace.sh/table-core";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Alert } from "react-native";
 import { css, html } from "react-strict-dom";
@@ -77,6 +77,14 @@ export interface TableFileChrome {
   breadcrumb: string;
   /** Whether its rows meet its schema, said ("schema valid"), and what that means. */
   valid: boolean;
+  /** Every problem the table on screen has, with its place and fixes (table-core's problemsOf). */
+  problems: Problem[];
+  /** Whether fixes can be made here: not to look at only, nor in a table held in its index. */
+  canFix: boolean;
+  /** Makes `fixes` as one edit called `name` ("Make It 0"), undone as any other. */
+  fix: (fixes: Fix[], name: string) => void;
+  /** Selects a cell, bringing it into view. */
+  reveal: (rowId: string, field: string) => void;
   validity: string;
   validityHint: string;
   /** Back and Forward through the places gone to in the file (its tables, views and rows). */
@@ -323,7 +331,7 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
   }, [memoryKey, state.active, view.id]);
 
   // Going to a row: its table and view shown, the row selected, its page open when it has one.
-  const [select, setSelect] = useState<{ place: { rowId: string }; n: number } | null>(null);
+  const [select, setSelect] = useState<{ place: { rowId: string; field?: string }; n: number } | null>(null);
   // New Field, asked of the table's header by count.
   const [newFieldAsk, setNewFieldAsk] = useState(0);
   const goTo = (address: string, start = false) => {
@@ -399,6 +407,12 @@ function Opened({ incoming, shown, files, readOnly, locale, at, onOpenLink, ask,
     redo: () => dispatch({ type: "redo" }),
     breadcrumb: derived.breadcrumb.text,
     valid: derived.summary.valid,
+    problems: derived.summary.problems,
+    canFix: !lookOnly && !table.indexed,
+    fix: (fixes, name) => {
+      if (!lookOnly) dispatch({ type: "applyFixes", fixes, name });
+    },
+    reveal: (rowId, field) => setSelect((was) => ({ place: { rowId, field }, n: (was?.n ?? 0) + 1 })),
     validity: derived.summary.validity,
     validityHint: derived.summary.validityHint,
     canGoBack: derived.canGoBack,
