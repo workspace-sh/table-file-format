@@ -18,6 +18,7 @@
 
 pub mod held;
 pub mod rows;
+pub mod view;
 
 use serde_json::Value as J;
 use workspace_edn::encoding;
@@ -36,6 +37,9 @@ pub const OPS: &[&str] = &[
     "rows.count",
     "rows.bytes",
     "rows.lines",
+    "rows.query",
+    "rows.ids",
+    "rows.place",
     "rows.free",
 ];
 

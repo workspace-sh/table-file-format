@@ -15,3 +15,5 @@ serde_json = { version = "1", features = ["float_roundtrip", "preserve_order", "
 miniz_oxide = "0.8"
 # The CRC-32 a zip entry declares, checked a word at a time (SIMD where the chip has it).
 crc32fast = "1"
+# A number as JavaScript writes it (Number.prototype.toString), for a group named by a number.
+ryu-js = "1"

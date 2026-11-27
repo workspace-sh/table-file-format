@@ -9,13 +9,32 @@ use std::sync::Mutex;
 use serde_json::Value as J;
 
 use crate::rows::{kind, LineIs, Rows};
+use crate::view::{self, Conformance, Shown};
 
 static HELD: Mutex<Option<Held>> = Mutex::new(None);
 
 #[derive(Default)]
 struct Held {
     next: u32,
-    tables: HashMap<u32, Rows>,
+    tables: HashMap<u32, Table>,
+}
+
+/// How many views of a table are kept; one asked again after it's gone is worked out again.
+const VIEWS_KEPT: usize = 8;
+
+/// A held table: its rows, which of its fields hold their kind, and its latest views.
+struct Table {
+    rows: Rows,
+    conformance: Conformance,
+    views: Vec<(u32, Shown)>,
+    next_view: u32,
+}
+
+impl Table {
+    fn view(&self, input: &J) -> Result<&Shown, String> {
+        let v = input.get("view").and_then(J::as_u64).ok_or("the input needs \"view\", a number")? as u32;
+        self.views.iter().find(|(id, _)| *id == v).map(|(_, s)| s).ok_or_else(|| format!("no view {v}: ask for it again"))
+    }
 }
 
 fn with<T>(f: impl FnOnce(&mut Held) -> T) -> T {
@@ -28,8 +47,50 @@ fn handle(input: &J) -> Result<u32, String> {
 }
 
 fn held<T>(input: &J, f: impl FnOnce(&mut Rows) -> Result<T, String>) -> Result<T, String> {
+    table(input, |t| f(&mut t.rows))
+}
+
+fn table<T>(input: &J, f: impl FnOnce(&mut Table) -> Result<T, String>) -> Result<T, String> {
     let h = handle(input)?;
     with(|held| held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}")).and_then(f))
+}
+
+/// A view's query from its JSON (table-core's IndexQuery, its schema's fields, and the pages searched).
+fn query_of(input: &J) -> Result<(Vec<view::Field>, view::Query), String> {
+    let fields = input
+        .get("fields")
+        .and_then(J::as_array)
+        .ok_or("the input needs \"fields\": the schema's, with their types and choices")?
+        .iter()
+        .map(|f| view::Field {
+            name: f.get("name").and_then(J::as_str).unwrap_or_default().to_string(),
+            ty: f.get("type").and_then(J::as_str).unwrap_or("string").to_string(),
+            choices: f.get("choices").and_then(J::as_array).map(|c| c.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default(),
+        })
+        .collect();
+    let q = input.get("query").cloned().unwrap_or(J::Null);
+    let strings = |v: Option<&J>| v.and_then(J::as_array).map(|xs| xs.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    Ok((
+        fields,
+        view::Query {
+            filter: q.get("filter").and_then(J::as_array).cloned().unwrap_or_default(),
+            hidden: strings(q.get("hidden")),
+            search: q.get("search").and_then(J::as_str).map(str::to_string),
+            order: strings(q.get("order")),
+            sort: q
+                .get("sort")
+                .and_then(J::as_array)
+                .map(|xs| xs.iter().filter_map(|s| Some((s.get("field")?.as_str()?.to_string(), s.get("direction").and_then(J::as_str) == Some("desc")))).collect())
+                .unwrap_or_default(),
+            group: q.get("group").and_then(J::as_str).map(str::to_string),
+            totals: q.get("totals").and_then(J::as_object).map(|o| o.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect()).unwrap_or_default(),
+            bodies: input.get("bodies").and_then(J::as_object).map(|o| o.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect()).unwrap_or_default(),
+        },
+    ))
+}
+
+fn number(n: f64) -> String {
+    if n.is_finite() { n.to_string() } else { "null".into() }
 }
 
 /// `rows.*` operations of `call`, as JSON. None when `op` isn't one.
@@ -46,12 +107,61 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Rows::new(&fields));
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0 });
                 held.next.to_string()
             }))
         }
         "rows.free" => handle(input).map(|h| with(|held| held.tables.remove(&h).is_some()).to_string()),
         "rows.count" => held(input, |r| Ok(r.len().to_string())),
+        "rows.query" => table(input, |t| {
+            let (fields, q) = query_of(input)?;
+            let Some(shown) = view::view(&t.rows, &fields, &q, &mut t.conformance) else { return Ok("null".into()) };
+            t.next_view += 1;
+            let id = t.next_view;
+            let mut out = format!("{{\"view\":{id},\"count\":{},\"inView\":{},\"groups\":[", shown.count, shown.in_view);
+            for (i, (key, start, count)) in shown.groups.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str("{\"key\":");
+                workspace_edn::formula::json_string(&mut out, key);
+                out.push_str(&format!(",\"start\":{start},\"count\":{count}}}"));
+            }
+            out.push_str("],\"totals\":{");
+            for (i, (field, total)) in shown.totals.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                workspace_edn::formula::json_string(&mut out, field);
+                out.push(':');
+                out.push_str(&total.map_or("null".into(), number));
+            }
+            out.push_str("}}");
+            if t.views.len() >= VIEWS_KEPT {
+                t.views.remove(0);
+            }
+            t.views.push((id, shown));
+            Ok(out)
+        }),
+        "rows.ids" => table(input, |t| {
+            let shown = t.view(input)?;
+            let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
+            let to = input.get("to").and_then(J::as_u64).map_or(shown.count, |x| x as usize);
+            let mut out = String::from("[");
+            for (i, row) in shown.rows(from, to).into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                workspace_edn::formula::json_string(&mut out, &t.rows.id(row));
+            }
+            out.push(']');
+            Ok(out)
+        }),
+        "rows.place" => table(input, |t| {
+            let shown = t.view(input)?;
+            let id = input.get("id").and_then(J::as_str).ok_or("the input needs \"id\", as text")?;
+            Ok(t.rows.row_of(id).and_then(|row| shown.place(row as u32)).map_or(-1, i64::from).to_string())
+        }),
         "rows.bytes" => held(input, |r| Ok(r.bytes().to_string())),
         "rows.lines" => held(input, |r| {
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
@@ -141,13 +251,24 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
     if op != "rows.window" {
         return Err(format!("{op:?} isn't an operation that gives rows; there is rows.window"));
     }
-    held(input, |r| {
+    table(input, |t| {
         let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
-        let to = (input.get("to").and_then(J::as_u64).map_or(r.len(), |t| t as usize)).min(r.len()).max(from.min(r.len()));
-        let from = from.min(to);
+        // A view's rows in its order, or the table's in file order.
+        let list: Vec<usize> = match input.get("view") {
+            Some(_) => {
+                let shown = t.view(input)?;
+                let to = input.get("to").and_then(J::as_u64).map_or(shown.count, |x| x as usize);
+                shown.rows(from, to)
+            }
+            None => {
+                let to = input.get("to").and_then(J::as_u64).map_or(t.rows.len(), |x| x as usize).min(t.rows.len());
+                (from.min(to)..to).collect()
+            }
+        };
+        let r = &t.rows;
         // Counted first, and asked for: a window is never grown on the way.
         let (mut entries, mut numbers, mut texts, mut text_bytes) = (0usize, 0usize, 0usize, 0usize);
-        for row in from..to {
+        for &row in &list {
             let keys = 1 + r.cells(row).iter().filter(|c| c.kind != kind::ABSENT).count() + r.extras(row).len();
             if keys > usize::from(u16::MAX) {
                 return Err(format!("row {row} has {keys} keys, more than a window can carry ({})", u16::MAX));
@@ -168,7 +289,7 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
                 text_bytes += e.key.len();
             }
         }
-        let keys = entries - (to - from);
+        let keys = entries - list.len();
         let mut w = Window::default();
         let too_large = |_| "the rows asked for are too many to give back at once".to_string();
         w.entries.try_reserve_exact(entries).map_err(too_large)?;
@@ -179,7 +300,7 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
         w.texts.try_reserve_exact(text_bytes).map_err(too_large)?;
         let mut units = 0u32;
         let mut row_keys: Vec<(u32, u16, crate::rows::Cell, Option<String>)> = Vec::new();
-        for row in from..to {
+        for &row in &list {
             row_keys.clear();
             // The id, then each field and each extra key, put back in the order the line writes them.
             let id = r.id_cell(row);

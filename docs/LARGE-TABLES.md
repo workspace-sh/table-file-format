@@ -673,6 +673,23 @@ The engine reads a table's rows files from their bytes, still compressed, and ho
 - **Rebuilding every row as an object costs what the engine saved.** On WebAssembly a small table is slower that way. So the switch stays off until a table is shown through the handle, as an indexed one is (#867, step 2).
 - **A window costs about 0.13 ms**, against 4 to 35 ms for 200 rows from the SQLite index (Phase B above).
 
+## Views of a table the engine holds (#867, step 2, 27 Nov 2026)
+
+A view of a held table is worked out by the engine (`edn/crates/table/src/view.rs`, through `heldViewRows`): it answers what it can promise is what memory gives, as the index does, or says it can't. `edn/bench/engine-views.mts` times each view from asking to having its window of 200 rows from the middle, its totals and its groups, against the same view worked out in memory (`applyView`, `searchRows`, `memoryViewRows`). Apple M1, Node 22.23.2, each view the median of 5. The table's formula field (`weighted`) is left out on both sides: a held table doesn't work formulas out yet.
+
+| View, ms: memory → engine | big-50000, WebAssembly | big-50000, native | big-1000000, WebAssembly | big-1000000, native |
+|---|---|---|---|---|
+| File order | 0 → 0.3 | 0 → 0.2 | 0 → 0.3 | 0 → 0.2 |
+| Sort by amount, descending | 10.4 → 6.5 | 9.5 → 4.6 | 209 → 140 | 205 → 109 |
+| Sort by title | 20.7 → 15.4 | 20.5 → 7.9 | 519 → 474 | 508 → 262 |
+| Won, by close date | 5.2 → 3.5 | 4.8 → 2.5 | 140 → 84 | 130 → 59 |
+| Grouped by stage, with totals | 21.1 → 11.1 | 20.9 → 8.8 | 552 → 323 | 532 → 272 |
+| Search | 10.3 → 7.7 | 10.0 → 5.2 | 203 → 151 | 204 → 105 |
+| Amount over 10,000, won or lost | 3.7 → 3.4 | 3.6 → 2.5 | 77 → 64 | 76 → 49 |
+
+- **Every view that works over the rows is faster:** 1.1× to 2.6×.
+- **File order costs the window crossing:** 0.2 to 0.3 ms. In memory, a view in file order is the rows already there, so there's nothing to do. A held table's 200 rows cross to JavaScript, which is step 1's window cost.
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.

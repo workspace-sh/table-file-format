@@ -187,6 +187,25 @@ impl Rows {
         self.text(row, self.ids[row]).unwrap_or_default()
     }
 
+    /// The schema field a name is, if it's one.
+    pub fn field(&self, name: &str) -> Option<usize> {
+        self.by_name.get(name).copied()
+    }
+
+    /// A key's cell in a row: a schema field's, the id, or a key the schema doesn't name.
+    pub fn cell_named(&self, row: usize, field: Option<usize>, name: &str) -> Cell {
+        match field {
+            Some(f) => self.cells(row)[f],
+            None if name == "id" => self.ids[row],
+            None => self.extras(row).iter().find(|e| e.key == name).map_or(Cell::default(), |e| e.value),
+        }
+    }
+
+    /// Whether any row has a key the schema doesn't name by this name.
+    pub fn has_extra(&self, name: &str) -> bool {
+        self.extras.iter().any(|e| e.key == name)
+    }
+
     /// Where a row's id is in its line.
     pub fn id_cell(&self, row: usize) -> Cell {
         self.ids[row]
