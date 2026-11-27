@@ -26,18 +26,18 @@ const EXPECTED = JSON.parse(gunzipSync(readFileSync(new URL("./expected.json.gz"
 
 /**
  * A moment past midnight in some places and before it in others: the date is the reader's own. The
- * expected values were recorded where it was already 25 October, so the reader's zone is pinned to
- * one ahead of UTC; on a machine in UTC (CI) `today` would otherwise be the 24th.
+ * expected values were recorded where it was already 25 October, so the clock names such a zone,
+ * and the tests give the same answers wherever they run.
  */
-process.env.TZ = "Europe/Paris";
 const MOMENT = new Date("2026-10-24T23:30:15.250Z");
+const ZONE = "Europe/Paris";
 
 function same(edn: Edn, tables: Record<string, ParsedTable>, label: string): { core: number; host: number } {
   const want = EXPECTED.same[label];
   // A bundle added to the fixtures since the recording has no recorded values (calendars, schema-errors):
   // there's no TypeScript evaluator left to record them from, so packages/core's tests cover it.
   if (!want) return { core: 0, host: 0 };
-  const got = edn.computeTables(tables as never, { now: MOMENT });
+  const got = edn.computeTables(tables as never, { now: MOMENT, zone: ZONE });
   let core = 0;
   let host = 0;
   for (const [name, fields] of Object.entries(want)) {
@@ -331,7 +331,7 @@ for (const binding of ["native", "wasm"] as const) {
     // Each view's grid as an app numbers its rows: order, groups, whether it's sorted by its own places, rows filled.
     for (const v of ["by-date", "by-kind", "manual", "narrow", "by-own", "kind-sort", "plain", "nope"]) {
       const want = EXPECTED.grids[v];
-      const got = edn.computeGrids({ ledger, reader } as never, "ledger", [v], { now: MOMENT });
+      const got = edn.computeGrids({ ledger, reader } as never, "ledger", [v], { now: MOMENT, zone: ZONE });
       assert.notEqual(got, "host");
       const g = (got as Exclude<typeof got, "host">).grids[v];
       if (!want) {

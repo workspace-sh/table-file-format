@@ -34,6 +34,8 @@ export interface ComputeOptions {
   cells?: CellFormula[];
   /** What `today` and `now` read (D55): one moment for the whole computation. Absent: the time it's asked. */
   now?: Date;
+  /** The IANA time zone whose date `today` is (D55), for a reader elsewhere than this device. Absent: the device's own. */
+  zone?: string;
   /** Where `rand` draws from (D55): the same seed, the same draws. Absent: a seed of the core's choosing. */
   seed?: number;
   /** Loops worked out by iteration (D60), as the table's meta asks. Absent: its meta's in `tables`, if it's there; else a loop is #REF!. */
@@ -48,13 +50,13 @@ type EngineTable = { schema: TableSchema; rows: readonly Row[]; views?: readonly
  * moved to Rust (`call`, `callCheck`, `callNumber`, through engine.ts).
  */
 export interface FormulaEngine {
-  computeTables(tables: Record<string, EngineTable>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, unknown[]> | "host">;
+  computeTables(tables: Record<string, EngineTable>, clock?: { now?: Date; zone?: string; seed?: number }, only?: readonly string[]): Record<string, Record<string, unknown[]> | "host">;
   /** A Sheet view's grid, and with `columns` the table's formula columns in the same pass (as sheetGrid). */
   computeGrids(
     tables: Record<string, EngineTable>,
     table: string,
     views: readonly string[],
-    options?: { now?: Date; seed?: number; columns?: boolean },
+    options?: { now?: Date; zone?: string; seed?: number; columns?: boolean },
   ): { fields: Record<string, unknown[]>; grids: Record<string, { order: number[]; groups: GridGroup[]; loop: boolean } | null> } | "host";
   /** A `.table` operation (`module.function`): its input and answer JSON text, `{"value": …}` or `{"error": "…"}`. */
   call(op: string, input: string): string;
@@ -102,8 +104,12 @@ function formulaDiagnostics(schema: TableSchema, rows: Row[], cells?: CellFormul
   return diagnostics;
 }
 
-/** The moment and the seed the core is given. */
-const clockOf = (options: ComputeOptions) => ({ ...(options.now ? { now: options.now } : {}), ...(options.seed !== undefined ? { seed: options.seed } : {}) });
+/** The moment, the zone and the seed the core is given. */
+const clockOf = (options: ComputeOptions) => ({
+  ...(options.now ? { now: options.now } : {}),
+  ...(options.zone !== undefined ? { zone: options.zone } : {}),
+  ...(options.seed !== undefined ? { seed: options.seed } : {}),
+});
 
 /**
  * Rows with their computed fields filled in, for display and querying.

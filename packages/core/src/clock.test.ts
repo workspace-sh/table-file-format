@@ -33,6 +33,17 @@ test("today is the reader's date, now the instant in UTC, rand a number from 0 u
   assert.equal(String(computeRows({ fields: [{ name: "x", type: "date", computed: c("(today 1)") }] }, rows).rows[0]!.x), "#VALUE!");
 });
 
+test("today is the date where the reader is: the zone they're in, when it's given", () => {
+  // 23:30 UTC on 24 October: already the 25th in Tokyo, still the 24th in Los Angeles.
+  const now = new Date(Date.UTC(2026, 9, 24, 23, 30));
+  const today = (zone: string) => computeRows(schema, rows, { now, zone }).rows[0]!.d;
+  assert.equal(today("Asia/Tokyo"), "2026-10-25");
+  assert.equal(today("America/Los_Angeles"), "2026-10-24");
+  assert.equal(today("UTC"), "2026-10-24");
+  // now is the instant, wherever the reader is.
+  assert.equal(computeRows(schema, rows, { now, zone: "Asia/Tokyo" }).rows[0]!.t, "2026-10-24T23:30:00Z");
+});
+
 test("never remembered: the same rows worked out at another moment give that moment's answer", () => {
   const first = computeRows(schema, rows, { now: new Date(Date.UTC(2026, 0, 1, 12)) }).rows[0]!.t;
   const later = computeRows(schema, rows, { now: new Date(Date.UTC(2027, 0, 1, 12)) }).rows[0]!.t;

@@ -46,7 +46,7 @@ export interface Edn {
    * Sheet view's places is the host's, and so is every table related to it:
    * they come back as "host", for `.table`'s own workbook to compute.
    */
-  computeTables(tables: Record<string, TableIn>, clock?: { now?: Date; seed?: number }, only?: readonly string[]): Record<string, Record<string, FormulaResult[]> | "host">;
+  computeTables(tables: Record<string, TableIn>, clock?: Clock, only?: readonly string[]): Record<string, Record<string, FormulaResult[]> | "host">;
   /**
    * A Sheet view's grid (D41), as an app numbers its rows by: each view's
    * order (file indexes, row 1 first), groups and whether it's sorted by its
@@ -58,7 +58,7 @@ export interface Edn {
     tables: Record<string, TableIn>,
     table: string,
     views: readonly string[],
-    options?: { now?: Date; seed?: number; columns?: boolean },
+    options?: Clock & { columns?: boolean },
   ): { fields: Record<string, FormulaResult[]>; grids: Record<string, SheetGridOut | null> } | "host";
   /**
    * A `.table` engine operation (`module.function`, edn/crates/table): its input and answer
@@ -108,6 +108,25 @@ export interface TableIn {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * What `today`, `now` and `rand` read (D55). `now`: one moment for the whole computation (absent: the
+ * time it's asked). `zone`: the IANA time zone whose date `today` is at that moment, for a reader in
+ * another zone than the device's (absent: the device's own). `seed`: where `rand` draws from.
+ */
+export interface Clock {
+  now?: Date;
+  zone?: string;
+  seed?: number;
+}
+
+/** The date at `now` in `zone` (absent: the device's zone), `YYYY-MM-DD`. A zone that isn't one throws a RangeError. */
+export function dateIn(now: Date, zone?: string): string {
+  if (zone === undefined) return `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const part = (type: string) => parts.find((p) => p.type === type)!.value;
+  return `${part("year").padStart(4, "0")}-${part("month")}-${part("day")}`;
+}
+
 /** The calls a binding answers. */
 export type Calls = {
   read(text: string): string;
@@ -152,7 +171,7 @@ export const engineFrom = (c: Calls, binding: "native" | "wasm"): Edn => ({
 function run(
   c: Calls,
   tables: Record<string, TableIn>,
-  clock: { now?: Date; seed?: number },
+  clock: Clock,
   extra: { only?: readonly string[]; grids?: Record<string, readonly string[]>; columns?: boolean },
 ): { out: Record<string, { fields: Record<string, FormulaResult[]>; grids?: Record<string, SheetGridOut | null> } | "host"> } {
     const parts: Float64Array[] = [];
@@ -161,7 +180,7 @@ function run(
     const json = {
       ...extra,
       clock: {
-        today: `${String(now.getFullYear()).padStart(4, "0")}-${two(now.getMonth() + 1)}-${two(now.getDate())}`,
+        today: dateIn(now, clock.zone),
         now: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
         seed: clock.seed ?? Math.floor(Math.random() * 2 ** 53),
       },
