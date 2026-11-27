@@ -40,6 +40,10 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
                 Some(f) => f.iter().filter_map(|n| n.as_str().map(str::to_string)).collect(),
                 None => return Some(Err("the input needs \"fields\", a list of names".into())),
             };
+            // A window names a field by its index, below the codes for the id and a key the schema doesn't name.
+            if fields.len() >= usize::from(ID) {
+                return Some(Err(format!("a held table has at most {} fields; this schema has {}", ID, fields.len())));
+            }
             Ok(with(|held| {
                 held.next += 1;
                 held.tables.insert(held.next, Rows::new(&fields));
@@ -51,7 +55,11 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
         "rows.bytes" => held(input, |r| Ok(r.bytes().to_string())),
         "rows.lines" => held(input, |r| {
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
-            let mut out = String::from("[");
+            // Asked for first: a file of short lines that aren't rows answers in many times its size.
+            let size = r.lines().iter().skip(from).fold(2usize, |n, l| n.saturating_add(96).saturating_add((l.len as usize).saturating_mul(6)));
+            let mut out = String::new();
+            out.try_reserve_exact(size).map_err(|_| "the lines that aren't rows are too many to give back at once".to_string())?;
+            out.push('[');
             for (i, l) in r.lines().iter().enumerate().skip(from) {
                 if i > from {
                     out.push(',');
@@ -92,7 +100,7 @@ pub(crate) fn call_bytes(op: &str, input: &J, bytes: &[u8]) -> Result<String, St
                 None => bytes.to_vec(),
             };
             let strip_bom = input.get("stripBom").and_then(J::as_bool).unwrap_or(true);
-            held(input, |r| Ok(r.read(name, bytes, strip_bom).to_string()))
+            held(input, |r| r.read(name, bytes, strip_bom).map(|n| n.to_string()))
         }
         _ => Err(format!("{op:?} isn't an operation that takes bytes; there is rows.read")),
     }
@@ -135,26 +143,58 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
     }
     held(input, |r| {
         let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
-        let to = (input.get("to").and_then(J::as_u64).map_or(r.len(), |t| t as usize)).min(r.len());
-        let mut w = Window::default();
-        let mut units = 0u32;
-        let mut keys: Vec<(u32, u16, crate::rows::Cell, Option<String>)> = Vec::new();
-        for row in from..to.max(from) {
-            keys.clear();
-            // The id, then each field and each extra key, put back in the order the line writes them.
-            let id = r.id_cell(row);
-            keys.push((id.start, ID, id, None));
-            for (f, c) in r.cells(row).iter().enumerate() {
-                if c.kind != kind::ABSENT {
-                    keys.push((c.start, f as u16, *c, None));
+        let to = (input.get("to").and_then(J::as_u64).map_or(r.len(), |t| t as usize)).min(r.len()).max(from.min(r.len()));
+        let from = from.min(to);
+        // Counted first, and asked for: a window is never grown on the way.
+        let (mut entries, mut numbers, mut texts, mut text_bytes) = (0usize, 0usize, 0usize, 0usize);
+        for row in from..to {
+            let keys = 1 + r.cells(row).iter().filter(|c| c.kind != kind::ABSENT).count() + r.extras(row).len();
+            if keys > usize::from(u16::MAX) {
+                return Err(format!("row {row} has {keys} keys, more than a window can carry ({})", u16::MAX));
+            }
+            entries += 1 + keys;
+            for c in std::iter::once(&r.id_cell(row)).chain(r.cells(row)).chain(r.extras(row).iter().map(|e| &e.value)) {
+                match c.kind {
+                    kind::NUMBER => numbers += 1,
+                    kind::TEXT | kind::ESCAPED | kind::JSON => {
+                        texts += 1;
+                        text_bytes += c.len as usize;
+                    }
+                    _ => {}
                 }
             }
             for e in r.extras(row) {
-                keys.push((e.value.start, EXTRA, e.value, Some(e.key.clone())));
+                texts += 1;
+                text_bytes += e.key.len();
             }
-            keys.sort_by_key(|k| k.0);
-            w.entries.push(keys.len() as u16);
-            for (_, key, c, name) in &keys {
+        }
+        let keys = entries - (to - from);
+        let mut w = Window::default();
+        let too_large = |_| "the rows asked for are too many to give back at once".to_string();
+        w.entries.try_reserve_exact(entries).map_err(too_large)?;
+        w.kinds.try_reserve_exact(keys).map_err(too_large)?;
+        w.numbers.try_reserve_exact(numbers).map_err(too_large)?;
+        w.ends.try_reserve_exact(texts).map_err(too_large)?;
+        // Decoding escapes only ever shortens a text.
+        w.texts.try_reserve_exact(text_bytes).map_err(too_large)?;
+        let mut units = 0u32;
+        let mut row_keys: Vec<(u32, u16, crate::rows::Cell, Option<String>)> = Vec::new();
+        for row in from..to {
+            row_keys.clear();
+            // The id, then each field and each extra key, put back in the order the line writes them.
+            let id = r.id_cell(row);
+            row_keys.push((id.start, ID, id, None));
+            for (f, c) in r.cells(row).iter().enumerate() {
+                if c.kind != kind::ABSENT {
+                    row_keys.push((c.start, f as u16, *c, None));
+                }
+            }
+            for e in r.extras(row) {
+                row_keys.push((e.value.start, EXTRA, e.value, Some(e.key.clone())));
+            }
+            row_keys.sort_by_key(|k| k.0);
+            w.entries.push(row_keys.len() as u16);
+            for (_, key, c, name) in &row_keys {
                 w.entries.push(*key);
                 w.kinds.push(c.kind);
                 if let Some(name) = name {
@@ -209,6 +249,33 @@ mod tests {
         // UTF-16 ends: "a", "xé", "z", "{\"k\":[1]}", "b", "🙂" (two units).
         assert_eq!(w.ends, vec![1, 3, 4, 13, 14, 16]);
         assert!(call("rows.free", &format!(r#"{{"handle":{h}}}"#)).contains("true"));
+        let _ = deflated;
         assert!(call("rows.count", &format!(r#"{{"handle":{h}}}"#)).contains("error"));
+    }
+
+
+    #[test]
+    fn what_a_file_declares_or_holds_past_what_can_be_held_is_an_error() {
+        // A hostile entry: two bytes declaring 2^45, through the binding's own call.
+        let h = value(&call("rows.new", r#"{"fields":[]}"#));
+        let hostile = format!(r#"{{"handle":{h},"file":"rows/0001.ndjson","method":8,"size":35184372088832,"crc":0}}"#);
+        let answer = call_bytes("rows.read", &hostile, &[0x03, 0x00]);
+        assert!(answer.starts_with(r#"{"error":"corrupt zip: rows/0001.ndjson declares"#), "{answer}");
+        // A row with more keys than a window can carry.
+        let mut line = String::from("{\"id\":\"wide\"");
+        for k in 0..70_000 {
+            line.push_str(&format!(",\"k{k}\":1"));
+        }
+        line.push('}');
+        assert_eq!(value(&call_bytes("rows.read", &format!(r#"{{"handle":{h}}}"#), line.as_bytes())), 1);
+        let err = window("rows.window", &format!(r#"{{"handle":{h},"from":0,"to":1}}"#)).unwrap_err();
+        assert!(err.contains("70001 keys, more than a window can carry"), "{err}");
+        // A window past the table's end is the rows there are.
+        assert_eq!(window("rows.window", &format!(r#"{{"handle":{h},"from":5,"to":9}}"#)).unwrap().entries.len(), 0);
+        call("rows.free", &format!(r#"{{"handle":{h}}}"#));
+        // More fields than a window can name.
+        let fields: Vec<String> = (0..0xfffe).map(|i| format!("\"f{i}\"")).collect();
+        let too_many = call("rows.new", &format!(r#"{{"fields":[{}]}}"#, fields.join(",")));
+        assert!(too_many.contains("at most 65534 fields"), "{too_many}");
     }
 }

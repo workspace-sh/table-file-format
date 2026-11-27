@@ -94,6 +94,12 @@ tables by handle, and two more shapes reach them:
 - `rows.lines` gives the lines that weren't rows, `rows.count`, `rows.bytes`,
   and `rows.free` ends the handle.
 
+A file can come from anyone, so nothing it says is allocated before it's
+checked: a size its bytes can't be is corrupt, and memory is asked for
+(`try_reserve`), never assumed. A file the engine can't hold is an error, and
+the table is left as it was before it (`rows::Limits`). A row nested past 128
+levels is kept as a line that isn't a row, rather than risk the stack.
+
 table-core reads rows this way when `setRowsThroughEngine(true)` is set
 (`packages/core/src/engineRows.ts`). It's off by default until a table can
 be shown through the handle without its rows rebuilt as objects (#867).

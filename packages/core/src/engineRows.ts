@@ -79,13 +79,15 @@ export function readRowsThroughEngine(
     for (const l of call<Line[]>("rows.lines", { handle })) {
       const at: KeptLineAt = { line: l.line, text: l.text, file: files[l.file]!.label, after: l.rowsBefore > 0 ? rows[l.rowsBefore - 1]!.id : null };
       if (l.is === "not-json") {
-        let err: unknown = new SyntaxError("not JSON");
+        let err: unknown = null;
         try {
           JSON.parse(l.text);
         } catch (thrown) {
           err = thrown;
         }
-        keepLine(diagnostics, unread, at, ...notJson(l.text, err));
+        // JSON that the engine still couldn't read: nested past the 128 levels it reads, so a line can't exhaust its stack.
+        if (err === null) keepLine(diagnostics, unread, at, "is nested more than 128 levels deep, past what a row can be", "line.too-deep");
+        else keepLine(diagnostics, unread, at, ...notJson(l.text, err));
       } else if (l.is === "not-row") keepLine(diagnostics, unread, at, "isn't a row", "line.not-row");
       else if (l.is === "no-id") keepLine(diagnostics, unread, at, "is a row without an id", "id.missing");
       else repeatedRow(diagnostics, unread, at, rows[l.first!]!, JSON.parse(l.text) as Row);

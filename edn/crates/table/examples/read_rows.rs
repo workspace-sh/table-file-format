@@ -15,7 +15,7 @@ fn main() {
     let t = Instant::now();
     let mut rows = Rows::new(&fields);
     for (f, d) in files.iter().zip(data) {
-        rows.read(f, d, true);
+        rows.read(f, d, true).expect("rows read");
     }
     println!("read {} rows: {:?}, holding {} MB", rows.len(), t.elapsed(), rows.bytes() / 1_000_000);
 }

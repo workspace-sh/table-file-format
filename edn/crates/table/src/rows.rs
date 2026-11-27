@@ -262,29 +262,74 @@ impl Rows {
         None
     }
 
-    /// Reads one rows file, as text (`bytes`, a file's bytes in UTF-8).
-    /// `strip_bom`: a byte order mark at its start isn't part of its first
-    /// line (as a reader that decodes it with `TextDecoder` reads it). Text
-    /// that isn't UTF-8 is read with U+FFFD in its place, as `TextDecoder`
-    /// reads it. Returns how many rows it held.
-    pub fn read(&mut self, name: &str, bytes: Vec<u8>, strip_bom: bool) -> usize {
-        let mut bytes = match String::from_utf8(bytes) {
-            Ok(s) => s.into_bytes(),
-            Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned().into_bytes(),
-        };
+    /// Reads one rows file, as text (`bytes`, a file's bytes in UTF-8), within the default limits.
+    /// `strip_bom`: a byte order mark at its start isn't part of its first line (as a reader that
+    /// decodes it with `TextDecoder` reads it). Text that isn't UTF-8 is read with U+FFFD in its
+    /// place, as `TextDecoder` reads it. Returns how many rows it held.
+    pub fn read(&mut self, name: &str, bytes: Vec<u8>, strip_bom: bool) -> Result<usize, String> {
+        self.read_within(name, bytes, strip_bom, Limits::default())
+    }
+
+    /// `read`, refusing a file or a table past `limits`. A file comes from anyone (another
+    /// device, over P2P), so what's too large to hold is an error, never an abort: nothing here
+    /// allocates on what a file says without asking first. Refused, the table is as it was.
+    pub fn read_within(&mut self, name: &str, bytes: Vec<u8>, strip_bom: bool, limits: Limits) -> Result<usize, String> {
+        let mut bytes = lossy(bytes)?;
         if strip_bom && bytes.starts_with("\u{feff}".as_bytes()) {
             bytes.drain(..3);
         }
+        if bytes.len() > limits.max_file {
+            return Err(format!("{name} is too large to read: {} bytes, past {}", bytes.len(), limits.max_file));
+        }
+        let before = (self.rows.len(), self.cells.len(), self.extras.len(), self.lines.len());
+        let read = self.read_lines(name, &bytes, &limits);
+        if let Err(e) = read {
+            self.undo(before, &bytes);
+            return Err(e);
+        }
+        if self.files.try_reserve(1).is_err() {
+            self.undo(before, &bytes);
+            return Err(format!("{name} is too large to hold"));
+        }
+        self.files.push((name.to_string(), bytes));
+        // What the lines that weren't rows reserved.
+        self.rows.shrink_to_fit();
+        self.ids.shrink_to_fit();
+        self.cells.shrink_to_fit();
+        Ok(self.rows.len() - before.0)
+    }
+
+    /// Puts the table back as it was before a file that was refused: `before` is its lists' lengths then.
+    fn undo(&mut self, before: (usize, usize, usize, usize), reading: &[u8]) {
         let file = self.files.len() as u32;
-        let before = self.rows.len();
+        for row in (before.0..self.rows.len()).rev() {
+            if let Some(id) = self.id_reading(row, (file, reading)) {
+                let h = hash(id.as_bytes());
+                if self.by_id.get(&h) == Some(&(row as u32)) {
+                    self.by_id.remove(&h);
+                }
+                self.by_id_rest.remove(id.as_bytes());
+            }
+        }
+        self.rows.truncate(before.0);
+        self.ids.truncate(before.0);
+        self.cells.truncate(before.1);
+        self.extras.truncate(before.2);
+        self.lines.truncate(before.3);
+    }
+
+    fn read_lines(&mut self, name: &str, bytes: &[u8], limits: &Limits) -> Result<(), String> {
+        let too_large = || format!("{name} is too large to hold");
+        let file = self.files.len() as u32;
         let n = self.names.len();
-        // At most a row a line: reserved once, so the lists don't grow to twice what they hold.
+        // At most a row a line: reserved once when it can be, so the lists don't grow to twice what they hold.
         let lines = bytes.iter().filter(|b| **b == b'\n').count() + 1;
-        self.rows.reserve_exact(lines);
-        self.ids.reserve_exact(lines);
-        self.cells.reserve_exact(lines * n);
+        let _ = self.rows.try_reserve_exact(lines);
+        let _ = self.ids.try_reserve_exact(lines);
+        let _ = lines.checked_mul(n).map(|c| self.cells.try_reserve_exact(c));
         let mut cells = vec![Cell::default(); n];
         let mut extras: Vec<(String, Cell)> = Vec::new();
+        let mut seen_extras: HashMap<String, usize> = HashMap::new();
         let mut start = 0usize;
         let mut number = 0u32;
         while start <= bytes.len() {
@@ -301,15 +346,16 @@ impl Rows {
             let refused = |is| Line { file, line: this, is, rows_before, start: at.0, len: at.1 };
             cells.iter_mut().for_each(|c| *c = Cell::default());
             extras.clear();
+            seen_extras.clear();
             let mut id: Option<Cell> = None;
             let read = {
                 let mut de = serde_json::Deserializer::from_slice(line);
-                let got = de.deserialize_any(RowVisitor { line, by_name: &self.by_name, cells: &mut cells, extras: &mut extras, id: &mut id });
+                let got = de.deserialize_any(RowVisitor { line, by_name: &self.by_name, cells: &mut cells, extras: &mut extras, seen_extras: &mut seen_extras, id: &mut id });
                 got.and_then(|is_row| de.end().map(|()| is_row))
             };
             match read {
-                Err(_) => self.lines.push(refused(LineIs::NotJson)),
-                Ok(false) => self.lines.push(refused(LineIs::NotRow)),
+                Err(_) => keep(&mut self.lines, refused(LineIs::NotJson), name)?,
+                Ok(false) => keep(&mut self.lines, refused(LineIs::NotRow), name)?,
                 Ok(true) => {
                     let id_text = id.and_then(|c| {
                         let raw = &line[c.start as usize..(c.start + c.len) as usize];
@@ -320,14 +366,21 @@ impl Rows {
                         }
                     });
                     let Some(id_text) = id_text.filter(|t| !t.is_empty()) else {
-                        self.lines.push(refused(LineIs::NoId));
+                        keep(&mut self.lines, refused(LineIs::NoId), name)?;
                         continue;
                     };
+                    if self.rows.len() >= limits.max_rows {
+                        return Err(format!("{name} holds more rows than a table can: {}", limits.max_rows));
+                    }
                     let row = self.rows.len() as u32;
-                    if let Some(first) = self.take_id(&id_text, row, (file, &bytes)) {
-                        self.lines.push(refused(LineIs::Repeat(first)));
+                    if let Some(first) = self.take_id(&id_text, row, (file, bytes)) {
+                        keep(&mut self.lines, refused(LineIs::Repeat(first)), name)?;
                         continue;
                     }
+                    self.rows.try_reserve(1).map_err(|_| too_large())?;
+                    self.ids.try_reserve(1).map_err(|_| too_large())?;
+                    self.cells.try_reserve(n).map_err(|_| too_large())?;
+                    self.extras.try_reserve(extras.len()).map_err(|_| too_large())?;
                     self.rows.push(RowAt { file, start: at.0, len: at.1 });
                     self.ids.push(id.unwrap_or_default());
                     self.cells.extend_from_slice(&cells);
@@ -336,13 +389,49 @@ impl Rows {
             }
         }
         debug_assert_eq!(self.cells.len(), self.rows.len() * n);
-        self.files.push((name.to_string(), bytes));
-        // What the lines that weren't rows reserved.
-        self.rows.shrink_to_fit();
-        self.ids.shrink_to_fit();
-        self.cells.shrink_to_fit();
-        self.rows.len() - before
+        Ok(())
     }
+}
+
+/// Keeps a line that isn't a row, or says the file is too large to.
+fn keep(lines: &mut Vec<Line>, l: Line, name: &str) -> Result<(), String> {
+    lines.try_reserve(1).map_err(|_| format!("{name} is too large to hold"))?;
+    lines.push(l);
+    Ok(())
+}
+
+/// What a held table refuses to go past.
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    /// The bytes of one rows file, once inflated. Spans are 32-bit, so never more than 4 GiB.
+    pub max_file: usize,
+    /// The rows of one table.
+    pub max_rows: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Limits { max_file: u32::MAX as usize - 1, max_rows: u32::MAX as usize - 1 }
+    }
+}
+
+/// `bytes` as UTF-8, each sequence that isn't replaced by U+FFFD as `TextDecoder` (and
+/// `String::from_utf8_lossy`) replaces it; what that takes asked for first, not assumed.
+fn lossy(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+    let bytes = match String::from_utf8(bytes) {
+        Ok(s) => return Ok(s.into_bytes()),
+        Err(e) => e.into_bytes(),
+    };
+    let size = bytes.utf8_chunks().map(|c| c.valid().len() + if c.invalid().is_empty() { 0 } else { 3 }).sum();
+    let mut out = String::new();
+    out.try_reserve_exact(size).map_err(|_| "a rows file is too large to hold".to_string())?;
+    for chunk in bytes.utf8_chunks() {
+        out.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            out.push('\u{fffd}');
+        }
+    }
+    Ok(out.into_bytes())
 }
 
 /// Reads one line: true when it's an object (a row), false when it's JSON of
@@ -352,6 +441,8 @@ struct RowVisitor<'v, 'de> {
     by_name: &'v HashMap<String, usize>,
     cells: &'v mut [Cell],
     extras: &'v mut Vec<(String, Cell)>,
+    /// The extra keys by name, once there are many.
+    seen_extras: &'v mut HashMap<String, usize>,
     id: &'v mut Option<Cell>,
 }
 
@@ -369,10 +460,24 @@ impl<'v, 'de> Visitor<'de> for RowVisitor<'v, 'de> {
                 *self.id = Some(value_cell);
             } else if let Some(&f) = self.by_name.get(&*name) {
                 self.cells[f] = value_cell;
-            } else if let Some(kept) = self.extras.iter_mut().find(|(k, _)| *k == *name) {
-                kept.1 = value_cell;
+            } else if self.extras.len() < 16 {
+                // A few: looked through. A key written twice is the last one's.
+                match self.extras.iter_mut().find(|(k, _)| *k == *name) {
+                    Some(kept) => kept.1 = value_cell,
+                    None => self.extras.push((name.into_owned(), value_cell)),
+                }
             } else {
-                self.extras.push((name.into_owned(), value_cell));
+                // Many (a row written to slow a reader down): found by name, never looked through.
+                if self.seen_extras.is_empty() {
+                    self.seen_extras.extend(self.extras.iter().enumerate().map(|(i, (k, _))| (k.clone(), i)));
+                }
+                match self.seen_extras.get(&*name) {
+                    Some(&i) => self.extras[i].1 = value_cell,
+                    None => {
+                        self.seen_extras.insert(name.to_string(), self.extras.len());
+                        self.extras.push((name.into_owned(), value_cell));
+                    }
+                }
             }
         }
         Ok(true)
@@ -431,24 +536,46 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     crc32fast::hash(bytes)
 }
 
-/// A zip entry's bytes as the archive holds them, inflated (method 8) or as
-/// stored (method 0), checked against the size and CRC-32 it declares.
+/// The most deflate makes of a byte: a stream of 258-byte matches, each in about two bits, with a
+/// block's ends and headers allowed for.
+const DEFLATE_MOST: usize = 1032;
+
+/// A zip entry's bytes as the archive holds them, inflated (method 8) or as stored (method 0),
+/// checked against the size and CRC-32 it declares, within the default limits.
 pub fn inflate(name: &str, method: u32, raw: &[u8], size: usize, crc: u32) -> Result<Vec<u8>, String> {
-    let bytes = match method {
-        0 => raw.to_vec(),
+    inflate_within(name, method, raw, size, crc, Limits::default())
+}
+
+/// `inflate`, refusing a size past `limits.max_file`, or one deflate couldn't make from `raw`:
+/// what the entry declares is checked before anything is allocated for it.
+pub fn inflate_within(name: &str, method: u32, raw: &[u8], size: usize, crc: u32, limits: Limits) -> Result<Vec<u8>, String> {
+    // A size its bytes can't be is a corrupt entry; one they can, but past the limit, too large to read.
+    match method {
+        0 if raw.len() != size => return Err(format!("corrupt zip: size mismatch for {name}")),
+        8 if size > raw.len().saturating_mul(DEFLATE_MOST).saturating_add(1024) => {
+            return Err(format!("corrupt zip: {name} declares {size} bytes, more than {} compressed bytes can hold", raw.len()));
+        }
+        _ => {}
+    }
+    if size > limits.max_file {
+        return Err(format!("{name} is too large to read: it declares {size} bytes, past {}", limits.max_file));
+    }
+    let mut bytes = Vec::new();
+    match method {
+        0 => {
+            bytes.try_reserve_exact(size).map_err(|_| format!("{name} is too large to hold"))?;
+            bytes.extend_from_slice(raw);
+        }
         8 => {
             // Into exactly the size it declares: inflating into a growing list would hold up to twice it.
-            let mut out = vec![0u8; size];
-            let made = miniz_oxide::inflate::decompress_slice_iter_to_slice(&mut out, std::iter::once(raw), false, true).map_err(|_| format!("corrupt zip: can't inflate {name}"))?;
+            bytes.try_reserve_exact(size).map_err(|_| format!("{name} is too large to hold"))?;
+            bytes.resize(size, 0);
+            let made = miniz_oxide::inflate::decompress_slice_iter_to_slice(&mut bytes, std::iter::once(raw), false, true).map_err(|_| format!("corrupt zip: can't inflate {name}"))?;
             if made != size {
                 return Err(format!("corrupt zip: size mismatch for {name}"));
             }
-            out
         }
         m => return Err(format!("unsupported zip compression method {m} for {name}")),
-    };
-    if bytes.len() != size {
-        return Err(format!("corrupt zip: size mismatch for {name}"));
     }
     if crc32(&bytes) != crc {
         return Err(format!("corrupt zip: CRC mismatch for {name}"));
@@ -462,7 +589,7 @@ mod tests {
 
     fn rows(text: &str) -> Rows {
         let mut r = Rows::new(&["t".into(), "n".into()]);
-        r.read("rows/0001.ndjson", text.as_bytes().to_vec(), true);
+        r.read("rows/0001.ndjson", text.as_bytes().to_vec(), true).unwrap();
         r
     }
 
@@ -497,16 +624,63 @@ mod tests {
         assert_eq!(r.text(0, r.cells(0)[0]).as_deref(), Some("two"));
         assert_eq!(r.extras(0).len(), 1);
         assert_eq!(r.raw(0, r.extras(0)[0].value), b"2");
+        // Past the few looked through, found by name: written twice, still the last one's.
+        let mut line = String::from("{\"id\":\"b\"");
+        for k in 0..40 {
+            line.push_str(&format!(",\"k{k}\":{k}"));
+        }
+        line.push_str(",\"k3\":\"again\",\"k30\":\"again\"}");
+        let r = rows(&line);
+        assert_eq!(r.extras(0).len(), 40);
+        let again: Vec<_> = r.extras(0).iter().filter(|e| r.raw(0, e.value) == b"again").map(|e| e.key.as_str()).collect();
+        assert_eq!(again, vec!["k3", "k30"]);
     }
 
     #[test]
     fn text_as_text_decoder_reads_it() {
         let mut r = Rows::new(&[]);
-        r.read("a", b"\xef\xbb\xbf{\"id\":\"a\"}\n{\"id\":\"b\xff\"}".to_vec(), true);
+        r.read("a", b"\xef\xbb\xbf{\"id\":\"a\"}\n{\"id\":\"b\xff\"}".to_vec(), true).unwrap();
         assert_eq!((r.id(0), r.id(1)), ("a".to_string(), "b\u{fffd}".to_string()));
         let mut kept = Rows::new(&[]);
-        kept.read("a", b"\xef\xbb\xbf{\"id\":\"a\"}".to_vec(), false);
+        kept.read("a", b"\xef\xbb\xbf{\"id\":\"a\"}".to_vec(), false).unwrap();
         assert_eq!(kept.lines()[0].is, LineIs::NotJson);
+    }
+
+    #[test]
+    fn a_size_an_entry_declares_is_checked_before_anything_is_allocated_for_it() {
+        // Two bytes declaring 2^45: refused as corrupt, not an abort for want of 32 TiB.
+        let err = inflate("x", 8, &[0x03, 0x00], 1 << 45, 0).unwrap_err();
+        assert!(err.starts_with("corrupt zip: x declares 35184372088832 bytes, more than 2 compressed bytes can hold"), "{err}");
+        // And under the limit, as much as two bytes can't make.
+        assert!(inflate("x", 8, &[0x03, 0x00], 10_000_000, 0).unwrap_err().starts_with("corrupt zip: x declares 10000000 bytes"));
+        // Within what deflate could make of the input, but past the limit.
+        let small = Limits { max_file: 100, max_rows: 10 };
+        let data = vec![b'a'; 1000];
+        let deflated = miniz_oxide::deflate::compress_to_vec(&data, 6);
+        assert!(inflate_within("x", 8, &deflated, 1000, crc32(&data), small).unwrap_err().contains("too large to read"));
+        // As much as deflate can make of a byte is still read.
+        let zeros = vec![0u8; 100_000];
+        let packed = miniz_oxide::deflate::compress_to_vec(&zeros, 10);
+        assert!(packed.len() * DEFLATE_MOST + 1024 >= zeros.len(), "{} bytes", packed.len());
+        assert_eq!(inflate("zeros", 8, &packed, zeros.len(), crc32(&zeros)).unwrap().len(), zeros.len());
+        // Stored: the size it declares is the size it holds, checked before it's copied.
+        assert!(inflate("x", 0, b"abc", 1 << 45, 0).unwrap_err().contains("size mismatch"));
+        assert!(inflate("x", 0, b"abc", 2, 0).unwrap_err().contains("size mismatch"));
+    }
+
+    #[test]
+    fn a_file_or_a_table_past_its_limits_is_refused_and_the_table_is_as_it_was() {
+        let small = Limits { max_file: 64, max_rows: 2 };
+        let mut r = Rows::new(&["t".into()]);
+        r.read_within("one", b"{\"id\":\"a\"}".to_vec(), true, small).unwrap();
+        assert!(r.read_within("big", vec![b' '; 65], true, small).unwrap_err().contains("big is too large to read"));
+        let err = r.read_within("many", b"{\"id\":\"b\"}\nnope\n{\"id\":\"c\"}".to_vec(), true, small).unwrap_err();
+        assert!(err.contains("more rows than a table can"), "{err}");
+        // Nothing of the refused file is held: its rows, its lines, its ids.
+        assert_eq!((r.len(), r.lines().len()), (1, 0));
+        assert_eq!(r.row_of("b"), None);
+        r.read_within("two", b"{\"id\":\"b\"}".to_vec(), true, small).unwrap();
+        assert_eq!((r.len(), r.row_of("b")), (2, Some(1)));
     }
 
     #[test]
