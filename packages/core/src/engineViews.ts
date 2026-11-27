@@ -8,6 +8,7 @@ import { rowsOf } from "./engineRows.js";
 import type { IndexQuery } from "./indexer.js";
 import type { RowGroup, ViewRows } from "./row-source.js";
 import { enumValues, type ParsedTable, type Row } from "./types.js";
+import { problemOf, type Found, type Problem, type ProblemCode, type ProblemContext } from "./problems.js";
 
 /** A table the engine holds: its handle, and the fields its rows were read with (the columns it keeps). */
 export interface HeldRows {
@@ -88,5 +89,61 @@ export function heldViewRows(held: HeldRows, table: Pick<ParsedTable, "schema" |
     },
     totals: () => totals,
     groups: () => first.groups,
+  };
+}
+
+/** A held table's problems: how many of each kind, said at once, and any window of them made into Problems. */
+export interface HeldProblems {
+  total: number;
+  counts: Partial<Record<ProblemCode, number>>;
+  /** Problems `from` up to `to`, in problemsOf's order, with their words and fixes. */
+  problems(from: number, to: number): Problem[];
+}
+
+/**
+ * A held table's problems from its rows, pages and optional warnings: what problemsOf gives of them
+ * (foundInRows), the engine finding them and this side saying them (problemOf), for a window at a
+ * time. Null when the engine can't promise memory's answer: a table whose cells have their own
+ * formulas, or a field with a `pattern` (a JavaScript RegExp). `heldTargets` names the tables
+ * related ones are held as; a relation's target in memory gives its ids.
+ */
+export function heldProblems(
+  held: HeldRows,
+  table: Pick<ParsedTable, "schema" | "bodies" | "cells">,
+  name: string,
+  context: ProblemContext & { heldTargets?: Record<string, HeldRows> } = {},
+): HeldProblems | null {
+  if (table.cells?.some((c) => c.expr !== undefined)) return null;
+  const targets: Record<string, { handle: number } | { ids: string[] }> = {};
+  for (const f of table.schema.fields) {
+    if (!f.relation) continue;
+    const there = context.heldTargets?.[f.relation.table];
+    const target = context.bundle?.tables[f.relation.table];
+    if (there) targets[f.name] = { handle: there.handle };
+    else if (target && target.indexed === undefined && target.loading === undefined) targets[f.name] = { ids: target.rows.map((r) => r.id) };
+  }
+  const input = {
+    handle: held.handle,
+    schema: { ...table.schema, fields: table.schema.fields.map((f) => ({ ...f, choices: enumValues(f) })) },
+    bodies: table.bodies ? Object.keys(table.bodies) : [],
+    attachments: context.attachments ?? null,
+    targets,
+  };
+  type Answer = { total: number; counts: Partial<Record<ProblemCode, number>>; found: Found[] };
+  // Counted first, with no problem made and no row read.
+  const first = call<Answer | null>("rows.problems", { ...input, from: 0, to: 0 });
+  if (!first) return null;
+  return {
+    total: first.total,
+    counts: first.counts,
+    problems(from, to) {
+      const { found } = call<Answer>("rows.problems", { ...input, from: Math.max(0, from), to: Math.max(0, to) });
+      // The rows their fixes read, and only those.
+      const ids = [...new Set(found.map((f) => f.row).filter((id): id is string => id !== undefined))];
+      const rows: Row[] = [];
+      if (ids.length > 0) rowsOf(callWindow("rows.window", { handle: held.handle, ids }), held.fields, rows);
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      return found.map((f) => problemOf(f, table, name, (id) => byId.get(id)));
+    },
   };
 }

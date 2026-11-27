@@ -98,6 +98,11 @@ tables by handle, and two more shapes reach them:
   memory gives, as the SQLite index does. `rows.window`, `rows.ids` and
   `rows.place` then read it by `view`. table-core's `heldViewRows`
   (`packages/core/src/engineViews.ts`) is its ViewRows.
+- `rows.problems {handle, schema, bodies, attachments, targets, from, to}`
+  finds a held table's problems (`crates/table/src/problems.rs`): how many
+  of each kind, and the window `from` up to `to` as table-core's `Found`s,
+  which `heldProblems` says in words with their fixes. Null for a `pattern`
+  constraint, a JavaScript RegExp.
 
 A file can come from anyone, so nothing it says is allocated before it's
 checked: a size its bytes can't be is corrupt, and memory is asked for

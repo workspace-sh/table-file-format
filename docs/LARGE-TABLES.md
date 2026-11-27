@@ -690,6 +690,21 @@ A view of a held table is worked out by the engine (`edn/crates/table/src/view.r
 - **Every view that works over the rows is faster:** 1.1× to 2.6×.
 - **File order costs the window crossing:** 0.2 to 0.3 ms. In memory, a view in file order is the rows already there, so there's nothing to do. A held table's 200 rows cross to JavaScript, which is step 1's window cost.
 
+## Problems of a table the engine holds (#867, step 2b, 27 Nov 2026)
+
+A held table's problems are found by the engine (`edn/crates/table/src/problems.rs`) and said in TypeScript (`heldProblems`, `problemOf`): how many of each kind at once, with no row read, then any window of them made into Problems. `edn/bench/engine-problems.mts` times it against `problemsOf` in memory, which makes every problem. Apple M1, Node 22.23.2, medians of 3 runs, each in a fresh process. "Strict" adds constraints most rows break: amount at most 50,000, a unique title, a note of at most 10 characters.
+
+| | Problems | Memory: every problem | Engine: how many of each kind | Engine: the first 200 made |
+|---|---|---|---|---|
+| big-50000, WebAssembly | 0 | 210 ms | 27 ms | 0.1 ms |
+| big-50000, native | 0 | 202 ms | 15 ms | 0 ms |
+| big-50000, strict, WebAssembly | 66,523 | 349 ms | 44 ms | 1.4 ms |
+| big-50000, strict, native | 66,523 | 346 ms | 29 ms | 1.0 ms |
+| big-1000000, WebAssembly | 0 | 4,135 ms | 483 ms | 0.1 ms |
+| big-1000000, native | 0 | 4,321 ms | 326 ms | 0 ms |
+| big-1000000, strict, WebAssembly | 1,330,274 | 7,765 ms | 1,011 ms | 1.1 ms |
+| big-1000000, strict, native | 1,330,274 | 7,704 ms | 767 ms | 1.0 ms |
+
 ## Open questions for the large-tables discussion
 
 - Will people keep `.table` files in git and on GitHub, or mainly in Workspace? D31 says Workspace doesn't sync `.table` through git. The answer decides how much the git findings above matter.

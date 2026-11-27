@@ -17,6 +17,7 @@
 //! export it serves (`encoding.isDate`); `OPS` lists them all.
 
 pub mod held;
+pub mod problems;
 pub mod rows;
 pub mod view;
 
@@ -40,6 +41,7 @@ pub const OPS: &[&str] = &[
     "rows.query",
     "rows.ids",
     "rows.place",
+    "rows.problems",
     "rows.free",
 ];
 

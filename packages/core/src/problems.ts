@@ -6,7 +6,7 @@
 
 import { cellFormulas } from "./cells.js";
 import { enumValues, type Field, type ParsedBundle, type ParsedTable, type Row, type TableSchema, type ValidationError } from "./types.js";
-import { valueProblems } from "./validator.js";
+import { valueMessage, valueProblems, type ValueProblem } from "./validator.js";
 
 export type ProblemCode =
   // Section 9: the table isn't valid.
@@ -189,36 +189,58 @@ export function problemsOf(table: ParsedTable, name: string, context: ProblemCon
       if (!unchecked) push("cell.no-row", { kind: "cell", row: c.id, field: c.field }, `cells/ has a formula for row ${c.id}, which isn't there`, { row: c.id, field: c.field }, [fix]);
     } else if (!fields.has(c.field) || c.field === "id") push("cell.no-field", { kind: "cell", row: c.id, field: c.field }, `cells/ has a formula for field ${c.field}, which isn't there`, { row: c.id, field: c.field }, [fix]);
   }
-  if (!unchecked) rowProblems(table, push);
-  bodyProblems(table, ids, unchecked, push);
-  if (!unchecked) warnings(table, context, push);
+  if (!unchecked) {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const f of foundInRows(table, context)) out.push(problemOf(f, table, name, (id) => byId.get(id)));
+  }
   return out;
 }
 
-type Push = (code: ProblemCode, at: ProblemPlace, message: string, details?: Problem["details"], fixes?: Fix[], others?: ProblemPlace[]) => void;
+/**
+ * A problem as found in a table's rows, before its words and fixes: what
+ * `problemOf` makes a Problem of. The engine finds these too, for a table it
+ * holds (#867), and the words and fixes are made here for both.
+ */
+export interface Found {
+  code: ProblemCode;
+  /** Its row: a cell's, a row's, or the page's id for an orphaned page. */
+  row?: string;
+  field?: string;
+  details: Problem["details"];
+  /** The row that holds the same value or key first. */
+  other?: string;
+  /** Which key: its place among the primary key and then the unique keys. */
+  key?: number;
+}
 
-function rowProblems(table: ParsedTable, push: Push): void {
+/** The keys a table's rows are checked against, in order: its primary key, then its unique keys. */
+function keysOf(schema: TableSchema): { code: "key.primary" | "key.unique"; fields: string[]; emptyCounts: boolean }[] {
+  return [
+    ...(schema.primaryKey?.length ? [{ code: "key.primary" as const, fields: schema.primaryKey, emptyCounts: true }] : []),
+    ...(schema.uniqueKeys ?? []).filter((k) => Array.isArray(k) && k.length > 0).map((fields) => ({ code: "key.unique" as const, fields, emptyCounts: false })),
+  ];
+}
+
+/** Every problem in a table's rows, its pages and its optional warnings, in order: what `problemsOf` gives of them. */
+export function foundInRows(table: ParsedTable, context: ProblemContext = {}): Found[] {
+  const out: Found[] = [];
   const { schema, rows } = table;
   const own = cellFormulas(schema, rows, table.cells);
   const seenIds = new Set<string>();
   const uniques = schema.fields.filter((f) => f.constraints?.unique && !f.computed).map((f) => ({ field: f, seen: new Map<string, Row>() }));
-  const keys = [
-    ...(schema.primaryKey?.length ? [{ code: "key.primary" as const, fields: schema.primaryKey, emptyCounts: true, seen: new Map<string, Row>() }] : []),
-    ...(schema.uniqueKeys ?? []).filter((k) => Array.isArray(k) && k.length > 0).map((fields) => ({ code: "key.unique" as const, fields, emptyCounts: false, seen: new Map<string, Row>() })),
-  ];
+  const keys = keysOf(schema).map((k) => ({ ...k, seen: new Map<string, Row>() }));
 
   for (const row of rows) {
     if (typeof row.id !== "string" || row.id === "") {
-      push("id.missing", { kind: "table" }, "a row has no id", {});
+      out.push({ code: "id.missing", details: {} });
       continue;
     }
-    if (seenIds.has(row.id)) push("id.repeated", { kind: "row", row: row.id }, `two rows have the id ${row.id}`, { id: row.id });
+    if (seenIds.has(row.id)) out.push({ code: "id.repeated", row: row.id, details: { id: row.id } });
     seenIds.add(row.id);
 
     for (const field of schema.fields) {
       if (field.computed || own.get(row.id)?.has(field.name)) continue;
-      const value = row[field.name];
-      for (const p of valueProblems(field, value)) push(p.code, { kind: "cell", row: row.id, field: field.name }, `${field.name}: ${p.message}`, { ...p.details, field: field.name }, valueFixes(p.code, field, row, p.details));
+      for (const p of valueProblems(field, row[field.name])) out.push({ code: p.code, row: row.id, field: field.name, details: p.details });
     }
 
     for (const u of uniques) {
@@ -226,30 +248,128 @@ function rowProblems(table: ParsedTable, push: Push): void {
       if (isEmpty(value)) continue;
       const key = JSON.stringify(value);
       const first = u.seen.get(key);
-      if (!first) {
-        u.seen.set(key, row);
-        continue;
-      }
-      push("value.unique", { kind: "cell", row: row.id, field: u.field.name }, `${u.field.name} must be unique: row ${first.id} has ${show(value)} too`, { field: u.field.name, value: key, other: first.id }, [
-        { kind: "clear-value", row: row.id, field: u.field.name, label: "Clear it in this row", changesSchema: false },
-        { kind: "change-field", field: u.field.name, change: { constraints: { ...u.field.constraints, unique: undefined } }, label: `Allow repeats in ${u.field.name}`, changesSchema: true },
-      ], [{ kind: "cell", row: first.id, field: u.field.name }]);
+      if (!first) u.seen.set(key, row);
+      else out.push({ code: "value.unique", row: row.id, field: u.field.name, details: { field: u.field.name, value: key, other: first.id }, other: first.id });
     }
 
-    for (const k of keys) {
+    keys.forEach((k, at) => {
       const values = k.fields.map((f) => row[f]);
-      if (!k.emptyCounts && values.some(isEmpty)) continue;
+      if (!k.emptyCounts && values.some(isEmpty)) return;
       const key = values.map((v) => JSON.stringify(v)).join("\u0000");
       const first = k.seen.get(key);
-      if (!first) {
-        k.seen.set(key, row);
-        continue;
+      if (!first) k.seen.set(key, row);
+      else out.push({ code: k.code, row: row.id, details: { fields: k.fields.join(","), other: first.id }, other: first.id, key: at });
+    });
+  }
+
+  // A page whose row isn't there.
+  if (table.bodies) {
+    const ids = new Set(rows.map((r) => r.id));
+    for (const id of Object.keys(table.bodies)) if (!ids.has(id)) out.push({ code: "body.orphaned", row: id, details: { row: id } });
+  }
+
+  for (const field of schema.fields) {
+    // A link to a table in the bundle that has no row with that id. Another file's rows aren't read here.
+    const target = field.relation ? context.bundle?.tables[field.relation.table] : undefined;
+    if (target && target.indexed === undefined && target.loading === undefined) {
+      const there = new Set(target.rows.map((r) => r.id));
+      for (const row of rows) {
+        const value = row[field.name];
+        for (const id of Array.isArray(value) ? value : [value]) {
+          if (typeof id !== "string" || id === "" || there.has(id)) continue;
+          out.push({ code: "relation.dangling", row: row.id, field: field.name, details: { field: field.name, table: field.relation!.table, value: id } });
+        }
       }
-      const words = k.code === "key.primary" ? "primary key" : "unique key";
-      const change: Partial<TableSchema> = k.code === "key.primary" ? { primaryKey: undefined } : { uniqueKeys: (schema.uniqueKeys ?? []).filter((u) => u !== k.fields) };
-      push(k.code, { kind: "row", row: row.id }, `${words} [${k.fields.join(", ")}] is the same as row ${first.id}'s`, { fields: k.fields.join(","), other: first.id }, [
+    }
+    // A choice no row has.
+    const choices = enumValues(field);
+    if (choices.length > 0 && !field.computed) {
+      const used = new Set<unknown>();
+      for (const row of rows) {
+        const v = row[field.name];
+        for (const item of Array.isArray(v) ? v : [v]) used.add(item);
+      }
+      for (const choice of choices) if (!used.has(choice)) out.push({ code: "choice.unused", field: field.name, details: { field: field.name, value: choice } });
+    }
+  }
+  // A file in attachments/ no row's attachment field holds.
+  if (context.attachments) {
+    const held = new Set<unknown>();
+    for (const field of schema.fields.filter((f) => f.attachment)) for (const row of rows) held.add(row[field.name]);
+    for (const file of context.attachments) if (!held.has(file)) out.push({ code: "attachment.orphaned", details: { file } });
+  }
+  return out;
+}
+
+/** A problem found, with its place, its words and its fixes. `rowOf` gives a row by id, for fixes that read its value. */
+export function problemOf(f: Found, table: Pick<ParsedTable, "schema">, name: string, rowOf: (id: string) => Row | undefined): Problem {
+  const { schema } = table;
+  const make = (at: ProblemPlace, message: string, details: Problem["details"] = f.details, fixes: Fix[] = [], others?: ProblemPlace[]): Problem => ({
+    code: f.code,
+    severity: severityOf(f.code),
+    table: name,
+    at,
+    ...(others ? { others } : {}),
+    details,
+    message,
+    fixes,
+  });
+  const field = f.field !== undefined ? schema.fields.find((x) => x.name === f.field) : undefined;
+  const row = f.row !== undefined ? rowOf(f.row) : undefined;
+  switch (f.code) {
+    case "id.missing":
+      return make({ kind: "table" }, "a row has no id");
+    case "id.repeated":
+      return make({ kind: "row", row: f.row! }, `two rows have the id ${f.row}`);
+    case "value.unique": {
+      const value = row?.[f.field!];
+      return make({ kind: "cell", row: f.row!, field: f.field! }, `${f.field} must be unique: row ${f.other} has ${show(value)} too`, f.details, [
+        { kind: "clear-value", row: f.row!, field: f.field!, label: "Clear it in this row", changesSchema: false },
+        { kind: "change-field", field: f.field!, change: { constraints: { ...field!.constraints, unique: undefined } }, label: `Allow repeats in ${f.field}`, changesSchema: true },
+      ], [{ kind: "cell", row: f.other!, field: f.field! }]);
+    }
+    case "key.primary":
+    case "key.unique": {
+      const k = keysOf(schema)[f.key!]!;
+      const words = f.code === "key.primary" ? "primary key" : "unique key";
+      const change: Partial<TableSchema> = f.code === "key.primary" ? { primaryKey: undefined } : { uniqueKeys: (schema.uniqueKeys ?? []).filter((u) => u !== k.fields) };
+      return make({ kind: "row", row: f.row! }, `${words} [${k.fields.join(", ")}] is the same as row ${f.other}'s`, f.details, [
         { kind: "change-schema", change, label: `Stop requiring ${k.fields.join(" and ")} to be different in every row`, changesSchema: true },
-      ], [{ kind: "row", row: first.id }]);
+      ], [{ kind: "row", row: f.other! }]);
+    }
+    case "body.orphaned":
+      return make({ kind: "row", row: f.row! }, `the page for row ${f.row} has no row`, f.details, [
+        { kind: "attach-page", page: f.row!, label: "Give it to a row", changesSchema: false },
+        { kind: "remove-page", page: f.row!, label: "Delete the page", changesSchema: false },
+      ]);
+    case "relation.dangling": {
+      const value = row?.[f.field!];
+      const id = f.details["value"] as string;
+      const fix: Fix = Array.isArray(value)
+        ? { kind: "set-value", row: f.row!, field: f.field!, value: value.filter((v) => v !== id), label: "Remove the link", changesSchema: false }
+        : { kind: "clear-value", row: f.row!, field: f.field!, label: "Clear the link", changesSchema: false };
+      return make({ kind: "cell", row: f.row!, field: f.field! }, `${f.field} links to ${id}, which isn't in ${field!.relation!.table}`, f.details, [fix]);
+    }
+    case "choice.unused": {
+      const choice = f.details["value"] as string;
+      const remove = (list: readonly (string | { value: string })[]) => list.filter((e) => (typeof e === "string" ? e : e.value) !== choice);
+      const change: Partial<Field> = Array.isArray(field!.categories) ? { categories: remove(field!.categories) as Field["categories"] } : { constraints: { ...field!.constraints, enum: remove(field!.constraints?.enum ?? []) as string[] } };
+      return make({ kind: "field", field: f.field! }, `no row's ${f.field} is ${show(choice)}`, f.details, [{ kind: "change-field", field: f.field!, change, label: `Remove ${show(choice)} from the choices`, changesSchema: true }]);
+    }
+    case "attachment.orphaned": {
+      const path = `attachments/${String(f.details["file"])}`;
+      return make({ kind: "file", path }, `no row holds ${path}`, f.details, [{ kind: "remove-file", path, label: "Delete the file", changesSchema: false }]);
+    }
+    default: {
+      // A value that breaks its field's rule.
+      const value = row?.[f.field!];
+      const code = f.code as ValueProblem["code"];
+      return make(
+        { kind: "cell", row: f.row!, field: f.field! },
+        `${f.field}: ${valueMessage(code, f.details as ValueProblem["details"], field!, value)}`,
+        { ...f.details, field: f.field! },
+        row ? valueFixes(f.code, field!, row, f.details) : [],
+      );
     }
   }
 }
@@ -324,63 +444,6 @@ function convert(field: Field, value: unknown): unknown {
   }
   if (typeof value === "number" && Number.isFinite(value) && field.type === "string") return String(value);
   return undefined;
-}
-
-function bodyProblems(table: ParsedTable, ids: Set<string>, unchecked: boolean, push: Push): void {
-  if (unchecked || !table.bodies) return;
-  for (const id of Object.keys(table.bodies)) {
-    if (ids.has(id)) continue;
-    push("body.orphaned", { kind: "row", row: id }, `the page for row ${id} has no row`, { row: id }, [
-      { kind: "attach-page", page: id, label: "Give it to a row", changesSchema: false },
-      { kind: "remove-page", page: id, label: "Delete the page", changesSchema: false },
-    ]);
-  }
-}
-
-function warnings(table: ParsedTable, context: ProblemContext, push: Push): void {
-  const { schema, rows } = table;
-  for (const field of schema.fields) {
-    // A link to a table in the bundle that has no row with that id. Another file's rows aren't read here.
-    const target = field.relation ? context.bundle?.tables[field.relation.table] : undefined;
-    if (target && target.indexed === undefined && target.loading === undefined) {
-      const there = new Set(target.rows.map((r) => r.id));
-      for (const row of rows) {
-        const value = row[field.name];
-        for (const id of Array.isArray(value) ? value : [value]) {
-          if (typeof id !== "string" || id === "" || there.has(id)) continue;
-          const fix: Fix = Array.isArray(value)
-            ? { kind: "set-value", row: row.id, field: field.name, value: value.filter((v) => v !== id), label: "Remove the link", changesSchema: false }
-            : { kind: "clear-value", row: row.id, field: field.name, label: "Clear the link", changesSchema: false };
-          push("relation.dangling", { kind: "cell", row: row.id, field: field.name }, `${field.name} links to ${id}, which isn't in ${field.relation!.table}`, { field: field.name, table: field.relation!.table, value: id }, [fix]);
-        }
-      }
-    }
-    // A choice no row has.
-    const choices = enumValues(field);
-    if (choices.length > 0 && !field.computed) {
-      const used = new Set<unknown>();
-      for (const row of rows) {
-        const v = row[field.name];
-        for (const item of Array.isArray(v) ? v : [v]) used.add(item);
-      }
-      for (const choice of choices) {
-        if (used.has(choice)) continue;
-        const remove = (list: readonly (string | { value: string })[]) => list.filter((e) => (typeof e === "string" ? e : e.value) !== choice);
-        const change: Partial<Field> = Array.isArray(field.categories) ? { categories: remove(field.categories) as Field["categories"] } : { constraints: { ...field.constraints, enum: remove(field.constraints?.enum ?? []) as string[] } };
-        push("choice.unused", { kind: "field", field: field.name }, `no row's ${field.name} is ${show(choice)}`, { field: field.name, value: choice }, [{ kind: "change-field", field: field.name, change, label: `Remove ${show(choice)} from the choices`, changesSchema: true }]);
-      }
-    }
-  }
-  // A file in attachments/ no row's attachment field holds.
-  if (context.attachments) {
-    const held = new Set<unknown>();
-    for (const field of schema.fields.filter((f) => f.attachment)) for (const row of rows) held.add(row[field.name]);
-    for (const file of context.attachments) {
-      if (held.has(file)) continue;
-      const path = `attachments/${file}`;
-      push("attachment.orphaned", { kind: "file", path }, `no row holds ${path}`, { file }, [{ kind: "remove-file", path, label: "Delete the file", changesSchema: false }]);
-    }
-  }
 }
 
 /** A reader's diagnostic as a problem: its code, its place, and the fixes for a kept line. */
