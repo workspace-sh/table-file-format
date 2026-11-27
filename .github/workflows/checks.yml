@@ -17,3 +17,21 @@ jobs:
       - uses: actions/checkout@v4
       - name: No paths that collide on a case-insensitive disk
         run: scripts/check-case-collisions.sh
+
+  engine-binaries:
+    # The web app and Linux checkouts run the committed WebAssembly and
+    # linux-x64 add-on, built from edn/'s Rust. Each carries a stamp of the
+    # sources it was built from (edn/js/source-stamp.sh); a change to the Rust
+    # without rebuilding them fails here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The committed engine binaries are built from these Rust sources
+        run: |
+          want=$(sh edn/js/source-stamp.sh)
+          for stamp in edn/js/wasm/edn.source edn/js/native/edn.linux-x64.node.source; do
+            if [ "$(cat "$stamp" 2>/dev/null)" != "$want" ]; then
+              echo "::error file=$stamp::built from other Rust sources than these: rebuild with edn/js/build-wasm.sh and edn/js/build-native.sh --linux-x64 (edn/README.md)"
+              exit 1
+            fi
+          done
