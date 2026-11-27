@@ -44,3 +44,4 @@ export { loadingViewRows, remoteEdits, remoteViewRows, rowsServer, type RemoteVi
 export { buildLabel, currentBuild, type BuildInfo } from "./buildInfo.ts";
 export { asStored, ingestingText, readingText } from "./reading.ts";
 export * from "./problemWords.ts";
+export * from "./unreadableWords.ts";
