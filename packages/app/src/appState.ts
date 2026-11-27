@@ -6,7 +6,7 @@
 // renderer, no storage. Each app draws what `derive` gives it, shows
 // `asking` and `telling` its own way, and writes the bundles in `dirty`.
 
-import { applyChanges, type BundleChange, type ParsedBundle } from "@workspace.sh/table-core";
+import { applyChanges, applyFixes, type BundleChange, type Fix, type ParsedBundle } from "@workspace.sh/table-core";
 import { coordinateOf, isSheet, mergeOfRange, mergeOver, renameField, textDirection, withMerge, type Address, type BundleMeta, type Field, type ParsedTable, type Row, type TableSchema, type UnreadLine, type ValidationError, type View } from "@workspace.sh/table-core";
 import { canInsertAt, visibleFields, type DisplaySettingKind, type DisplaySettings, type ViewProps } from "@workspace.sh/table-ui/shared";
 
@@ -228,6 +228,8 @@ export type AppAction =
   | { type: "settings"; open: boolean; revert?: boolean }
   // Edits to the view on screen: ViewProps' callbacks, one to one
   | { type: "updateRow"; rowId: string; field: string; value: unknown }
+  /** Fixes a person chose for the table's problems (table-core's problemsOf), made as one edit called `name`. */
+  | { type: "applyFixes"; fixes: Fix[]; name: string }
   /** A cell given its own formula (D52), in the stored form; null takes it away. */
   | { type: "setCellFormula"; rowId: string; field: string; expr: string | null }
   /** A cell's note (D57); empty takes it away. */
@@ -479,7 +481,7 @@ function settle(prev: AppState, state: AppState, action: AppAction): AppState {
  * a file opened or read again, rows moved into the index, the examples
  * reset, a field's change and what it does to the rows.
  */
-const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "setCellFormula", "setCellNote", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
+const ROW_EDITS: ReadonlySet<AppAction["type"]> = new Set(["updateRow", "applyFixes", "setCellFormula", "setCellNote", "addRow", "insertRow", "updateBody", "undo", "redo", "putBackDeparted"]);
 
 /** Where you are in the view on screen, all of it: what history keeps as it's left. */
 function placeOf(state: AppState): Place {
@@ -900,6 +902,10 @@ function step(state: AppState, action: AppAction): AppState {
       return edit(state, "Add Field", (t) => withField(t, action.field, viewIdOf(state, state.active), action.place));
     case "moveField":
       return edit(state, "Move Field", (t) => withFieldMoved(t, action.name, action.delta));
+    case "applyFixes":
+      // A table held in the index isn't checked row by row, so it has no fixes to make.
+      if (state.tables[state.active]?.indexed) return state;
+      return edit(state, action.name, (t) => applyFixes(t, action.fixes));
     case "restoreSchema":
       return edit(state, "Change Fields", (t) => (t.schema === action.schema ? t : { ...t, schema: action.schema }));
     case "addChoice":
