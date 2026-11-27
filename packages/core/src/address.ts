@@ -11,8 +11,13 @@
  * Resolution is callback-driven — the format library doesn't know how
  * apps locate sibling `.table/` directories (filesystem scan, in-memory
  * map, HTTP fetch). Callers supply a `TableLookup` function.
+ *
+ * Parsing, formatting and finding a view are the engine's
+ * (edn/crates/table/src/address.rs); resolving stays here, around the
+ * app's own lookup.
  */
 
+import { call, check } from "./engine.js";
 import type { ParsedTable, Row } from "./types.js";
 
 export interface Address {
@@ -45,16 +50,13 @@ export interface Address {
 }
 
 /**
- * A key or value as written: percent-decoded (SPEC section 10). One that
- * isn't valid percent-encoding, as an address written before values were
- * encoded may be, is read as it stands.
+ * The view an address's `view=` names (SPEC section 10): the view with that
+ * `id`, else the first whose `name` matches it, ignoring case ("pipeline"
+ * finds "Pipeline"). Ids are opaque (D23); a name is what a reader types.
  */
-function decoded(text: string): string {
-  try {
-    return decodeURIComponent(text);
-  } catch {
-    return text;
-  }
+export function addressedView<V extends { id: string; name: string }>(views: readonly V[], key: string): V | undefined {
+  const at = call<number | null>("address.addressedView", { views: views.map((v) => ({ id: v.id, name: v.name })), key });
+  return at === null ? undefined : views[at];
 }
 
 /**
@@ -63,57 +65,11 @@ function decoded(text: string): string {
  *
  * Tolerant of empty fragments, missing values, and unknown keys —
  * matches the spec requirement that readers MUST tolerate unknown
- * keys silently.
+ * keys silently. Keys and values are percent-decoded (SPEC section 10);
+ * one that isn't valid percent-encoding is read as it stands.
  */
-/**
- * The view an address's `view=` names (SPEC section 10): the view with that
- * `id`, else the first whose `name` matches it, ignoring case ("pipeline"
- * finds "Pipeline"). Ids are opaque (D23); a name is what a reader types.
- */
-export function addressedView<V extends { id: string; name: string }>(views: readonly V[], key: string): V | undefined {
-  const lower = key.toLowerCase();
-  return views.find((v) => v.id === key) ?? views.find((v) => v.name.toLowerCase() === lower);
-}
-
 export function parseAddress(input: string): Address | null {
-  if (!input) return null;
-  const hashIdx = input.indexOf("#");
-  const tablePath = hashIdx === -1 ? input : input.slice(0, hashIdx);
-  if (!tablePath) return null;
-
-  const out: Address = { tablePath };
-  if (hashIdx === -1) return out;
-
-  const fragment = input.slice(hashIdx + 1);
-  if (!fragment) return out;
-
-  const extra: Record<string, string> = {};
-  for (const pair of fragment.split("&")) {
-    if (!pair) continue;
-    const eqIdx = pair.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = decoded(pair.slice(0, eqIdx));
-    const value = decoded(pair.slice(eqIdx + 1));
-    if (!key || !value) continue;
-    switch (key) {
-      case "table":
-        out.tableName = value;
-        break;
-      case "row":
-        out.rowId = value;
-        break;
-      case "view":
-        out.viewId = value;
-        break;
-      case "field":
-        out.fieldName = value;
-        break;
-      default:
-        extra[key] = value;
-    }
-  }
-  if (Object.keys(extra).length > 0) out.extra = extra;
-  return out;
+  return call<Address | null>("address.parse", { input });
 }
 
 /**
@@ -122,16 +78,7 @@ export function parseAddress(input: string): Address | null {
  * fragment keys are set, so a bare table-path round-trips cleanly.
  */
 export function formatAddress(addr: Address): string {
-  const parts: string[] = [];
-  const pair = (key: string, value: string) => parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-  if (addr.tableName) pair("table", addr.tableName);
-  if (addr.rowId) pair("row", addr.rowId);
-  if (addr.viewId) pair("view", addr.viewId);
-  if (addr.fieldName) pair("field", addr.fieldName);
-  if (addr.extra) {
-    for (const [k, v] of Object.entries(addr.extra)) pair(k, v);
-  }
-  return parts.length === 0 ? addr.tablePath : `${addr.tablePath}#${parts.join("&")}`;
+  return call<string>("address.format", { address: addr });
 }
 
 /**
@@ -172,4 +119,4 @@ export async function resolveRow(
 }
 
 /** Whether a path names a `.table` (either form, SPEC section 13): its extension, with or without a folder's trailing `/`. */
-export const isTablePath = (path: string): boolean => /\.table\/?$/i.test(path);
+export const isTablePath = (path: string): boolean => check("address.isTablePath", path);

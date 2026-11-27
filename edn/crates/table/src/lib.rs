@@ -16,6 +16,8 @@
 //! An operation is named `module.function`, after the TypeScript module and
 //! export it serves (`encoding.isDate`); `OPS` lists them all.
 
+pub mod address;
+
 use serde_json::Value as J;
 use workspace_edn::encoding;
 use workspace_edn::formula::json_string;
@@ -29,6 +31,10 @@ pub const OPS: &[&str] = &[
     "encoding.isYearMonth",
     "encoding.instantOf",
     "encoding.completeSeconds",
+    "address.parse",
+    "address.format",
+    "address.addressedView",
+    "address.isTablePath",
 ];
 
 /// The checks `check` answers: a yes or no about one text.
@@ -39,6 +45,7 @@ fn checks(op: &str) -> Option<fn(&str) -> bool> {
         "encoding.isDateTime" => encoding::is_date_time,
         "encoding.isDuration" => encoding::is_duration,
         "encoding.isYearMonth" => encoding::is_year_month,
+        "address.isTablePath" => address::is_table_path,
         _ => return None,
     })
 }
@@ -68,6 +75,8 @@ enum Answer {
     Bool(bool),
     Number(f64),
     Text(String),
+    /// JSON already written.
+    Json(String),
 }
 
 /// Run `op` with `input`. Never panics on bad input: a mistake is `{"error": "…"}`.
@@ -85,6 +94,7 @@ pub fn call(op: &str, input: &str) -> String {
                 Answer::Number(n) if n.is_finite() => out.push_str(&n.to_string()),
                 Answer::Number(_) => out.push_str("null"),
                 Answer::Text(t) => json_string(&mut out, &t),
+                Answer::Json(j) => out.push_str(&j),
             }
         }
         Err(message) => {
@@ -108,8 +118,50 @@ fn dispatch(op: &str, input: &J) -> Result<Answer, String> {
             let raw = text(input, "raw")?;
             Ok(Answer::Text(encoding::complete_seconds(text(input, "type")?, raw).unwrap_or_else(|| raw.to_string())))
         }
+        "address.parse" => Ok(Answer::Json(match address::parse(text(input, "input")?) {
+            Some(a) => {
+                let mut out = String::new();
+                address::address_json(&mut out, &a);
+                out
+            }
+            None => "null".into(),
+        })),
+        "address.format" => Ok(Answer::Text(address::format(&address_of(input.get("address").unwrap_or(&J::Null))?))),
+        "address.addressedView" => {
+            let views = input.get("views").and_then(J::as_array).ok_or("the input needs \"views\", as a list")?;
+            let pairs = views
+                .iter()
+                .map(|v| Ok((v.get("id").and_then(J::as_str).ok_or("each view needs an \"id\"")?, v.get("name").and_then(J::as_str).unwrap_or(""))))
+                .collect::<Result<Vec<_>, String>>()?;
+            let found = address::addressed_view(pairs.iter().copied(), text(input, "key")?);
+            Ok(Answer::Json(found.map_or("null".into(), |i| i.to_string())))
+        }
         _ => Err(format!("{op:?} isn't an operation; there are {}", OPS.join(", "))),
     }
+}
+
+/// An `Address` as the TypeScript one is written in JSON.
+fn address_of(j: &J) -> Result<address::Address, String> {
+    let field = |key: &str| -> Result<Option<String>, String> {
+        match j.get(key) {
+            None | Some(J::Null) => Ok(None),
+            Some(J::String(s)) => Ok(Some(s.clone())),
+            Some(_) => Err(format!("the address's {key:?} isn't text")),
+        }
+    };
+    let extra = match j.get("extra") {
+        None | Some(J::Null) => Vec::new(),
+        Some(J::Object(o)) => o.iter().map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_string())).ok_or_else(|| format!("the address's extra {k:?} isn't text"))).collect::<Result<_, _>>()?,
+        Some(_) => return Err("the address's \"extra\" isn't an object".into()),
+    };
+    Ok(address::Address {
+        table_path: field("tablePath")?.ok_or("the address needs \"tablePath\", as text")?,
+        table_name: field("tableName")?,
+        row_id: field("rowId")?,
+        view_id: field("viewId")?,
+        field_name: field("fieldName")?,
+        extra,
+    })
 }
 
 fn text<'a>(input: &'a J, key: &str) -> Result<&'a str, String> {
