@@ -108,7 +108,7 @@ impl Shown {
 
 /// A cell as JavaScript holds it after `JSON.parse`.
 #[derive(Debug, Clone, PartialEq)]
-enum Js<'a> {
+pub(crate) enum Js<'a> {
     Undefined,
     Null,
     Num(f64),
@@ -118,7 +118,7 @@ enum Js<'a> {
     Json(&'a [u8]),
 }
 
-fn js<'a>(r: &'a Rows, row: usize, c: Cell) -> Js<'a> {
+pub(crate) fn js<'a>(r: &'a Rows, row: usize, c: Cell) -> Js<'a> {
     match c.kind {
         kind::ABSENT => Js::Undefined,
         kind::NULL => Js::Null,
@@ -163,7 +163,7 @@ fn same_value_zero(a: &Js, b: &Js) -> bool {
 }
 
 /// A JSON array's items as JavaScript holds them; None when it isn't an array.
-fn items(raw: &[u8]) -> Option<Vec<Js<'static>>> {
+pub(crate) fn items(raw: &[u8]) -> Option<Vec<Js<'static>>> {
     match serde_json::from_slice::<J>(raw).ok()? {
         J::Array(xs) => Some(xs.iter().map(|x| value_js(Some(x))).collect()),
         _ => None,
@@ -191,11 +191,11 @@ pub fn number_text(n: f64) -> String {
 }
 
 /// Two strings as JavaScript's `<` compares them: by UTF-16 code unit.
-fn utf16_cmp(a: &str, b: &str) -> Ordering {
+pub(crate) fn utf16_cmp(a: &str, b: &str) -> Ordering {
     a.encode_utf16().cmp(b.encode_utf16())
 }
 
-fn is_empty(v: &Js) -> bool {
+pub(crate) fn is_empty(v: &Js) -> bool {
     matches!(v, Js::Undefined | Js::Null) || matches!(v, Js::Str(s) if s.is_empty())
 }
 

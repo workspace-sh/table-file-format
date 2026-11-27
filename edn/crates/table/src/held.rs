@@ -22,12 +22,13 @@ struct Held {
 /// How many views of a table are kept; one asked again after it's gone is worked out again.
 const VIEWS_KEPT: usize = 8;
 
-/// A held table: its rows, which of its fields hold their kind, and its latest views.
+/// A held table: its rows, which of its fields hold their kind, its latest views, and its problems as last asked.
 struct Table {
     rows: Rows,
     conformance: Conformance,
     views: Vec<(u32, Shown)>,
     next_view: u32,
+    problems: Option<(String, crate::problems::Problems)>,
 }
 
 impl Table {
@@ -89,6 +90,56 @@ fn query_of(input: &J) -> Result<(Vec<view::Field>, view::Query), String> {
     ))
 }
 
+/// `rows.problems`: a held table's problems, counted by code, and a window of them (`from`, `to`).
+/// Worked out once for a query and kept, so its windows are read without working it out again.
+fn problems(input: &J) -> Result<String, String> {
+    let h = handle(input)?;
+    let mut query = input.clone();
+    if let Some(o) = query.as_object_mut() {
+        o.remove("from");
+        o.remove("to");
+    }
+    let key = query.to_string();
+    let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
+    let to = input.get("to").and_then(J::as_u64).map_or(0, |x| x as usize);
+    with(|held| {
+        // A relation's target: the ids its rows hold, from a table held here or as the caller gives them.
+        let mut targets = crate::problems::Targets::new();
+        for (field, target) in input.get("targets").and_then(J::as_object).into_iter().flatten() {
+            let ids: std::collections::HashSet<String> = match (target.get("handle").and_then(J::as_u64), target.get("ids").and_then(J::as_array)) {
+                (Some(t), _) => {
+                    let other = held.tables.get(&(t as u32)).ok_or_else(|| format!("no table is held as {t}"))?;
+                    (0..other.rows.len()).map(|r| other.rows.id(r)).collect()
+                }
+                (None, Some(ids)) => ids.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
+                _ => continue,
+            };
+            targets.insert(field.clone(), ids);
+        }
+        let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
+        if t.problems.as_ref().map(|(k, _)| k) != Some(&key) {
+            match crate::problems::problems(&t.rows, input, &targets)? {
+                Some(p) => t.problems = Some((key, p)),
+                None => return Ok("null".into()),
+            }
+        }
+        let (_, p) = t.problems.as_ref().expect("just worked out");
+        let mut out = String::from("{\"total\":");
+        out.push_str(&p.found.len().to_string());
+        out.push_str(",\"counts\":{");
+        for (i, (code, n)) in p.counts.iter().enumerate() {
+            if i > 0 {
+                out.push(',');
+            }
+            out.push_str(&format!("\"{code}\":{n}"));
+        }
+        out.push_str("},\"found\":");
+        out.push_str(&p.window(&t.rows, from, to));
+        out.push('}');
+        Ok(out)
+    })
+}
+
 fn number(n: f64) -> String {
     if n.is_finite() { n.to_string() } else { "null".into() }
 }
@@ -107,7 +158,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0 });
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None });
                 held.next.to_string()
             }))
         }
@@ -143,6 +194,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             t.views.push((id, shown));
             Ok(out)
         }),
+        "rows.problems" => problems(input),
         "rows.ids" => table(input, |t| {
             let shown = t.view(input)?;
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
@@ -254,7 +306,10 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
     table(input, |t| {
         let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
         // A view's rows in its order, or the table's in file order.
-        let list: Vec<usize> = match input.get("view") {
+        let list: Vec<usize> = match (input.get("view"), input.get("ids").and_then(J::as_array)) {
+            // Rows by id, in the order asked; an id the table hasn't is passed over.
+            (_, Some(ids)) => ids.iter().filter_map(|id| id.as_str().and_then(|id| t.rows.row_of(id))).collect(),
+            (view, None) => match view {
             Some(_) => {
                 let shown = t.view(input)?;
                 let to = input.get("to").and_then(J::as_u64).map_or(shown.count, |x| x as usize);
@@ -264,6 +319,7 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
                 let to = input.get("to").and_then(J::as_u64).map_or(t.rows.len(), |x| x as usize).min(t.rows.len());
                 (from.min(to)..to).collect()
             }
+            },
         };
         let r = &t.rows;
         // Counted first, and asked for: a window is never grown on the way.
