@@ -36,6 +36,8 @@ struct Table {
     problems: Option<(String, crate::problems::Problems)>,
     /// How many problems there are of each kind, for the query they're of: kept up by each edit.
     problem_totals: Option<Totals>,
+    /// The rows a batch in runs has taken out so far, by the batch's name (`batch`).
+    carried: Option<(String, crate::edit::Carried)>,
 }
 
 impl Table {
@@ -194,6 +196,13 @@ fn apply(input: &J) -> Result<String, String> {
             None => None,
         };
         let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
+        // A batch given in runs (`batch`, its name): the rows its earlier runs took out, which its
+        // later ones may bring back, as applyChanges brings them back.
+        let batch = input.get("batch").and_then(J::as_str).map(str::to_string);
+        let carried = match (t.carried.take(), &batch) {
+            (Some((name, rows)), Some(b)) if name == *b => rows,
+            _ => crate::edit::Carried::new(),
+        };
         // The problems a batch could change, before it: its rows and the values they hold before and
         // after it (the batch tried and taken back), never the whole table again.
         let mut scoped_before = None;
@@ -204,7 +213,7 @@ fn apply(input: &J) -> Result<String, String> {
                 t.problem_totals = crate::problems::problems(&t.rows, p, targets)?.map(|all| (key.clone(), all.found.len(), all.counts.iter().map(|(c, n)| (c.to_string(), *n)).collect()));
             }
             if t.problem_totals.is_some() {
-                let (named, after) = crate::edit::named_after(&mut t.rows, input)?;
+                let (named, after) = crate::edit::named_after(&mut t.rows, input, &carried)?;
                 let mut values: Vec<serde_json::Map<String, J>> = Vec::new();
                 for id in &named {
                     if let Some(row) = t.rows.row_of(id) {
@@ -222,7 +231,17 @@ fn apply(input: &J) -> Result<String, String> {
                 }
             }
         }
-        let applied = crate::edit::apply(&mut t.rows, input)?;
+        let mut carried = carried;
+        let applied = match crate::edit::apply_carrying(&mut t.rows, input, &mut carried) {
+            Ok(a) => a,
+            Err(e) => {
+                // Nothing changed: what the batch carried stays for it.
+                t.carried = batch.map(|b| (b, carried));
+                return Err(e);
+            }
+        };
+        // Kept for the batch's next run; a call that isn't one of a batch's carries nothing on.
+        t.carried = batch.map(|b| (b, carried));
         // What was worked out of the rows before is of other rows now.
         if !applied.changed.is_empty() {
             t.views.clear();
@@ -295,7 +314,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None });
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None, carried: None });
                 held.next.to_string()
             }))
         }

@@ -356,7 +356,8 @@ enum Effect {
 }
 
 /// A row an edit has taken out, which a later change of the batch can bring back.
-struct Removed {
+#[derive(Clone)]
+pub struct Removed {
     slot: usize,
     page: Option<J>,
     cells: Vec<J>,
@@ -659,7 +660,7 @@ pub type NamedAfter = HashMap<String, Option<Map<String, J>>>;
 
 /// The rows a batch names, by id, and what each would hold after it (None: not in the table): the
 /// batch applied and taken back, so nothing changes. For the problems a batch could change.
-pub fn named_after(rows: &mut Rows, input: &J) -> Result<(Vec<String>, NamedAfter), String> {
+pub fn named_after(rows: &mut Rows, input: &J, removed: &Carried) -> Result<(Vec<String>, NamedAfter), String> {
     let changes = parse(input.get("changes").and_then(J::as_array).ok_or("the input needs \"changes\", a list")?)?;
     let computed: HashSet<String> = input.get("computed").and_then(J::as_array).map(|xs| xs.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
     let pages: HashMap<String, Option<J>> = input.get("pages").and_then(J::as_object).map(|o| o.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()).unwrap_or_default();
@@ -677,7 +678,7 @@ pub fn named_after(rows: &mut Rows, input: &J) -> Result<(Vec<String>, NamedAfte
         }
     }
     let mark = rows.mark();
-    let mut batch = Batch { rows, pages, cells, removed: HashMap::new(), effects: Vec::new(), last_put: None, pending: None };
+    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None };
     let mut done = Ok(());
     for change in changes {
         done = batch.apply(change, &computed);
@@ -698,7 +699,18 @@ pub fn named_after(rows: &mut Rows, input: &J) -> Result<(Vec<String>, NamedAfte
 
 /// `rows.apply`'s work on a held table's rows: `input` has `changes`, and the `pages`, `cells`
 /// and `computed` fields of the rows they name. Changes nothing when it's an error.
+/// The rows a batch has taken out, by id, which a later change of it can bring back: carried from
+/// one call to the next when a batch comes in runs (its changes to fields and views made between).
+pub type Carried = HashMap<String, Removed>;
+
+/// `apply`, with no rows carried in from before.
 pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
+    apply_carrying(rows, input, &mut Carried::new())
+}
+
+/// `apply` for one run of a batch: `removed`, the rows the batch took out before this run, and after
+/// it those it has taken out so far. Unchanged when it's an error.
+pub fn apply_carrying(rows: &mut Rows, input: &J, removed: &mut Carried) -> Result<Applied, String> {
     let changes = parse(input.get("changes").and_then(J::as_array).ok_or("the input needs \"changes\", a list")?)?;
     let computed: HashSet<String> = input.get("computed").and_then(J::as_array).map(|xs| xs.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
     let pages: HashMap<String, Option<J>> = input.get("pages").and_then(J::as_object).map(|o| o.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()).unwrap_or_default();
@@ -728,7 +740,7 @@ pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
     let cells_before: HashMap<String, Map<String, J>> = named.iter().map(|id| (id.clone(), cells_by_field(cells.get(id).map_or(&[][..], Vec::as_slice)))).collect();
 
     let mark = rows.mark();
-    let mut batch = Batch { rows, pages, cells, removed: HashMap::new(), effects: Vec::new(), last_put: None, pending: None };
+    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None };
     let mut done = Ok(());
     for change in changes {
         done = batch.apply(change, &computed);
@@ -739,7 +751,7 @@ pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
     if done.is_ok() {
         done = batch.flush();
     }
-    let Batch { rows, cells, effects, .. } = batch;
+    let Batch { rows, cells, effects, removed: taken_out, .. } = batch;
     if let Err(e) = done {
         rows.undo_to(mark);
         return Err(e);
@@ -832,6 +844,7 @@ pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
     match finish(rows) {
         Ok(applied) => {
             rows.commit(mark);
+            *removed = taken_out;
             Ok(applied)
         }
         Err(e) => {

@@ -57,7 +57,16 @@ export interface HeldApplied {
  * (`heldProblems`' input), to be told the problems that changed. Throws, having changed nothing,
  * when the engine can't take a change (one that isn't a row's).
  */
-export function applyToHeld(held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, changes: readonly RowChange[], options: { problems?: object } = {}): HeldApplied {
+export function applyToHeld(
+  held: HeldRows,
+  table: Pick<ParsedTable, "schema" | "bodies" | "cells">,
+  changes: readonly RowChange[],
+  options: {
+    problems?: object;
+    /** One batch given in runs (its changes to fields and views made between): the same name for each, so a row one run takes out a later one can bring back. */
+    batch?: string;
+  } = {},
+): HeldApplied {
   const named = new Set(changes.map((c) => c.row));
   const pages: Record<string, string> = {};
   for (const id of named) if (table.bodies && Object.hasOwn(table.bodies, id)) pages[id] = table.bodies[id]!;
@@ -68,6 +77,7 @@ export function applyToHeld(held: HeldRows, table: Pick<ParsedTable, "schema" | 
     pages,
     cells: (table.cells ?? []).filter((c) => named.has(c.id)),
     ...(options.problems ? { problems: options.problems } : {}),
+    ...(options.batch !== undefined ? { batch: options.batch } : {}),
   });
   let bodies = table.bodies;
   let cells = table.cells;
@@ -103,21 +113,49 @@ export function heldRowsAll(held: HeldRows): Row[] {
  */
 export function applyChangesThroughEngine(bundle: ParsedBundle, changes: readonly BundleChange[]): ParsedBundle {
   if (!formulaEngineSet()) return applyChanges(bundle, changes);
+  // Each table held once for the whole batch, so a row one run takes out a later run can bring
+  // back, as applyChanges brings it back (the engine carries them by the batch's name).
+  const batch = `batch:${++batches}`;
+  const held = new Map<string, HeldRows>();
   let out = bundle;
-  let at = 0;
-  while (at < changes.length) {
-    const rows = isRowChange(changes[at]!);
-    let end = at;
-    while (end < changes.length && isRowChange(changes[end]!) === rows) end++;
-    const run = changes.slice(at, end);
-    out = rows ? rowsThroughEngine(out, run as RowChange[]) : applyChanges(out, run);
-    at = end;
+  try {
+    let at = 0;
+    while (at < changes.length) {
+      const rows = isRowChange(changes[at]!);
+      let end = at;
+      while (end < changes.length && isRowChange(changes[end]!) === rows) end++;
+      const run = changes.slice(at, end);
+      if (rows) out = rowsThroughEngine(out, run as RowChange[], held, batch);
+      else {
+        // A table taken away, or added again whole: what the engine held of it is no one's.
+        for (const c of run) {
+          if (c.op !== "table-remove" && c.op !== "table-add") continue;
+          const h = held.get(c.table);
+          if (h) {
+            freeRows(h);
+            held.delete(c.table);
+          }
+        }
+        out = applyChanges(out, run);
+      }
+      at = end;
+    }
+    // The rows each table holds now, read once.
+    if (held.size > 0) {
+      out = { ...out, tables: { ...out.tables } };
+      for (const [name, h] of held) if (out.tables[name]) out.tables[name] = { ...out.tables[name]!, rows: heldRowsAll(h) };
+    }
+    return out;
+  } finally {
+    for (const h of held.values()) freeRows(h);
   }
-  return out;
 }
 
-/** A run of rows' changes applied by the engine, each table's held for it and let go after. */
-function rowsThroughEngine(bundle: ParsedBundle, changes: readonly RowChange[]): ParsedBundle {
+/** Batches through the engine so far, to name each. */
+let batches = 0;
+
+/** A run of rows' changes applied by the engine to the tables it holds for the batch (held as first met). */
+function rowsThroughEngine(bundle: ParsedBundle, changes: readonly RowChange[], held: Map<string, HeldRows>, batch: string): ParsedBundle {
   const byTable = new Map<string, RowChange[]>();
   for (const c of changes) {
     if (!byTable.has(c.table)) byTable.set(c.table, []);
@@ -128,21 +166,20 @@ function rowsThroughEngine(bundle: ParsedBundle, changes: readonly RowChange[]):
     const table = out.tables[name];
     if (!table) continue;
     if (table.indexed || table.loading) throw new RowsNotLoadedError(name);
-    const held = holdRows(
-      table.schema.fields.map((f) => f.name),
-      table.rows,
-    );
-    try {
-      const applied = applyToHeld(held, table, rowChanges);
-      out.tables[name] = {
-        ...table,
-        rows: heldRowsAll(held),
-        ...(applied.bodies ? { bodies: applied.bodies } : {}),
-        ...(applied.cells ? { cells: applied.cells } : {}),
-      };
-    } finally {
-      freeRows(held);
+    let h = held.get(name);
+    if (!h) {
+      h = holdRows(
+        table.schema.fields.map((f) => f.name),
+        table.rows,
+      );
+      held.set(name, h);
     }
+    const applied = applyToHeld(h, table, rowChanges, { batch });
+    out.tables[name] = {
+      ...table,
+      ...(applied.bodies ? { bodies: applied.bodies } : {}),
+      ...(applied.cells ? { cells: applied.cells } : {}),
+    };
   }
   return out;
 }

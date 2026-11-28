@@ -126,6 +126,12 @@ function editOf(r: ReturnType<typeof random>, b: ParsedBundle): ParsedBundle {
         break;
       case 5:
         if (t.rows[at]) delete t.rows[at]!.title;
+        else t.schema.fields = [...t.schema.fields.filter((f) => f.name !== "extra"), { name: "extra", type: "object" }];
+        break;
+      case 6:
+        // A field changed or added: a diff writes it before the rows' changes.
+        if (r.int(2)) t.schema.fields = t.schema.fields.map((f) => (f.name === "n" ? { ...f, title: `N${r.int(9)}` } : f));
+        else if (!t.schema.fields.some((f) => f.name === "added")) t.schema.fields = [...t.schema.fields, { name: "added", type: "string" }];
         break;
       default:
         if (t.rows[at]) t.rows[at] = { ...t.rows[at]!, [r.pick(["title", "n", "tags", "other"])]: r.pick(["v", 7, ["z"], null, "" ]) };
@@ -151,7 +157,8 @@ test("batches made as peers make them (each side's diff, in some order) give wha
     let from = base;
     for (let s = 2 + r.int(2); s > 0; s--) {
       const next = editOf(r, r.int(2) ? from : base);
-      sides.push(JSON.parse(JSON.stringify(diffBundle(r.int(2) ? from : base, next).filter(isRowChange))) as BundleChange[]);
+      // Every change, fields' and views' with the rows': the batch goes in runs.
+      sides.push(JSON.parse(JSON.stringify(diffBundle(r.int(2) ? from : base, next))) as BundleChange[]);
       from = next;
     }
     const order = sides.flat();
@@ -167,6 +174,7 @@ test("batches made as peers make them (each side's diff, in some order) give wha
     assert.deepEqual(got.rows, want.rows, `seed ${seed}: rows`);
     assert.deepEqual(got.bodies, want.bodies, `seed ${seed}: pages`);
     assert.deepEqual(got.cells, want.cells, `seed ${seed}: cells`);
+    assert.deepEqual(got.schema, want.schema, `seed ${seed}: schema`);
     applied += order.length;
   }
   assert.ok(applied > 1500, `${applied} changes applied`);
@@ -253,6 +261,16 @@ test("a batch of rows' changes and others is applied in its order, as applyChang
       [
         { op: "delete", table: "t", row: "a", values: { id: "a", n: 1, total: 99 } },
         { op: "field", table: "t", name: "total", to: { name: "total", type: "number", computed: { kind: "formula", expr: "n" } } as Field },
+      ],
+    ],
+    // A row taken out, a field changed, then the row edited: brought back, with the edit, across
+    // the batch's runs (two peers' diffs joined give this order: a diff writes fields first).
+    [
+      "a delete, a field changed, then the deleted row set",
+      [
+        { op: "delete", table: "t", row: "a", values: { id: "a", n: 1, total: 5 } },
+        { op: "field", table: "t", name: "x", to: { name: "x", type: "string" } },
+        { op: "set", table: "t", row: "a", field: "y", to: "kept" },
       ],
     ],
     // A cell set, then its table taken away and added again: the new table's rows are the content's.
