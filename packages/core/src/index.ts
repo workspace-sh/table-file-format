@@ -123,6 +123,8 @@ export {
 } from "./expr.js";
 export { setRowsThroughEngine } from "./engine.js";
 export { startCheck, checkRules, CHECK_WINDOW, type RowsCheck } from "./engineCheck.js";
+export { holdRows, freeRows, type HeldRows } from "./engineViews.js";
+export { applyToHeld, applyChangesThroughEngine, heldRowsAll, isRowChange, dropSteps, undoDepth, undoHeld, type HeldApplied, type ProblemsChanged, type RowChange, type UndoDepth } from "./engineEdits.js";
 export { computeRows, rowLocal, setFormulaEngine, sheetGrid, sheetOrder, type ComputeOptions, type FormulaEngine, type SheetGrid } from "./workbook.js";
 export { mergedBlocks, mergeOfRange, mergeOver, withMerge, type MergedBlock } from "./merged.js";
 export { isSheet, sheetColumns, type GridGroup } from "./grid.js";

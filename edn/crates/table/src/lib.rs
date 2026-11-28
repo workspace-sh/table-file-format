@@ -16,6 +16,7 @@
 //! An operation is named `module.function`, after the TypeScript module and
 //! export it serves (`encoding.isDate`); `OPS` lists them all.
 
+pub mod edit;
 pub mod held;
 pub mod problems;
 pub mod rows;
@@ -42,6 +43,12 @@ pub const OPS: &[&str] = &[
     "rows.ids",
     "rows.place",
     "rows.problems",
+    "rows.apply",
+    "rows.undo",
+    "rows.redo",
+    "rows.undoNames",
+    "rows.undoDepth",
+    "rows.dropSteps",
     "rows.free",
     "check.new",
     "check.begin",

@@ -24,6 +24,9 @@ struct Held {
 /// How many views of a table are kept; one asked again after it's gone is worked out again.
 const VIEWS_KEPT: usize = 8;
 
+/// How many problems there are, of each kind, for the query (as JSON) they're of.
+type Totals = (String, usize, Vec<(String, usize)>);
+
 /// A held table: its rows, which of its fields hold their kind, its latest views, and its problems as last asked.
 struct Table {
     rows: Rows,
@@ -31,6 +34,40 @@ struct Table {
     views: Vec<(u32, Shown)>,
     next_view: u32,
     problems: Option<(String, crate::problems::Problems)>,
+    /// How many problems there are of each kind, for the query they're of: kept up by each edit.
+    problem_totals: Option<Totals>,
+    /// The token the next step is given.
+    next_step: u64,
+    /// The rows a batch in runs has taken out so far, by the batch's name (`batch`).
+    carried: Option<(String, crate::edit::Carried)>,
+    /// Edits to undo, the latest last, and undone edits to redo (step 3b).
+    undo: std::collections::VecDeque<Step>,
+    redo: Vec<Step>,
+}
+
+/// An edit, as undo keeps it: the changes that take it back, exactly, and the stretch of edits
+/// it's part of (`run`: a page being typed in is one step, as the app keeps it).
+///
+/// The app's own undo is the one order (#889): each of its steps that touched rows names the engine's
+/// step by its token, undo and redo name the step they expect, and which steps go for the budget is
+/// the app's to say.
+struct Step {
+    token: u64,
+    inverse: Vec<J>,
+    run: Option<String>,
+    /// The bytes it holds, counted as it's made: what a long undo costs.
+    bytes: usize,
+}
+
+impl Step {
+    fn new(token: u64, inverse: Vec<J>, run: Option<String>) -> Step {
+        let bytes = Step::size(&inverse) + run.as_ref().map_or(0, String::len);
+        Step { token, inverse, run, bytes }
+    }
+
+    fn size(inverse: &[J]) -> usize {
+        inverse.iter().map(|c| c.to_string().len()).sum()
+    }
 }
 
 impl Table {
@@ -110,19 +147,7 @@ fn problems(input: &J) -> Result<String, String> {
     let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
     let to = input.get("to").and_then(J::as_u64).map_or(0, |x| x as usize);
     with(|held| {
-        // A relation's target: the ids its rows hold, from a table held here or as the caller gives them.
-        let mut targets = crate::problems::Targets::new();
-        for (field, target) in input.get("targets").and_then(J::as_object).into_iter().flatten() {
-            let ids: std::collections::HashSet<String> = match (target.get("handle").and_then(J::as_u64), target.get("ids").and_then(J::as_array)) {
-                (Some(t), _) => {
-                    let other = held.tables.get(&(t as u32)).ok_or_else(|| format!("no table is held as {t}"))?;
-                    (0..other.rows.len()).map(|r| other.rows.id(r)).collect()
-                }
-                (None, Some(ids)) => ids.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
-                _ => continue,
-            };
-            targets.insert(field.clone(), ids);
-        }
+        let targets = targets_of(held, input)?;
         let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
         if t.problems.as_ref().map(|(k, _)| k) != Some(&key) {
             match crate::problems::problems(&t.rows, input, &targets)? {
@@ -147,6 +172,306 @@ fn problems(input: &J) -> Result<String, String> {
     })
 }
 
+/// A relation's target: the ids its rows hold, from a table held here or as the caller gives them.
+fn targets_of(held: &Held, input: &J) -> Result<crate::problems::Targets, String> {
+    let mut targets = crate::problems::Targets::new();
+    for (field, target) in input.get("targets").and_then(J::as_object).into_iter().flatten() {
+        let ids: std::collections::HashSet<String> = match (target.get("handle").and_then(J::as_u64), target.get("ids").and_then(J::as_array)) {
+            (Some(t), _) => {
+                let other = held.tables.get(&(t as u32)).ok_or_else(|| format!("no table is held as {t}"))?;
+                (0..other.rows.len()).map(|r| other.rows.id(r)).collect()
+            }
+            (None, Some(ids)) => ids.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
+            _ => continue,
+        };
+        targets.insert(field.clone(), ids);
+    }
+    Ok(targets)
+}
+
+
+/// `rows.apply`: changes to a held table's rows (step 3a, `edit.rs`). With `problems` (what
+/// `rows.problems` is asked), the problems the changes made and the ones they ended.
+/// Each problem counted, so one said twice and now once is one ended: what `after` has that `before`
+/// hadn't, and what `before` had that `after` hasn't.
+fn changed_problems<'a>(before: &'a [String], after: &'a [String]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let less = |from: &'a [String], take: &'a [String]| {
+        let mut left: HashMap<&str, usize> = HashMap::new();
+        for s in take {
+            *left.entry(s.as_str()).or_default() += 1;
+        }
+        let mut out = Vec::new();
+        for s in from {
+            match left.get_mut(s.as_str()) {
+                Some(n) if *n > 0 => *n -= 1,
+                _ => out.push(s.as_str()),
+            }
+        }
+        out
+    };
+    (less(after, before), less(before, after))
+}
+
+/// A problem's code, from its JSON (`{"code":"…",…}`).
+fn code_of(said: &str) -> &str {
+    said.strip_prefix("{\"code\":\"").and_then(|r| r.split('"').next()).unwrap_or("")
+}
+
+
+/// What `apply` does: an edit given, or the last one undone or redone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Way {
+    Edit,
+    Undo,
+    Redo,
+}
+
+/// How many edits to keep to undo: `keep` when the caller gives it (the app keeps fewer for a long
+/// table), else the app's own most.
+fn kept(input: &J) -> Option<usize> {
+    input.get("keep").and_then(J::as_u64).map(|n| n as usize)
+}
+
+/// `rows.dropSteps`: steps the app's budget let go (by token), from either stack. Their inverses go;
+/// the rows they took out keep their slots, as every slot is kept until the table is let go.
+fn drop_steps(input: &J) -> Result<String, String> {
+    table(input, |t| {
+        let gone: std::collections::HashSet<u64> = input.get("steps").and_then(J::as_array).into_iter().flatten().filter_map(J::as_u64).collect();
+        let before = t.undo.len() + t.redo.len();
+        t.undo.retain(|s| !gone.contains(&s.token));
+        t.redo.retain(|s| !gone.contains(&s.token));
+        Ok((before - t.undo.len() - t.redo.len()).to_string())
+    })
+}
+
+/// `rows.undoNames`: the rows the next undo (or, `redo`, redo) changes, for the caller to give their pages and cells.
+fn undo_names(input: &J) -> Result<String, String> {
+    table(input, |t| {
+        let redo = input.get("redo").and_then(J::as_bool).unwrap_or(false);
+        let step = if redo { t.redo.last() } else { t.undo.back() };
+        let mut ids: Vec<&str> = Vec::new();
+        for c in step.map(|s| s.inverse.as_slice()).unwrap_or_default() {
+            if let Some(id) = c.get("row").and_then(J::as_str) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
+        }
+        Ok(crate::edit::json(&J::from(ids)))
+    })
+}
+
+/// `rows.undoDepth`: how many edits there are to undo and to redo, and the bytes kept for them.
+fn undo_depth(t: &Table) -> String {
+    let bytes: usize = t.undo.iter().chain(t.redo.iter()).map(|s| s.bytes).sum();
+    let top = |s: Option<&Step>| s.map_or("null".to_string(), |s| s.token.to_string());
+    format!("{{\"undo\":{},\"redo\":{},\"bytes\":{bytes},\"nextUndo\":{},\"nextRedo\":{}}}", t.undo.len(), t.redo.len(), top(t.undo.back()), top(t.redo.last()))
+}
+
+fn apply(input: &J, way: Way) -> Result<String, String> {
+    let h = handle(input)?;
+    with(|held| {
+        let asked = input.get("problems").filter(|p| p.is_object()).cloned();
+        let targets = match &asked {
+            Some(p) => Some(targets_of(held, p)?),
+            None => None,
+        };
+        let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
+        // An undo or redo applies the step kept for it; nothing to undo is no change.
+        // The step the app expects on top, when it says: anything else is out of its order.
+        let expected = input.get("step").and_then(J::as_u64);
+        let top = match way {
+            Way::Edit => None,
+            Way::Undo => t.undo.back().map(|s| s.token),
+            Way::Redo => t.redo.last().map(|s| s.token),
+        };
+        if let (Some(want), Some(have)) = (expected, top) {
+            if want != have {
+                return Err(format!("the step to {} is {have}, not {want}", if way == Way::Undo { "undo" } else { "redo" }));
+            }
+        }
+        let taken = match way {
+            Way::Edit => None,
+            Way::Undo => match t.undo.pop_back() {
+                Some(s) => Some(s),
+                None => return Ok("null".into()),
+            },
+            Way::Redo => match t.redo.pop() {
+                Some(s) => Some(s),
+                None => return Ok("null".into()),
+            },
+        };
+        let token = taken.as_ref().map(|s| s.token);
+        // A row by its slot is an undo's own (the steps kept here): an edit given one would skip the
+        // merge rule's checks, so one from outside is refused.
+        if way == Way::Edit && input.get("changes").and_then(J::as_array).is_some_and(|cs| cs.iter().any(|c| c.get("slot").is_some())) {
+            return Err("a change names a row by its slot only in an undo; an edit gives the row's values".into());
+        }
+        let given;
+        let input = match &taken {
+            None => input,
+            Some(step) => {
+                let mut i = input.clone();
+                if let Some(o) = i.as_object_mut() {
+                    o.insert("changes".into(), J::Array(step.inverse.clone()));
+                }
+                given = i;
+                &given
+            }
+        };
+        // A batch given in runs (`batch`, its name): the rows its earlier runs took out, which its
+        // later ones may bring back, as applyChanges brings them back.
+        let batch = input.get("batch").and_then(J::as_str).map(str::to_string);
+        let carried = match (t.carried.take(), &batch) {
+            (Some((name, rows)), Some(b)) if name == *b => rows,
+            _ => crate::edit::Carried::new(),
+        };
+        // The problems a batch could change, before it: its rows and the values they hold before and
+        // after it (the batch tried and taken back), never the whole table again.
+        let mut scoped_before = None;
+        if let (Some(p), Some(targets)) = (&asked, &targets) {
+            let key = p.to_string();
+            // How many there are, of each kind: worked out whole once, then kept up by each batch.
+            if t.problem_totals.as_ref().is_none_or(|(k, _, _)| *k != key) {
+                t.problem_totals = crate::problems::problems(&t.rows, p, targets)?.map(|all| (key.clone(), all.found.len(), all.counts.iter().map(|(c, n)| (c.to_string(), *n)).collect()));
+            }
+            if t.problem_totals.is_some() {
+                let (named, after) = crate::edit::named_after(&mut t.rows, input, &carried)?;
+                let mut values: Vec<serde_json::Map<String, J>> = Vec::new();
+                for id in &named {
+                    if let Some(row) = t.rows.row_of(id) {
+                        if let Ok(J::Object(m)) = serde_json::from_slice::<J>(t.rows.line(row)) {
+                            values.push(m);
+                        }
+                    }
+                    if let Some(Some(m)) = after.get(id) {
+                        values.push(m.clone());
+                    }
+                }
+                let schema = p.get("schema").cloned().unwrap_or(J::Null);
+                if let Some(scope) = crate::problems::Scope::of(&t.rows, &schema, named, &values.iter().collect::<Vec<_>>())? {
+                    scoped_before = crate::problems::scoped(&t.rows, p, targets, &scope)?.map(|said| (scope, said));
+                }
+            }
+        }
+        let mut carried = carried;
+        let applied = match crate::edit::apply_carrying(&mut t.rows, input, &mut carried) {
+            Ok(a) => a,
+            Err(e) => {
+                // Nothing changed: what the batch carried stays for it, and a step not undone after all is kept to try again.
+                t.carried = batch.map(|b| (b, carried));
+                match (way, taken) {
+                    (Way::Undo, Some(s)) => t.undo.push_back(s),
+                    (Way::Redo, Some(s)) => t.redo.push(s),
+                    _ => {}
+                }
+                return Err(e);
+            }
+        };
+        // Kept for the batch's next run; a call that isn't one of a batch's carries nothing on.
+        t.carried = batch.map(|b| (b, carried));
+        let inverse = applied.inverse.clone();
+        // The step this made, or joined, or moved: its token, for the app's own step to name.
+        let mut step: Option<u64> = None;
+        // An undo or redo that changed nothing (a later edit, a peer's, made it moot): dropped, not
+        // put back, or it would stand in front of every step below it.
+        let moot = way != Way::Edit && inverse.is_empty();
+        match way {
+            Way::Edit if input.get("undoable").and_then(J::as_bool) != Some(false) && !inverse.is_empty() => {
+                let run = input.get("run").and_then(J::as_str).map(str::to_string);
+                // A stretch of the same edit (a page typed in, a batch in runs) is one step: undone, it all goes back.
+                match t.undo.back_mut() {
+                    Some(last) if run.is_some() && last.run == run => {
+                        last.bytes += Step::size(&inverse);
+                        last.inverse.splice(0..0, inverse);
+                        step = Some(last.token);
+                    }
+                    _ => {
+                        t.next_step += 1;
+                        t.undo.push_back(Step::new(t.next_step, inverse, run));
+                        step = Some(t.next_step);
+                    }
+                }
+                t.redo.clear();
+            }
+            Way::Edit => {}
+            _ if moot => {}
+            // The way back keeps the step's token: it's still the app's same step.
+            Way::Undo => {
+                t.redo.push(Step::new(token.expect("taken"), inverse, None));
+                step = token;
+            }
+            Way::Redo => {
+                t.undo.push_back(Step::new(token.expect("taken"), inverse, None));
+                step = token;
+            }
+        }
+        // The oldest go first, when the caller gives its budget: otherwise the app drops them (rows.dropSteps).
+        if let Some(keep) = kept(input) {
+            while t.undo.len() > keep {
+                t.undo.pop_front();
+            }
+        }
+        // What was worked out of the rows before is of other rows now.
+        if !applied.changed.is_empty() {
+            t.views.clear();
+            t.problems = None;
+            t.conformance = Conformance::new();
+            // Kept up only by a batch that asks: one that doesn't leaves them to be counted again.
+            if scoped_before.is_none() {
+                t.problem_totals = None;
+            }
+        }
+        let mut out = String::from("{\"changed\":");
+        out.push_str(&crate::edit::json(&J::from(applied.changed)));
+        out.push_str(",\"events\":");
+        out.push_str(&crate::edit::json(&J::Array(applied.events)));
+        out.push_str(",\"effects\":");
+        out.push_str(&crate::edit::json(&J::Array(applied.effects)));
+        out.push_str(",\"steps\":");
+        out.push_str(&undo_depth(t));
+        out.push_str(&format!(",\"step\":{}", step.map_or("null".to_string(), |s| s.to_string())));
+        if moot {
+            out.push_str(&format!(",\"moot\":{}", token.expect("taken")));
+        }
+        if let (Some(p), Some(targets), Some((scope, was))) = (&asked, &targets, scoped_before) {
+            if let Some(said) = crate::problems::scoped(&t.rows, p, targets, &scope)? {
+                let (found, gone) = changed_problems(&was, &said);
+                let (key, mut total, mut counts) = t.problem_totals.take().expect("worked out above");
+                for s in &gone {
+                    total -= 1;
+                    if let Some(c) = counts.iter_mut().find(|(c, _)| c == code_of(s)) {
+                        c.1 -= 1;
+                    }
+                }
+                for s in &found {
+                    total += 1;
+                    match counts.iter_mut().find(|(c, _)| c == code_of(s)) {
+                        Some(c) => c.1 += 1,
+                        None => counts.push((code_of(s).to_string(), 1)),
+                    }
+                }
+                counts.retain(|(_, n)| *n > 0);
+                out.push_str(&format!(",\"problems\":{{\"total\":{total},\"counts\":{{"));
+                for (i, (code, n)) in counts.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&format!("\"{code}\":{n}"));
+                }
+                out.push_str("},\"found\":[");
+                out.push_str(&found.join(","));
+                out.push_str("],\"gone\":[");
+                out.push_str(&gone.join(","));
+                out.push_str("]}");
+                t.problem_totals = Some((key, total, counts));
+            }
+        }
+        out.push('}');
+        Ok(out)
+    })
+}
+
 fn number(n: f64) -> String {
     if n.is_finite() { n.to_string() } else { "null".into() }
 }
@@ -165,7 +490,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None });
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None, next_step: 0, carried: None, undo: Default::default(), redo: Vec::new() });
                 held.next.to_string()
             }))
         }
@@ -225,6 +550,12 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             Ok(out)
         }),
         "rows.problems" => problems(input),
+        "rows.apply" => apply(input, Way::Edit),
+        "rows.undo" => apply(input, Way::Undo),
+        "rows.redo" => apply(input, Way::Redo),
+        "rows.undoNames" => undo_names(input),
+        "rows.undoDepth" => table(input, |t| Ok(undo_depth(t))),
+        "rows.dropSteps" => drop_steps(input),
         "rows.ids" => table(input, |t| {
             let shown = t.view(input)?;
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
