@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { applyChanges, diffBundle, type BundleChange } from "./changes.js";
 import { rowChanges } from "./edit-log.js";
 import { call, formulaEngineSet } from "./engine.js";
-import { applyChangesThroughEngine, applyToHeld, heldRowsAll, isRowChange } from "./engineEdits.js";
+import { applyChangesThroughEngine, applyToHeld, heldRowsAll, isRowChange, undoDepth, undoHeld } from "./engineEdits.js";
 import { freeRows, holdRows } from "./engineViews.js";
 import { problemsOf } from "./problems.js";
 import { problemRows, problemSchema, random } from "./viewCases.js";
@@ -347,4 +347,95 @@ test("the problems batches make and end, worked out from what each names, keep u
     }
   }
   assert.ok(checked > 1000, `${checked} problems compared`);
+});
+
+test("undo through the engine gives back each row as it was, with its page and cells, and redo each as it became (#867, step 3b)", { skip }, () => {
+  let undone = 0;
+  for (let seed = 1; seed <= 120; seed++) {
+    const r = random(seed * 3);
+    const rows = rowsFor(r, 2 + r.int(10));
+    const bodies: Record<string, string> = {};
+    const cells: CellFormula[] = [];
+    for (const row of rows) {
+      if (r.int(3) === 0) bodies[row.id] = "a page\n";
+      if (r.int(4) === 0) cells.push({ id: row.id, field: "title", note: "check" });
+    }
+    let table: ParsedTable = bundleOf(rows, { bodies, cells }).tables.t!;
+    const held = holdRows(
+      FIELDS.map((f) => f.name),
+      rows,
+    );
+    try {
+      // A few edits, each a side's diff applied to the table as the engine holds it.
+      const states: { rows: Row[]; bodies: ParsedTable["bodies"]; cells: ParsedTable["cells"] }[] = [{ rows: heldRowsAll(held), bodies: table.bodies, cells: table.cells }];
+      for (let e = 0; e < 1 + r.int(4); e++) {
+        const next = editOf(r, bundleOf(table.rows, { ...(table.bodies ? { bodies: table.bodies } : {}), ...(table.cells ? { cells: table.cells } : {}) })).tables.t!;
+        const wrap = (t: ParsedTable): ParsedBundle => ({ path: "", meta: {} as never, tables: { t } });
+        const changes = diffBundle(wrap(table), wrap(next)).filter(isRowChange);
+        const done = applyToHeld(held, table, changes);
+        table = { ...table, rows: heldRowsAll(held), bodies: done.bodies, cells: done.cells };
+        states.push({ rows: table.rows, bodies: table.bodies, cells: table.cells });
+      }
+      // Undone one by one, back to the start; then redone to the end.
+      for (let i = states.length - 2; i >= 0; i--) {
+        const back = undoHeld(held, table);
+        if (back === null) {
+          // An edit that changed nothing isn't a step: the state before it is the same.
+          assert.deepEqual(states[i]!.rows, table.rows);
+          continue;
+        }
+        table = { ...table, rows: heldRowsAll(held), bodies: back.bodies, cells: back.cells };
+        undone++;
+      }
+      assert.deepEqual(table.rows, states[0]!.rows, `seed ${seed}: undone, the rows as they were`);
+      assert.deepEqual(table.bodies ?? {}, states[0]!.bodies ?? {}, `seed ${seed}: undone, the pages`);
+      assert.deepEqual([...(table.cells ?? [])].map((c) => JSON.stringify(c)).sort(), [...(states[0]!.cells ?? [])].map((c) => JSON.stringify(c)).sort(), `seed ${seed}: undone, the cells`);
+      for (;;) {
+        const forth = undoHeld(held, table, { redo: true });
+        if (forth === null) break;
+        table = { ...table, rows: heldRowsAll(held), bodies: forth.bodies, cells: forth.cells };
+      }
+      const last = states.at(-1)!;
+      assert.deepEqual(table.rows, last.rows, `seed ${seed}: redone, the rows as they became`);
+      assert.deepEqual(table.bodies ?? {}, last.bodies ?? {}, `seed ${seed}: redone, the pages`);
+    } finally {
+      freeRows(held);
+    }
+  }
+  assert.ok(undone > 150, `${undone} edits undone`);
+});
+
+test("undo keeps the app's budget, a new edit ends what there was to redo, and a stretch of typing is one step", { skip }, () => {
+  const rows: Row[] = [
+    { id: "a", title: "A" },
+    { id: "b", title: "B" },
+  ];
+  const table = bundleOf(rows).tables.t!;
+  const held = holdRows(["title", "n", "tags", "total"], rows);
+  try {
+    const set = (to: string, options = {}) => applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to }], options);
+    set("1", { keep: 2 });
+    set("2", { keep: 2 });
+    assert.deepEqual(set("3", { keep: 2 }).steps, { ...undoDepth(held), undo: 2, redo: 0 });
+    undoHeld(held, table);
+    assert.equal(heldRowsAll(held)[0]!.title, "2");
+    assert.equal(undoDepth(held).redo, 1);
+    // A new edit: nothing to redo.
+    set("4");
+    assert.equal(undoDepth(held).redo, 0);
+    // A refresh isn't the person's edit: nothing to undo for it.
+    const before = undoDepth(held).undo;
+    applyToHeld(held, table, [{ op: "set", table: "t", row: "b", field: "title", to: "kept" }], { undoable: false });
+    assert.equal(undoDepth(held).undo, before);
+    // Typed in, a stretch: one step, undone all at once.
+    set("5", { run: "page:a" });
+    set("56", { run: "page:a" });
+    set("567", { run: "page:a" });
+    assert.equal(undoDepth(held).undo, before + 1);
+    undoHeld(held, table);
+    assert.equal(heldRowsAll(held)[0]!.title, "4");
+    assert.ok(undoDepth(held).bytes > 0);
+  } finally {
+    freeRows(held);
+  }
 });

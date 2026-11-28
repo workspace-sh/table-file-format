@@ -47,6 +47,8 @@ export interface HeldApplied {
   cells: ParsedTable["cells"];
   /** With `problems` asked: the problems the changes made and ended. */
   problems?: ProblemsChanged;
+  /** What there is to undo and redo now. */
+  steps: UndoDepth;
 }
 
 /**
@@ -65,20 +67,66 @@ export function applyToHeld(
     problems?: object;
     /** One batch given in runs (its changes to fields and views made between): the same name for each, so a row one run takes out a later one can bring back. */
     batch?: string;
+    /** A stretch of the same edit (a page typed in): kept with the step before it of the same name, undone as one. */
+    run?: string;
+    /** How many edits to keep to undo (the app's own budget: fewer for a long table). */
+    keep?: number;
+    /** False: not kept to undo (an edit that isn't the person's, such as a refresh). */
+    undoable?: boolean;
   } = {},
 ): HeldApplied {
-  const named = new Set(changes.map((c) => c.row));
+  return applied(
+    "rows.apply",
+    held,
+    table,
+    new Set(changes.map((c) => c.row)),
+    {
+      changes,
+      ...(options.run !== undefined ? { run: options.run } : {}),
+      ...(options.keep !== undefined ? { keep: options.keep } : {}),
+      ...(options.undoable === false ? { undoable: false } : {}),
+      ...(options.batch !== undefined ? { batch: options.batch } : {}),
+    },
+    options.problems,
+  );
+}
+
+/** How many edits a held table has to undo and to redo, and the bytes kept for them. */
+export interface UndoDepth {
+  undo: number;
+  redo: number;
+  bytes: number;
+}
+
+/**
+ * A held table's last edit undone (or, `redo`, the last undone edit made again), exactly: each row
+ * as it was, byte for byte and in its place, with its page and its cells' own formulas. Null when
+ * there's nothing to undo. The answer is as `applyToHeld`'s, and the step goes to the other stack.
+ */
+export function undoHeld(held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, options: { redo?: boolean; problems?: object; keep?: number } = {}): HeldApplied | null {
+  const named = new Set(call<string[]>("rows.undoNames", { handle: held.handle, redo: options.redo ?? false }));
+  if (named.size === 0) return null;
+  return applied(options.redo ? "rows.redo" : "rows.undo", held, table, named, options.keep !== undefined ? { keep: options.keep } : {}, options.problems);
+}
+
+/** How many edits there are to undo and to redo. */
+export function undoDepth(held: HeldRows): UndoDepth {
+  return call<UndoDepth>("rows.undoDepth", { handle: held.handle });
+}
+
+/** A batch through the engine (`op`): the rows it names given their pages and cells, and those changed as it says. */
+function applied(op: string, held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, named: ReadonlySet<string>, input: object, problems?: object): HeldApplied {
   const pages: Record<string, string> = {};
   for (const id of named) if (table.bodies && Object.hasOwn(table.bodies, id)) pages[id] = table.bodies[id]!;
-  const answer = call<{ changed: string[]; events: EditChange[]; effects: Effect[]; problems?: ProblemsChanged }>("rows.apply", {
+  const answer = call<{ changed: string[]; events: EditChange[]; effects: Effect[]; problems?: ProblemsChanged; steps: UndoDepth } | null>(op, {
     handle: held.handle,
-    changes,
+    ...input,
     computed: table.schema.fields.filter((f) => f.computed).map((f) => f.name),
     pages,
     cells: (table.cells ?? []).filter((c) => named.has(c.id)),
-    ...(options.problems ? { problems: options.problems } : {}),
-    ...(options.batch !== undefined ? { batch: options.batch } : {}),
+    ...(problems ? { problems } : {}),
   });
+  if (answer === null) return { changed: [], events: [], bodies: table.bodies, cells: table.cells, steps: undoDepth(held) };
   let bodies = table.bodies;
   let cells = table.cells;
   let ownBodies = false;
@@ -93,7 +141,7 @@ export function applyToHeld(
       cells = [...(cells ?? []), ...e.cells];
     }
   }
-  return { changed: answer.changed, events: answer.events, bodies, cells, ...(answer.problems ? { problems: answer.problems } : {}) };
+  return { changed: answer.changed, events: answer.events, bodies, cells, steps: answer.steps, ...(answer.problems ? { problems: answer.problems } : {}) };
 }
 
 /** A held table's rows, all of them, in order. */
