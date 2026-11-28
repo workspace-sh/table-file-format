@@ -110,6 +110,8 @@ const TYPE_WORDS: Record<string, string> = {
   object: "set of values",
   duration: "duration",
 };
+/** "Differs in amount and status": what two versions of a row disagree on. */
+const whatDiffers = (fields: string[]) => (fields.length === 0 ? "" : `Differs in ${fields.length < 2 ? fields[0] : `${fields.slice(0, -1).join(", ")} and ${fields.at(-1)}`}`);
 const list = (items: string[]) => (items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`);
 
 /** The table's problems as a person reads them, in the order they're listed. */
@@ -134,7 +136,8 @@ export function problemItems(table: ParsedTable, problems: readonly Problem[]): 
       severity: "error",
       group: "decisions",
       title: `Two versions of ${rowWords(conflict.item.row)}`,
-      where: rowWords(conflict.item.row),
+      // The title says which row; this says what the two versions disagree on.
+      where: whatDiffers(conflict.item.versions[0]?.differs ?? []),
       explain: "This row was changed in two places at once, and both versions were kept. Choose the one to keep, or keep both as separate rows.",
       technical: { where: `${conflict.file} · lines ${conflict.first + 1}–${conflict.last + 1}`, lines: conflict.lines },
       row: conflict.item.row,
