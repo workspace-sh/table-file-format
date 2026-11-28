@@ -23,8 +23,8 @@ use crate::rows::Rows;
 /// One change, as `BundleChange` says it. `None` where the change has no `to`: empty.
 enum Change {
     Set { row: String, field: String, to: Option<J> },
-    Insert { row: String, values: Map<String, J>, after: After, page: Option<J>, cells: Vec<J> },
-    Delete { row: String, values: Map<String, J>, page: Option<J>, cells: Vec<J> },
+    Insert { row: String, values: Map<String, J>, slot: Option<usize>, after: After, page: Option<J>, cells: Vec<J> },
+    Delete { row: String, values: Map<String, J>, slot: Option<usize>, page: Option<J>, cells: Vec<J> },
     Move { row: String, after: After },
     Page { row: String, to: Option<J> },
     Cell { row: String, field: String, to: Option<J> },
@@ -91,8 +91,18 @@ fn parse(changes: &[J]) -> Result<Vec<Change>, String> {
                     }
                     Change::Set { row, field, to: c.get("to").cloned() }
                 }
-                "insert" => Change::Insert { values: values_of(c, &row)?, after: after_of(c)?, page: c.get("page").cloned(), cells: cells_of(c), row },
-                "delete" => Change::Delete { values: values_of(c, &row)?, page: c.get("page").cloned(), cells: cells_of(c), row },
+                // An undo's own: the row by the slot that holds it (`slot`), with no values to compare or write.
+                "insert" | "delete" if c.get("slot").is_some() => {
+                    let slot = c.get("slot").and_then(J::as_u64).ok_or("a change's \"slot\" is a number")? as usize;
+                    let (page, cells) = (c.get("page").cloned(), cells_of(c));
+                    if op == "insert" {
+                        Change::Insert { values: Map::new(), slot: Some(slot), after: after_of(c)?, page, cells, row }
+                    } else {
+                        Change::Delete { values: Map::new(), slot: Some(slot), page, cells, row }
+                    }
+                }
+                "insert" => Change::Insert { values: values_of(c, &row)?, slot: None, after: after_of(c)?, page: c.get("page").cloned(), cells: cells_of(c), row },
+                "delete" => Change::Delete { values: values_of(c, &row)?, slot: None, page: c.get("page").cloned(), cells: cells_of(c), row },
                 "move" => Change::Move { after: after_of(c)?, row },
                 "page" => Change::Page { row, to: c.get("to").cloned() },
                 "cell" => Change::Cell { field: text(c, "field")?, to: c.get("to").cloned(), row },
@@ -447,9 +457,8 @@ impl Batch<'_> {
             return Ok(Some(slot));
         }
         let Some(gone) = self.removed.remove(id) else { return Ok(None) };
-        // Brought back, it's taken out again by the undo.
-        let back = values(self.rows, gone.slot)?;
-        self.inverse.push(undo_change("delete", id, [vec![("values", J::Object(back))], maybe("page", gone.page.clone()), vec![("cells", J::Array(gone.cells.clone()))]].concat()));
+        // Brought back, it's taken out again by the undo: by its slot.
+        self.inverse.push(undo_change("delete", id, [vec![("slot", J::from(gone.slot))], maybe("page", gone.page.clone()), vec![("cells", J::Array(gone.cells.clone()))]].concat()));
         let end = self.rows.len();
         self.rows.insert_place(end, gone.slot)?;
         self.rows.set_slot_of(id, Some(gone.slot));
@@ -508,16 +517,26 @@ impl Batch<'_> {
                 self.rows.replace_place(place, next);
                 self.rows.set_slot_of(&row, Some(next));
             }
-            Change::Insert { row, values, after, page, cells } => {
+            Change::Insert { row, values, slot: given, after, page, cells } => {
                 if self.rows.slot_of(&row).is_some() {
                     return Ok(());
                 }
                 self.removed.remove(&row);
-                // Put back as it was taken out (an undo): its line as it was.
-                let back = self.rows.gone_slot(&row).filter(|&s| values_same(self.rows, s, &values));
-                let slot = match back {
-                    Some(s) => s,
-                    None => self.rows.push_line(written(&J::Object(values), false).as_bytes(), None)?,
+                let slot = match given {
+                    // An undo's: the slot the row was taken out of, which holds it as it was.
+                    Some(s) => {
+                        if s >= self.rows.slots() || self.rows.slot_id(s) != row {
+                            return Err(format!("slot {s} isn't the row \"{row}\"'s"));
+                        }
+                        s
+                    }
+                    None => {
+                        // Put back as it was taken out: its line as it was.
+                        match self.rows.gone_slot(&row).filter(|&s| values_same(self.rows, s, &values)) {
+                            Some(s) => s,
+                            None => self.rows.push_line(written(&J::Object(values), false).as_bytes(), None)?,
+                        }
+                    }
                 };
                 self.rows.set_gone(&row, None);
                 // After the row put in just before it: with it, into the order together.
@@ -534,8 +553,8 @@ impl Batch<'_> {
                 };
                 self.rows.set_slot_of(&row, Some(slot));
                 self.last_put = Some((row.clone(), at));
-                let put = self::values(self.rows, slot)?;
-                self.inverse.push(undo_change("delete", &row, [vec![("values", J::Object(put))], maybe("page", page.clone()), vec![("cells", J::Array(cells.clone()))]].concat()));
+                // Taken out again by the undo, by the slot it's in: no values kept.
+                self.inverse.push(undo_change("delete", &row, [vec![("slot", J::from(slot))], maybe("page", page.clone()), vec![("cells", J::Array(cells.clone()))]].concat()));
                 if let Some(page) = page {
                     self.pages.insert(row.clone(), Some(page.clone()));
                     self.effects.push(Effect::Page(row.clone(), Some(page)));
@@ -545,12 +564,23 @@ impl Batch<'_> {
                     self.effects.push(Effect::Add(cells));
                 }
             }
-            Change::Delete { row, values: was, page, cells } => {
+            Change::Delete { row, values: was, slot: given, page, cells } => {
                 let Some(slot) = self.rows.slot_of(&row) else { return Ok(()) };
-                let now = values(self.rows, slot)?;
-                // Changed since the deleting side saw it: that edit stands, and so does the row.
-                if !same(Some(&J::Object(stored(&now, computed))), Some(&J::Object(stored(&was, computed)))) {
-                    return Ok(());
+                match given {
+                    // An undo's: the row is as it was put in, so not changed since: in the slot it was
+                    // put in, or (written again by other steps undone and redone) in one with its bytes.
+                    Some(s) => {
+                        if s != slot && (s >= self.rows.slots() || self.rows.slot_line(s) != self.rows.slot_line(slot)) {
+                            return Ok(());
+                        }
+                    }
+                    None => {
+                        let now = values(self.rows, slot)?;
+                        // Changed since the deleting side saw it: that edit stands, and so does the row.
+                        if !same(Some(&J::Object(stored(&now, computed))), Some(&J::Object(stored(&was, computed)))) {
+                            return Ok(());
+                        }
+                    }
                 }
                 let has_page = self.pages.get(&row).cloned().flatten();
                 if !same(has_page.as_ref(), page.as_ref()) {
@@ -561,10 +591,11 @@ impl Batch<'_> {
                     return Ok(());
                 }
                 let place = self.rows.place_of(slot).expect("a row found is in the table");
+                // Put back by the undo from its slot, which the store keeps: no values kept.
                 self.inverse.push(undo_change(
                     "insert",
                     &row,
-                    [vec![("values", J::Object(now.clone())), ("after", self.before_place(place))], maybe("page", has_page.clone()), vec![("cells", J::Array(has_cells.clone()))]].concat(),
+                    [vec![("slot", J::from(slot)), ("after", self.before_place(place))], maybe("page", has_page.clone()), vec![("cells", J::Array(has_cells.clone()))]].concat(),
                 ));
                 self.rows.remove_place(place);
                 self.rows.set_slot_of(&row, None);

@@ -49,6 +49,10 @@ export interface HeldApplied {
   problems?: ProblemsChanged;
   /** What there is to undo and redo now. */
   steps: UndoDepth;
+  /** The step this made or joined (or undid, or redid), by token: what the app's own step names. Null when it kept none. */
+  step: number | null;
+  /** An undo or redo a later edit made moot: the step it dropped, by token. */
+  moot?: number;
 }
 
 /**
@@ -69,7 +73,7 @@ export function applyToHeld(
     batch?: string;
     /** A stretch of the same edit (a page typed in): kept with the step before it of the same name, undone as one. */
     run?: string;
-    /** How many edits to keep to undo (the app's own budget: fewer for a long table). */
+    /** How many edits to keep to undo, oldest dropped first. The app's own budget; left out, the app drops steps itself (`dropSteps`). */
     keep?: number;
     /** False: not kept to undo (an edit that isn't the person's, such as a refresh). */
     undoable?: boolean;
@@ -91,22 +95,36 @@ export function applyToHeld(
   );
 }
 
-/** How many edits a held table has to undo and to redo, and the bytes kept for them. */
+/** How many edits a held table has to undo and to redo, the bytes kept for them, and the tokens of the steps on top. */
 export interface UndoDepth {
   undo: number;
   redo: number;
   bytes: number;
+  nextUndo: number | null;
+  nextRedo: number | null;
 }
 
 /**
  * A held table's last edit undone (or, `redo`, the last undone edit made again), exactly: each row
  * as it was, byte for byte and in its place, with its page and its cells' own formulas. Null when
  * there's nothing to undo. The answer is as `applyToHeld`'s, and the step goes to the other stack.
+ *
+ * `step`: the token of the step the app's own undo expects (its stack is the one order); another
+ * on top throws. A step a later edit made moot changes nothing and is dropped (`moot` says which):
+ * with `step` given that's the answer; without, the next step is undone instead.
  */
-export function undoHeld(held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, options: { redo?: boolean; problems?: object; keep?: number } = {}): HeldApplied | null {
-  const named = new Set(call<string[]>("rows.undoNames", { handle: held.handle, redo: options.redo ?? false }));
-  if (named.size === 0) return null;
-  return applied(options.redo ? "rows.redo" : "rows.undo", held, table, named, options.keep !== undefined ? { keep: options.keep } : {}, options.problems);
+export function undoHeld(held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, options: { redo?: boolean; step?: number; problems?: object } = {}): HeldApplied | null {
+  for (;;) {
+    const named = new Set(call<string[]>("rows.undoNames", { handle: held.handle, redo: options.redo ?? false }));
+    if (named.size === 0) return null;
+    const done = applied(options.redo ? "rows.redo" : "rows.undo", held, table, named, options.step !== undefined ? { step: options.step } : {}, options.problems);
+    if (done.moot === undefined || options.step !== undefined) return done;
+  }
+}
+
+/** Steps the app's budget let go, by token: their inverses go. */
+export function dropSteps(held: HeldRows, steps: readonly number[]): number {
+  return call<number>("rows.dropSteps", { handle: held.handle, steps });
 }
 
 /** How many edits there are to undo and to redo. */
@@ -118,7 +136,7 @@ export function undoDepth(held: HeldRows): UndoDepth {
 function applied(op: string, held: HeldRows, table: Pick<ParsedTable, "schema" | "bodies" | "cells">, named: ReadonlySet<string>, input: object, problems?: object): HeldApplied {
   const pages: Record<string, string> = {};
   for (const id of named) if (table.bodies && Object.hasOwn(table.bodies, id)) pages[id] = table.bodies[id]!;
-  const answer = call<{ changed: string[]; events: EditChange[]; effects: Effect[]; problems?: ProblemsChanged; steps: UndoDepth } | null>(op, {
+  const answer = call<{ changed: string[]; events: EditChange[]; effects: Effect[]; problems?: ProblemsChanged; steps: UndoDepth; step: number | null; moot?: number } | null>(op, {
     handle: held.handle,
     ...input,
     computed: table.schema.fields.filter((f) => f.computed).map((f) => f.name),
@@ -126,7 +144,7 @@ function applied(op: string, held: HeldRows, table: Pick<ParsedTable, "schema" |
     cells: (table.cells ?? []).filter((c) => named.has(c.id)),
     ...(problems ? { problems } : {}),
   });
-  if (answer === null) return { changed: [], events: [], bodies: table.bodies, cells: table.cells, steps: undoDepth(held) };
+  if (answer === null) return { changed: [], events: [], bodies: table.bodies, cells: table.cells, steps: undoDepth(held), step: null };
   let bodies = table.bodies;
   let cells = table.cells;
   let ownBodies = false;
@@ -141,7 +159,16 @@ function applied(op: string, held: HeldRows, table: Pick<ParsedTable, "schema" |
       cells = [...(cells ?? []), ...e.cells];
     }
   }
-  return { changed: answer.changed, events: answer.events, bodies, cells, steps: answer.steps, ...(answer.problems ? { problems: answer.problems } : {}) };
+  return {
+    changed: answer.changed,
+    events: answer.events,
+    bodies,
+    cells,
+    steps: answer.steps,
+    step: answer.step,
+    ...(answer.moot !== undefined ? { moot: answer.moot } : {}),
+    ...(answer.problems ? { problems: answer.problems } : {}),
+  };
 }
 
 /** A held table's rows, all of them, in order. */
@@ -222,7 +249,8 @@ function rowsThroughEngine(bundle: ParsedBundle, changes: readonly RowChange[], 
       );
       held.set(name, h);
     }
-    const applied = applyToHeld(h, table, rowChanges, { batch });
+    // One step to undo for the whole batch: its runs share a run.
+    const applied = applyToHeld(h, table, rowChanges, { batch, run: batch });
     out.tables[name] = {
       ...table,
       ...(applied.bodies ? { bodies: applied.bodies } : {}),

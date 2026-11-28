@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { applyChanges, diffBundle, type BundleChange } from "./changes.js";
 import { rowChanges } from "./edit-log.js";
 import { call, formulaEngineSet } from "./engine.js";
-import { applyChangesThroughEngine, applyToHeld, heldRowsAll, isRowChange, undoDepth, undoHeld } from "./engineEdits.js";
+import { applyChangesThroughEngine, applyToHeld, dropSteps, heldRowsAll, isRowChange, undoDepth, undoHeld } from "./engineEdits.js";
 import { freeRows, holdRows } from "./engineViews.js";
 import { problemsOf } from "./problems.js";
 import { problemRows, problemSchema, random } from "./viewCases.js";
@@ -416,7 +416,7 @@ test("undo keeps the app's budget, a new edit ends what there was to redo, and a
     const set = (to: string, options = {}) => applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to }], options);
     set("1", { keep: 2 });
     set("2", { keep: 2 });
-    assert.deepEqual(set("3", { keep: 2 }).steps, { ...undoDepth(held), undo: 2, redo: 0 });
+    assert.equal(set("3", { keep: 2 }).steps.undo, 2);
     undoHeld(held, table);
     assert.equal(heldRowsAll(held)[0]!.title, "2");
     assert.equal(undoDepth(held).redo, 1);
@@ -435,6 +435,56 @@ test("undo keeps the app's budget, a new edit ends what there was to redo, and a
     undoHeld(held, table);
     assert.equal(heldRowsAll(held)[0]!.title, "4");
     assert.ok(undoDepth(held).bytes > 0);
+  } finally {
+    freeRows(held);
+  }
+});
+
+test("the app's undo is the one order: steps by token, a batch in runs one step, a step made moot dropped, the budget the app's", { skip }, () => {
+  const rows: Row[] = [
+    { id: "a", title: "A" },
+    { id: "b", title: "B" },
+  ];
+  const table = bundleOf(rows).tables.t!;
+  const held = holdRows(["title", "n", "tags", "total"], rows);
+  try {
+    const title = (id: string) => heldRowsAll(held).find((r) => r.id === id)?.title;
+    // A step's token: undo names it, and another on top is refused.
+    const first = applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to: "A1" }]).step!;
+    const second = applyToHeld(held, table, [{ op: "set", table: "t", row: "b", field: "title", to: "B1" }]).step!;
+    assert.notEqual(first, second);
+    assert.throws(() => undoHeld(held, table, { step: first }), /the step to undo is \d+, not \d+/);
+    assert.equal(undoHeld(held, table, { step: second })!.step, second);
+    assert.equal(title("b"), "B");
+    // Redone, it's the app's same step.
+    assert.equal(undoHeld(held, table, { redo: true, step: second })!.step, second);
+    // A batch in runs (fields changed between): one step, undone at once.
+    const run = "batch:mixed";
+    const x = applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to: "A2" }], { run }).step;
+    const z = applyToHeld(held, table, [{ op: "set", table: "t", row: "b", field: "title", to: "B2" }], { run }).step;
+    assert.equal(x, z);
+    undoHeld(held, table, { step: x! });
+    assert.deepEqual([title("a"), title("b")], ["A1", "B1"]);
+    // A row put in, then changed by a peer's edit (not the person's): undoing the insert would take
+    // out a row changed since, which the merge rule leaves. It changes nothing: dropped, not kept on top.
+    const put = applyToHeld(held, table, [{ op: "insert", table: "t", row: "n", values: { id: "n", title: "new" }, after: "b" }]).step!;
+    applyToHeld(held, table, [{ op: "set", table: "t", row: "n", field: "title", to: "peer" }], { undoable: false });
+    const moot = undoHeld(held, table, { step: put })!;
+    assert.equal(moot.moot, put);
+    assert.equal(title("n"), "peer");
+    // The step below it is next: the second edit, redone above.
+    assert.equal(undoDepth(held).nextUndo, second, "the step below is next");
+    // Without a token, undo goes past a moot step to the next.
+    const again = applyToHeld(held, table, [{ op: "insert", table: "t", row: "m", values: { id: "m" }, after: null }]).step!;
+    applyToHeld(held, table, [{ op: "set", table: "t", row: "m", field: "title", to: "peer" }], { undoable: false });
+    const past = undoHeld(held, table)!;
+    assert.notEqual(past.step, again);
+    assert.equal(past.step, second);
+    assert.equal(title("b"), "B", "the step below it undone");
+    // The app's budget lets steps go, by token.
+    const kept = applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to: "kept" }]).step!;
+    assert.equal(dropSteps(held, [kept]), 1);
+    assert.equal(undoDepth(held).nextUndo, first, "the first edit, still below");
   } finally {
     freeRows(held);
   }

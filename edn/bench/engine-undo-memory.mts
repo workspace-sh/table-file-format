@@ -62,6 +62,24 @@ for (let i = 0; i < 100; i++) {
   applyToHeld(held, table, [{ op: "delete", table: "t", row: r.id, values: r }], { keep: 200 });
 }
 const both = undoDepth(held);
+// A paste of `N` rows, one after another, and a removal of `N` rows: each one step.
+const pasted = undoDepth(held).bytes;
+const t0 = performance.now();
+applyToHeld(
+  held,
+  table,
+  Array.from({ length: N }, (_, i) => ({ op: "insert" as const, table: "t", row: `paste-${i}`, values: { ...rows[i]!, id: `paste-${i}` }, after: i === 0 ? rows[0]!.id : `paste-${i - 1}` })),
+);
+const pasteMs = performance.now() - t0;
+const paste = undoDepth(held).bytes - pasted;
+const t1 = performance.now();
+applyToHeld(
+  held,
+  table,
+  rows.slice(0, N).map((r) => ({ op: "delete" as const, table: "t", row: r.id, values: r })),
+);
+const removeMs = performance.now() - t1;
+const removed = undoDepth(held).bytes - pasted - paste;
 console.log(
   JSON.stringify({
     binding,
@@ -70,5 +88,9 @@ console.log(
     "engine, 100 one-cell inverses (KB)": +(one.bytes / 1e3).toFixed(1),
     "engine, and 100 rows removed (KB)": +(both.bytes / 1e3).toFixed(1),
     steps: both.undo,
+    [`engine, a paste of ${N} rows: its inverse (MB)`]: +(paste / 1e6).toFixed(1),
+    [`engine, removing ${N} rows: its inverse (MB)`]: +(removed / 1e6).toFixed(1),
+    "paste (ms)": Math.round(pasteMs),
+    "removal (ms)": Math.round(removeMs),
   }),
 );

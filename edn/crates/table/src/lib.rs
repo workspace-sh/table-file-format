@@ -48,6 +48,7 @@ pub const OPS: &[&str] = &[
     "rows.redo",
     "rows.undoNames",
     "rows.undoDepth",
+    "rows.dropSteps",
     "rows.free",
     "check.new",
     "check.begin",
