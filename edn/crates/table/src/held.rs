@@ -302,6 +302,11 @@ fn apply(input: &J, way: Way) -> Result<String, String> {
             },
         };
         let token = taken.as_ref().map(|s| s.token);
+        // A row by its slot is an undo's own (the steps kept here): an edit given one would skip the
+        // merge rule's checks, so one from outside is refused.
+        if way == Way::Edit && input.get("changes").and_then(J::as_array).is_some_and(|cs| cs.iter().any(|c| c.get("slot").is_some())) {
+            return Err("a change names a row by its slot only in an undo; an edit gives the row's values".into());
+        }
         let given;
         let input = match &taken {
             None => input,

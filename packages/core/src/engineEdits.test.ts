@@ -489,3 +489,28 @@ test("the app's undo is the one order: steps by token, a batch in runs one step,
     freeRows(held);
   }
 });
+
+test("a row by its slot is an undo's own: an edit naming one is refused, and the merge rule still holds", { skip }, () => {
+  const rows: Row[] = [
+    { id: "a", title: "A" },
+    { id: "b", title: "B" },
+  ];
+  const table = bundleOf(rows).tables.t!;
+  const held = holdRows(["title", "n", "tags", "total"], rows);
+  try {
+    // A peer's delete of a row changed since, given a slot: refused whole, the row kept.
+    applyToHeld(held, table, [{ op: "set", table: "t", row: "a", field: "title", to: "changed" }]);
+    assert.throws(() => applyToHeld(held, table, [{ op: "delete", table: "t", row: "a", values: rows[0]!, slot: 0 } as never]), /only in an undo/);
+    assert.throws(() => applyToHeld(held, table, [{ op: "insert", table: "t", row: "a", values: rows[0]!, slot: 0, after: null } as never]), /only in an undo/);
+    assert.deepEqual(heldRowsAll(held).map((r) => r.title), ["changed", "B"]);
+    // The same delete without one: the merge rule leaves the row, changed since.
+    applyToHeld(held, table, [{ op: "delete", table: "t", row: "a", values: rows[0]! }]);
+    assert.equal(heldRowsAll(held).length, 2);
+    // Undo, which does name rows by slot, still works.
+    applyToHeld(held, table, [{ op: "delete", table: "t", row: "b", values: rows[1]! }]);
+    undoHeld(held, table);
+    assert.deepEqual(heldRowsAll(held).map((r) => r.id), ["a", "b"]);
+  } finally {
+    freeRows(held);
+  }
+});
