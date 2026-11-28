@@ -159,6 +159,8 @@ export interface IndexCheck {
   found: Found[];
   /** The rows the problems in `found` are of, as their lines. */
   lines: string[];
+  /** Where each row its problems name is among the table's rows, from 0, by id (a check from before these were kept has none). */
+  at?: Record<string, number>;
   /** The files of `attachments/` it was checked against, when they were known. */
   attachments?: string[];
   /** Its relation fields, when it has any: their links weren't checked (a target's rows are another table's). */

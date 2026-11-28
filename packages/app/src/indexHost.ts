@@ -32,6 +32,10 @@ import {
   ROWS_DIR,
   alterIndex,
   buildSearchIndex,
+  checkOf,
+  indexCheck,
+  type IndexCheck,
+  type IndexCheckRun,
   fillIndex,
   queryIndex,
   indexKey,
@@ -49,7 +53,7 @@ import {
   type TableSchema,
 } from "@workspace.sh/table-core";
 import { joinPath, writeBundleTo, type TableFs } from "@workspace.sh/table-core/io";
-import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, readHeldRows, type HeldRows } from "./indexed.ts";
+import { INDEXED_FROM, buildIndexFromBytes, canBeIndexed, firstRowsInBytes, linesInBytes, pagesOf, readHeldRows, type HeldRows } from "./indexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 import { rowFilePlacer, rowFileStarts, setRowFileStarts, type RowFileStart } from "./rowFilesIndexed.ts";
 import { openArchive, type OpenedBundle } from "./tableFiles.ts";
@@ -106,6 +110,14 @@ export interface IndexDatabase {
   rows(request: RowsRequest): Promise<unknown>;
   /** Make what's left of its search index, a step at a time behind whatever else is asked. */
   search(name: string): Promise<void>;
+  /** Its rows as checked once its index was made (#867, step 2c), stale or not; null when there's none to go by. */
+  checked(name: string): Promise<IndexCheck | null>;
+  /**
+   * Check its rows from the index, a step at a time behind whatever else is asked, unless they've
+   * been checked as they are; resolves with the check kept (null when none could be made).
+   * `pages`: the ids of its rows with a page, as the table read has them.
+   */
+  check(name: string, schema: TableSchema, pages?: readonly string[]): Promise<IndexCheck | null>;
   /**
    * After a change to a table's fields from `from` to `to`: change its index
    * where it is (core's alterIndex), answering for `to` at once. False when
@@ -749,6 +761,12 @@ export function createIndexHost(platform: IndexHostPlatform): IndexHost {
         );
       },
       search: (name) => inSteps(bundle, (driver) => buildSearchIndex(driver, name, SEARCH_STEP)),
+      checked: (name) => asked(({ driver }) => checkOf(driver, name)),
+      check: async (name, schema, pages) => {
+        let run: IndexCheckRun | null = null;
+        await inSteps(bundle, (driver) => (run ??= indexCheck(driver, { name, schema, ...(pages ? { bodies: pagesOf(pages) } : {}), batchSize: SEARCH_STEP })).step());
+        return asked(({ driver }) => checkOf(driver, name));
+      },
       // One transaction, in one turn, after a build of its bundle.
       alter: (name, from, to, options = {}) => afterBuild(bundle, () => asked(({ driver }) => alterIndex(driver, name, from, to, options))),
       fill: (name, schema) => inSteps(bundle, (driver) => fillIndex(driver, name, schema, SEARCH_STEP)),

@@ -424,6 +424,11 @@ export async function buildIndexFromBytes(
   return done;
 }
 
+/** Pages by row id, from their ids: what a check of the rows reads of them (which rows have one, #867). */
+export function pagesOf(ids: readonly string[]): Record<string, string> {
+  return Object.fromEntries(ids.map((id) => [id, ""]));
+}
+
 /** A large table's rows read into memory after all, with what couldn't be read kept (SPEC section 3): what a table held there needs. */
 export interface HeldRows {
   rows: Row[];

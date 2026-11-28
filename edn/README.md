@@ -108,7 +108,8 @@ tables by handle, and two more shapes reach them:
   `check.piece` (with `callBytes`) gives them a piece at a time, `check.file`
   ends them, and `check.finish` gives the counts, the first `window`
   problems and their rows' lines, and ends the handle (`check.free` ends one
-  left part-way). Whole lines are checked a few megabytes at a time and let
+  left part-way), with `at`: where each row those problems name is among
+  the table's rows. Whole lines are checked a few megabytes at a time and let
   go. `check.rules` is the version of what a check finds. table-core's
   `indexCheck` (`packages/core/src/indexer.ts`) runs it over an index's rows
   once it's built, a step at a time, through `startCheck`

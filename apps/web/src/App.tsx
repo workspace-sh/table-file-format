@@ -1157,7 +1157,8 @@ export function App() {
             {!indexed.building && (
               <>
                 <html.span>·</html.span>
-                <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                {/* Green when its rows fit, red when they don't; not yet known, as the row count is. */}
+                <Hinted hint={summary.validityHint} style={summary.standing === "valid" ? styles.validityOk : summary.standing === "invalid" ? styles.validityBad : undefined}>
                   {summary.validity}
                 </Hinted>
               </>

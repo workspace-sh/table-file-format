@@ -13,8 +13,14 @@ export interface ViewSummary {
   total: number;
   /** While searching, what was found, short enough for the search field: `2 rows`, `1 row`, `No rows`. */
   found?: string;
-  /** The table is valid (SPEC section 9), and its reader kept no line it couldn't use. */
+  /** The table is valid (SPEC section 9), and its reader kept no line it couldn't use. True too when it isn't known (`standing` "unchecked"). */
   valid: boolean;
+  /**
+   * What's known of its rows: they fit ("valid", drawn green), they don't ("invalid", red), or
+   * they haven't been checked, or not since an edit, or are being checked ("unchecked", drawn as
+   * the row count is): a large table held in its index (#867).
+   */
+  standing: "valid" | "invalid" | "unchecked";
   /** `schema valid`, or `2 validation errors`: the problems that are errors. */
   validity: string;
   /** What `validity` means: the rule, or the first few errors a line each. */
@@ -119,6 +125,7 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
       total: input.searching ? input.inView : total,
       found: foundText(input),
       valid: true,
+      standing: "unchecked",
       validity: state === "checking" ? "checking" : state === "since-edit" ? "not checked since edited" : "not checked",
       validityHint:
         state === "checking"
@@ -147,13 +154,14 @@ export function viewSummary(table: ParsedTable, input: ViewSummaryInput): ViewSu
     total: input.searching ? input.inView : total,
     found: foundText(input),
     valid: fits,
-    validity: (fits ? "schema valid" : `${count} validation error${count === 1 ? "" : "s"}`) + links,
+    standing: fits ? "valid" : "invalid",
+    validity: (fits ? "schema valid" : `${counted(count)} validation error${count === 1 ? "" : "s"}`) + links,
     validityHint: (fits
       ? "Every row fits the schema: required fields are filled, choices are from their lists, and values are the right type."
       : errors
           .slice(0, HINT_ERRORS)
           .map((e) => e.message)
-          .join("\n") + (count > HINT_ERRORS ? `\n…and ${count - Math.min(HINT_ERRORS, errors.length)} more` : "")) + linksHint,
+          .join("\n") + (count > HINT_ERRORS ? `\n…and ${counted(count - Math.min(HINT_ERRORS, errors.length))} more` : "")) + linksHint,
     schemaChanged: schemaVersionOf(table) > (input.openedAt ?? 1),
     schemaChangedLabel: "schema changed",
     schemaChangedHint:

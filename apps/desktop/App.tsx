@@ -239,6 +239,14 @@ const styles = css.create({
       "@media (prefers-color-scheme: dark)": "#7ee08a",
     },
   },
+  // Not yet known (a large table not checked, or being checked): as the row count is, not green.
+  validityUnknown: {
+    fontSize: 12,
+    color: {
+      default: "#6e6e73",
+      "@media (prefers-color-scheme: dark)": "#8a8a93",
+    },
+  },
   validityBad: {
     fontSize: 12,
     color: {
@@ -1511,7 +1519,7 @@ function TableApp({ store, reopened, documents, first }: { store: KeyValueStore 
                 {!indexed.building && <html.span>·</html.span>}
                 {/* Hover for the errors, or the rule they'd break: the system tooltip. */}
                 {!indexed.building && (
-                  <Hinted hint={summary.validityHint} style={summary.valid ? styles.validityOk : styles.validityBad}>
+                  <Hinted hint={summary.validityHint} style={summary.standing === "valid" ? styles.validityOk : summary.standing === "invalid" ? styles.validityBad : styles.validityUnknown}>
                     {summary.validity}
                   </Hinted>
                 )}

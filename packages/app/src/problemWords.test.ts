@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 
-import { applyFixes, problemsOf, type ParsedTable } from "@workspace.sh/table-core";
+import { applyFixes, problemsOf, startCheck, type ParsedTable } from "@workspace.sh/table-core";
 import { parseBundle } from "@workspace.sh/table-core/parser";
 import { fileURLToPath } from "node:url";
 import { buttonLabel, problemItems } from "./problemWords.ts";
@@ -62,4 +62,27 @@ test("a fix's label as a button says it", () => {
   assert.equal(buttonLabel("Make it 0"), "Make It 0");
   assert.equal(buttonLabel("Add “paused” as a choice"), "Add “paused” as a Choice");
   assert.equal(buttonLabel("Keep it as a new row"), "Keep It as a New Row");
+});
+
+test("an indexed table's checked problems name their rows as the table in memory does, by place", async () => {
+  const t = await table();
+  // Its rows as the index holds them (the lines it couldn't read aren't rows, and aren't there).
+  // A pattern is a JavaScript RegExp, which the engine doesn't check: left out of both.
+  const fields = t.schema.fields.map(({ constraints, ...f }) => {
+    const { pattern: _pattern, ...rest } = constraints ?? {};
+    return { ...f, ...(constraints ? { constraints: rest } : {}) };
+  });
+  const memory: ParsedTable = { ...t, schema: { ...t.schema, fields }, cells: [], unread: [], diagnostics: [] };
+  const check = startCheck(memory)!;
+  check.beginFile("rows");
+  check.piece(new TextEncoder().encode(memory.rows.map((r) => JSON.stringify(r)).join("\n")));
+  check.endFile("rows");
+  const checked = check.finish()!;
+  assert.ok(checked.total > 0);
+  const indexed: ParsedTable = { ...memory, rows: [], indexed: { count: memory.rows.length, version: 1, checked } };
+  const want = problemItems(memory, problemsOf(memory, "problems"));
+  const got = problemItems(indexed, problemsOf(indexed, "problems"));
+  const said = (items: typeof want) => items.filter((i) => i.group !== "notes").map((i) => [i.title, i.where]);
+  assert.deepEqual(said(got), said(want).slice(0, said(got).length));
+  assert.ok(said(got).length > 10, `compared ${said(got).length}`);
 });

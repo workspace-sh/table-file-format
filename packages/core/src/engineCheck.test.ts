@@ -228,9 +228,15 @@ test("a check made from the index once it's built is kept with it, said to be fr
   // An edit: kept, and from before it.
   await putRows(db, { name: "t", schema, rows: [{ ...rows[0]!, n: 50 } as Row], key: "k3" });
   assert.deepEqual(await checkOf(db, "t"), { ...want, stale: true });
-  // A stale check isn't made again by itself: it says it's from before the edit.
+  // Checked again (as the next open does), it's of the rows as they are now.
   await check();
-  assert.equal((await checkOf(db, "t"))?.stale, true);
+  const again = await checkOf(db, "t");
+  assert.equal(again?.stale, undefined);
+  assert.equal(again?.rows, rows.length);
+  // Checked as they are: nothing to do.
+  db.raw.exec("update _checks set result = json_set(result, '$.total', -1)");
+  await check();
+  assert.equal((await checkOf(db, "t"))?.total, -1);
   await buildIndex(db, { name: "t", schema, rows, key: "k4" });
   await check();
   await removeRows(db, { name: "t", schema, ids: [rows[1]!.id], key: "k5" });

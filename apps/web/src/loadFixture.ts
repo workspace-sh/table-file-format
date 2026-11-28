@@ -2,13 +2,23 @@
 // change here. Each is a bundle (D37); its tables go into the demo's one
 // map under `bundle/table` keys, and its manifest beside them.
 
-import { parseCellsText, rowIdOfBodyFile, type BundleMeta, type CellFormula, type ParsedTable, type Row, type TableMeta, type TableSchema, type View } from "@workspace.sh/table-core";
+import { parseCellsText, parseRowsText, rowIdOfBodyFile, type BundleMeta, type CellFormula, type ParsedTable, type Row, type TableMeta, type TableSchema, type View } from "@workspace.sh/table-core";
 
 type Json<T> = Record<string, T>;
 const manifests = import.meta.glob<BundleMeta>("../../../fixtures/*.table/meta.json", { eager: true, import: "default" });
 const schemas = import.meta.glob<TableSchema>("../../../fixtures/*.table/tables/*/schema.json", { eager: true, import: "default" });
 const viewFiles = import.meta.glob<View[]>("../../../fixtures/*.table/tables/*/views.json", { eager: true, import: "default" });
-const metaFiles = import.meta.glob<TableMeta>("../../../fixtures/*.table/tables/*/meta.json", { eager: true, import: "default" });
+// As text: an optional file may be malformed (schema-errors' is, on purpose), and a reader leaves such a one out rather than failing.
+const metaTexts = import.meta.glob<string>("../../../fixtures/*.table/tables/*/meta.json", { eager: true, query: "?raw", import: "default" });
+const metaFiles: Json<TableMeta> = Object.fromEntries(
+  Object.entries(metaTexts).flatMap(([path, text]) => {
+    try {
+      return [[path, JSON.parse(text) as TableMeta]];
+    } catch {
+      return [];
+    }
+  }),
+);
 // A table's rows files in rows/ (D51), joined in their names' order.
 const rowFiles = import.meta.glob<string>("../../../fixtures/*.table/tables/*/rows/*.ndjson", { eager: true, query: "?raw", import: "default" });
 // Cells' own formulas and notes (D52, D57), in cells/ beside rows/, joined in their names' order.
@@ -32,11 +42,9 @@ function byTableKey<T>(files: Json<T>): Record<string, T> {
   return Object.fromEntries(Object.entries(files).map(([path, value]) => [tableKeyOf(path), value]));
 }
 
+/** A fixture's rows, read as a reader reads them: a line that isn't a row (schema-errors has some, on purpose) is left out, not thrown on. */
 function parseNdjson(raw: string): Row[] {
-  return raw
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as Row);
+  return parseRowsText(raw, []);
 }
 
 const views = byTableKey(viewFiles);

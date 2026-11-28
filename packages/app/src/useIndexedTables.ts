@@ -13,7 +13,7 @@
 import { isEditable, type AppAction, type AppState, type IndexWork } from "./appState.ts";
 import { bundleOf, tableNameOf } from "./bundles.ts";
 import { remoteEdits, remoteViewRows, type RemoteViewRows } from "./remoteRows.ts";
-import { fieldChanges, type ParsedTable, type Row, type TableSchema, type View, type ViewRows } from "@workspace.sh/table-core";
+import { fieldChanges, type IndexCheck, type ParsedTable, type Row, type TableSchema, type View, type ViewRows } from "@workspace.sh/table-core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IndexDatabase } from "./indexHost.ts";
 import { heldText, withHeld, type HeldRows } from "./indexed.ts";
@@ -22,7 +22,11 @@ import { heldText, withHeld, type HeldRows } from "./indexed.ts";
  * A bundle's index, as this hook asks of it: the device's IndexDatabase,
  * the web's WebDatabase, or Linux's node:sqlite host behind an adapter.
  */
-export interface IndexedTablesDatabase extends Omit<IndexDatabase, "heldRows"> {
+export interface IndexedTablesDatabase extends Omit<IndexDatabase, "heldRows" | "checked" | "check"> {
+  /** Its rows as checked (IndexDatabase.checked): where the platform checks them. */
+  checked?: IndexDatabase["checked"];
+  /** Check its rows (IndexDatabase.check), where the platform does. */
+  check?: IndexDatabase["check"];
   /**
    * Every row of a table whose index can't be made, read into memory: for
    * holding it there instead. Null when there's nothing to read it from
@@ -148,23 +152,51 @@ export function useIndexedTables<D extends IndexedTablesDatabase = IndexedTables
     );
   };
 
+  /**
+   * Its rows' check (#867, step 2c): the one kept with the index, said at once when it's of the rows
+   * as they are; otherwise "checking" is said, and `later` makes it, behind whatever the screen asks.
+   */
+  const checkRows = (key: string, schema: TableSchema, host: D): (() => Promise<void>) | null => {
+    if (!host.checked || !host.check) return null;
+    const name = tableNameOf(key);
+    const still = () => !gone.current && madeFor.current.get(key) === schema && !!latest.current.tables[key]?.indexed;
+    const say = (checked: IndexCheck | "checking" | null): void => {
+      if (still()) latest.current.dispatch({ type: "checked", key, checked });
+    };
+    // "checking" from the start, never "not checked" first: the kept one, if it's of the rows as they are, takes its place.
+    say("checking");
+    const kept = host.checked(name).catch(() => null);
+    void kept.then((had) => had && !had.stale && say(had));
+    return () =>
+      kept.then((had) => {
+        if (had && !had.stale) return;
+        const pages = Object.keys(latest.current.tables[key]?.bodies ?? {});
+        return host.check!(name, schema, pages).then(say, () => say(null));
+      });
+  };
+
   const ready = (key: string, schema: TableSchema, count: number, host: D, after = SEARCH_AFTER_MS) => {
     madeFor.current.set(key, schema);
     latest.current.dispatch({ type: "indexed", key, count });
     setMade((was) => ({ ...was, [key]: "ready" }));
+    const check = checkRows(key, schema, host);
     // After the view has its first rows, behind whatever the screen asks for: what a change of fields
     // left to work out (IndexDatabase.fill), and then the search's own index. Once filled, the view
     // is asked again: what it sorts or filters by may now be the index's to answer.
     setTimeout(() => {
       if (gone.current) return;
-      void host
-        .fill(tableNameOf(key), schema)
-        .then(() => {
-          const table = latest.current.tables[key];
-          if (!gone.current && table?.indexed && madeFor.current.get(key) === schema) latest.current.dispatch({ type: "indexed", key, count: table.indexed.count });
-        })
-        .then(() => (gone.current ? undefined : host.search(tableNameOf(key))))
+      const filled = host.fill(tableNameOf(key), schema).then(() => {
+        const table = latest.current.tables[key];
+        if (!gone.current && table?.indexed && madeFor.current.get(key) === schema) latest.current.dispatch({ type: "indexed", key, count: table.indexed.count });
+      });
+      // Its rows checked first, filled or not: a few seconds, where the search's own index takes
+      // tens of seconds at a million rows, and taking turns with it would hold the check up as long.
+      // Until it's made, a search reads every row's text, as it does now.
+      const checked = filled
+        .catch(() => {})
+        .then(() => (gone.current ? undefined : check?.()))
         .catch(() => {});
+      void filled.then(() => checked).then(() => (gone.current ? undefined : host.search(tableNameOf(key)))).catch(() => {});
     }, after);
   };
 

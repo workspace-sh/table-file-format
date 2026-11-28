@@ -5,7 +5,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { archiveStamp, parseRowsText } from "@workspace.sh/table-core";
+import { archiveStamp, parseRowsText, problemsOf } from "@workspace.sh/table-core";
 import { nodeFs } from "@workspace.sh/table-core/node-fs";
 import { readBundle } from "@workspace.sh/table-core/io";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
@@ -353,6 +353,53 @@ test("a file packed from its index's folder is opened again with that index, not
     await db.close();
     ({ db, kept } = await open(readFileSync(file)));
     assert.equal(kept, false, "a save the pack began before: read again");
+    await db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a large table's rows are checked from its index after it's made, kept for the same file opened again, and checked again after an edit (#867)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "table-index-host-"));
+  try {
+    const source = join(dir, "source.table");
+    cpSync(join(fixtures, "projects.table"), source, { recursive: true });
+    const bundle = await readBundle(nodeFs, source);
+    // Rows that break the schema: a title is required, and some have none.
+    // Rows enough, and long enough, to be held in the index.
+    const many = Array.from({ length: 3000 }, (_, i) => ({ id: `r${i}`, ...(i % 500 === 7 ? {} : { title: `Row ${i} ${"x".repeat(400)}` }), priority: i % 7 }));
+    bundle.tables.tasks!.rows = many;
+    const schema = bundle.tables.tasks!.schema;
+    const want = problemsOf(bundle.tables.tasks!, "tasks");
+    assert.ok(want.length > 0);
+    const archive = await bundleToArchive("projects", bundle);
+    const home = join(dir, "home");
+    const open = async () => {
+      const host = createIndexHost(nodePlatform(home));
+      const { opened } = await host.openZip(archive, [], 1000);
+      const db = host.openIndexDatabase(opened.key);
+      await db.ensure("tasks", schema);
+      return db;
+    };
+
+    let db = await open();
+    // Made, and not checked: nothing on the way to it.
+    assert.equal(await db.checked("tasks"), null);
+    const check = await db.check("tasks", schema);
+    assert.equal(check?.total, want.length);
+    assert.deepEqual(await db.checked("tasks"), check);
+    await db.close();
+
+    // The same file opened again: its index taken as it is, with its check.
+    db = await open();
+    assert.deepEqual(await db.checked("tasks"), check);
+    // An edit: the check is from before it, until it's checked again.
+    await db.rows({ ask: "edits", name: "tasks", table: { schema }, edits: [{ kind: "cell", rowId: "r7", field: "title", value: "Now titled" }] });
+    assert.equal((await db.checked("tasks"))?.stale, true);
+    const again = await db.check("tasks", schema);
+    assert.equal(again?.stale, undefined);
+    // r7 has its title now: its own problem goes, and so does a repeat of its key (an empty title), which r507 holds first now.
+    assert.equal(again?.total, want.length - 2);
     await db.close();
   } finally {
     rmSync(dir, { recursive: true, force: true });

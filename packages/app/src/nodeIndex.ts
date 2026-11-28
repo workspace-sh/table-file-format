@@ -9,10 +9,10 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSyn
 import { once } from "node:events";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
+import { alterIndex, rowIdOfBodyFile, buildIndex, buildSearchIndex, CELLS_DIR, fillIndex, FIRST_ROWS_FILE, parseCellsText, storedCellsText, type CellFormula, type ParsedTable, LEGACY_ROWS_FILE, rowsBeingBuilt, rowsFileOrder, ROWS_DIR, ROWS_FILE_BYTES, isIndexStale, checkOf, indexCheck, type IndexCheck, queryIndex, setIndexKey, storedRowLines, storedRows, type Row, type SqlDriver, type TableSchema, type View } from "@workspace.sh/table-core";
 import { openNodeDatabase } from "@workspace.sh/table-core/sqlite-node";
 
-import { canBeIndexed, INDEXED_FROM } from "./indexed.ts";
+import { canBeIndexed, INDEXED_FROM, pagesOf } from "./indexed.ts";
 import { rowFilePlacer, rowFileStarts, setRowFileStarts } from "./rowFilesIndexed.ts";
 import { rowsServer, type RowsRequest } from "./remoteRows.ts";
 
@@ -35,6 +35,14 @@ export interface IndexHost extends SqlDriver {
    * when it's whole; safe to ask of one that already is.
    */
   search(name: string): Promise<void>;
+  /** Table `name`'s rows as checked once its index was made (#867, step 2c), stale or not; null when there's none to go by. */
+  checked(name: string): Promise<IndexCheck | null>;
+  /**
+   * Check table `name`'s rows from its index, a step at a time, unless they've been checked as they
+   * are; resolves with the check kept (null when none could be made). `pages`: the ids of its rows
+   * with a page, as the table read has them.
+   */
+  check(name: string, schema: TableSchema, pages?: readonly string[]): Promise<IndexCheck | null>;
   /** Make table `name`'s index again from the files in `tableDir`, whatever it holds: after a change to its fields it can't `alter`. */
   build(name: string, tableDir: string, onProgress?: (done: number, total: number) => void): Promise<number>;
   /**
@@ -412,6 +420,14 @@ export function openIndexHost(bundleDir: string, options: IndexHostOptions = {})
         // A step at a time.
       }
       await whole.exec("pragma wal_checkpoint(truncate)");
+    },
+    checked: (name) => checkOf(whole, name),
+    async check(name, schema, pages) {
+      const run = indexCheck(whole, { name, schema, ...(pages ? { bodies: pagesOf(pages) } : {}) });
+      while (await run.step()) {
+        // A step at a time.
+      }
+      return checkOf(whole, name);
     },
     async build(name, tableDir, onProgress) {
       const count = await buildTableIndex(db, name, tableDir, onProgress);
