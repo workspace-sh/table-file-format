@@ -1,18 +1,22 @@
 /**
- * Android default: touch and hold a row for its actions in Material's
- * dropdown menu (Compose's, from @expo/ui), opening where the finger is,
- * each action with its Material Symbol and Delete in the error colour,
- * set apart by a divider, as iOS's menu has each action's SF Symbol and
- * Delete in red.
+ * Android default: touch and hold a row for its actions in Material 3
+ * Expressive's menu (Compose's DropdownMenuPopup, from @expo/ui), opening
+ * where the finger is, each action with its Material Symbol in a rounded
+ * group, and Delete in the error colour in a group of its own, as iOS's
+ * menu has each action's SF Symbol and Delete in red, set apart.
  * The hold is react-native-gesture-handler's, so it's recognised over a
  * cell that takes taps, and a scroll that starts first wins.
  */
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { AppState, View, type ImageSourcePropType } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { AndroidHaptics, performAndroidHapticsAsync } from "expo-haptics";
-import { Box, DropdownMenu, DropdownMenuItem, HorizontalDivider, Host, Icon, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { Box, DropdownMenuGroup, DropdownMenuItem, DropdownMenuPopup, Host, Icon, Spacer, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { height } from "@expo/ui/jetpack-compose/modifiers";
 import type { RowActionsProps } from "../controlSlots";
+
+/** Material's gap between a menu's groups, in dp (MenuDefaults.GroupSpacing). */
+const GROUP_SPACING = 2;
 
 // The actions' Material Symbols (controlSlots' rowActions and columnActions),
 // weight 400, as vector drawables, which Compose's Icon draws.
@@ -74,6 +78,12 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
   const colors = useMaterialColors();
   if (actions.length === 0) return children;
   const close = () => setAt(null);
+  // What removes something is set apart from the rest: a group of its own from there.
+  const groups = actions.reduce<(typeof actions)[]>((all, action, i) => {
+    if (i === 0 || action.destructive) all.push([]);
+    all[all.length - 1].push(action);
+    return all;
+  }, []);
   // A plain View between the detector and the (React Strict DOM) row, as
   // DragHandle has: RNGH sets collapsable on it, which RSD refuses.
   return (
@@ -87,38 +97,41 @@ export function RowActions({ actions, children }: RowActionsProps): ReactElement
         {children}
         {at && (
           <Host matchContents style={{ position: "absolute", left: at.x, top: at.y }}>
-            <DropdownMenu expanded onDismissRequest={close}>
-              <DropdownMenu.Trigger>
-                <Box />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Items>
-                {actions.flatMap((action, i) => {
-                  const symbol = action.symbol?.material ? symbols[action.symbol.material] : undefined;
-                  const tint = action.destructive ? colors.error : colors.onSurfaceVariant;
-                  const item = (
-                    <DropdownMenuItem
-                      key={action.id}
-                      elementColors={action.destructive ? { textColor: colors.error } : undefined}
-                      onClick={() => {
-                        chosen.current = action.onSelect;
-                        close();
-                      }}
-                    >
-                      {symbol && (
-                        <DropdownMenuItem.LeadingIcon>
-                          <Icon source={symbol} size={24} tint={tint} />
-                        </DropdownMenuItem.LeadingIcon>
-                      )}
-                      <DropdownMenuItem.Text>
-                        <Text>{action.label}</Text>
-                      </DropdownMenuItem.Text>
-                    </DropdownMenuItem>
-                  );
-                  // What removes something is set apart from the rest.
-                  return action.destructive && i > 0 ? [<HorizontalDivider key={`${action.id}-divider`} />, item] : [item];
-                })}
-              </DropdownMenu.Items>
-            </DropdownMenu>
+            <Box>
+              <DropdownMenuPopup expanded onDismissRequest={close}>
+                {groups.map((group, g) => (
+                  <Fragment key={group[0].id}>
+                    {g > 0 ? <Spacer modifiers={[height(GROUP_SPACING)]} /> : null}
+                    <DropdownMenuGroup shapes={{ index: g, count: groups.length }}>
+                      {group.map((action, i) => {
+                        const symbol = action.symbol?.material ? symbols[action.symbol.material] : undefined;
+                        const tint = action.destructive ? colors.error : colors.onSurfaceVariant;
+                        return (
+                          <DropdownMenuItem
+                            key={action.id}
+                            shape={{ index: i, count: group.length }}
+                            elementColors={action.destructive ? { textColor: colors.error } : undefined}
+                            onClick={() => {
+                              chosen.current = action.onSelect;
+                              close();
+                            }}
+                          >
+                            {symbol && (
+                              <DropdownMenuItem.LeadingIcon>
+                                <Icon source={symbol} size={24} tint={tint} />
+                              </DropdownMenuItem.LeadingIcon>
+                            )}
+                            <DropdownMenuItem.Text>
+                              <Text>{action.label}</Text>
+                            </DropdownMenuItem.Text>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuGroup>
+                  </Fragment>
+                ))}
+              </DropdownMenuPopup>
+            </Box>
           </Host>
         )}
       </View>
