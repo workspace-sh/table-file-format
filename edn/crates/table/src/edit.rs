@@ -292,7 +292,7 @@ fn entries(b: &[u8]) -> Option<(Vec<Entry>, usize)> {
 /// The line of a row with the values `target`, written from `origin` (the row as read, or as
 /// inserted): a value that's what the origin holds keeps its bytes, and its place; a value
 /// changed is written in its place; a key gone is taken out; a key new is put at the end.
-fn render(origin: &[u8], target: &Map<String, J>) -> Vec<u8> {
+pub(crate) fn render(origin: &[u8], target: &Map<String, J>) -> Vec<u8> {
     let Some((list, close)) = entries(origin) else { return written(&J::Object(target.clone()), false).into_bytes() };
     // The last of a key written twice is its value, as JSON.parse reads it.
     let last: HashMap<&str, usize> = list.iter().enumerate().map(|(i, e)| (e.key.as_str(), i)).collect();
@@ -413,7 +413,7 @@ fn values_same(rows: &Rows, slot: usize, values: &Map<String, J>) -> bool {
 }
 
 /// A row's values, parsed from its line.
-fn values(rows: &Rows, slot: usize) -> Result<Map<String, J>, String> {
+pub(crate) fn values(rows: &Rows, slot: usize) -> Result<Map<String, J>, String> {
     match serde_json::from_slice::<J>(rows.slot_line(slot)) {
         Ok(J::Object(m)) => Ok(m),
         _ => Err(format!("the row \"{}\" holds a value the engine can't read back (a number past what JavaScript holds)", rows.slot_id(slot))),
@@ -532,9 +532,17 @@ impl Batch<'_> {
                     }
                     None => {
                         // Put back as it was taken out: its line as it was.
-                        match self.rows.gone_slot(&row).filter(|&s| values_same(self.rows, s, &values)) {
+                        let gone = self.rows.gone_slot(&row);
+                        match gone.filter(|&s| values_same(self.rows, s, &values)) {
                             Some(s) => s,
-                            None => self.rows.push_line(written(&J::Object(values), false).as_bytes(), None)?,
+                            None => {
+                                let slot = self.rows.push_line(written(&J::Object(values), false).as_bytes(), None)?;
+                                // Put back with other values: still written where it was read.
+                                if let Some(was) = gone {
+                                    self.rows.set_home(slot, was);
+                                }
+                                slot
+                            }
                         }
                     }
                 };

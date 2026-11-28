@@ -129,6 +129,9 @@ pub struct Rows {
     read_at: HashMap<u32, RowAt>,
     /// While an edit is under way: each slot it wrote over, as it was.
     slot_log: Vec<(u32, RowAt, Cell, Vec<Cell>, bool)>,
+    /// The rows file of each row put back with other values than it was taken out with (`set_home`):
+    /// written back where it was read, as a row of that id always is.
+    home: HashMap<u32, u32>,
 }
 
 /// A change to `order`, as `undo_to` undoes it.
@@ -204,6 +207,7 @@ impl Rows {
             order_log: Vec::new(),
             read_at: HashMap::new(),
             slot_log: Vec::new(),
+            home: HashMap::new(),
         }
     }
 
@@ -552,6 +556,51 @@ impl Rows {
         self.origin.get(&(slot as u32)).map_or(slot, |&o| o as usize)
     }
 
+    /// The rows file a slot's row was read from, by its place among the files read: an edited row's
+    /// is its row as read's; a row an edit put in has none.
+    pub fn home_file(&self, slot: usize) -> Option<usize> {
+        let origin = self.origin_of(slot);
+        if let Some(&f) = self.home.get(&(origin as u32)) {
+            return Some(f as usize);
+        }
+        let at = match self.read_at.get(&(slot as u32)) {
+            Some(r) => *r,
+            None => self.rows[origin],
+        };
+        (at.file != EDITS).then_some(at.file as usize)
+    }
+
+    /// A row put back in a new slot, with other values than its last (`gone`): its rows file is that one's.
+    pub fn set_home(&mut self, slot: usize, was: usize) {
+        if let Some(f) = self.home_file(was) {
+            self.home.insert(slot as u32, f as u32);
+        }
+    }
+
+    /// How many rows files were read.
+    pub fn files_read(&self) -> usize {
+        self.files.len()
+    }
+
+    /// How many bytes a rows file was read as.
+    pub fn file_len(&self, file: usize) -> usize {
+        self.files[file].1.len()
+    }
+
+    /// Where a slot's line's bytes are, as one number: its file read (or the lines edits wrote), and
+    /// where in it. Bytes are only added, so the same place is the same bytes.
+    pub fn slot_place(&self, slot: usize) -> u64 {
+        let r = self.rows[slot];
+        (u64::from(r.file) << 32) | u64::from(r.start)
+    }
+
+    /// Where a slot's line is in the rows file it was read from, as (file, start, length): none for a
+    /// line an edit wrote.
+    pub fn slot_at(&self, slot: usize) -> Option<(usize, usize, usize)> {
+        let r = self.rows[slot];
+        (r.file != EDITS).then_some((r.file as usize, r.start as usize, r.len as usize))
+    }
+
     /// The line a row an edit wrote was written from, as read (or as inserted).
     pub fn origin_line(&self, slot: usize) -> &[u8] {
         match self.read_at.get(&(slot as u32)) {
@@ -863,6 +912,7 @@ impl Rows {
         for s in m.slots..self.rows.len() {
             self.origin.remove(&(s as u32));
             self.read_at.remove(&(s as u32));
+            self.home.remove(&(s as u32));
         }
         self.rows.truncate(m.slots);
         self.ids.truncate(m.slots);

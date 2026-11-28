@@ -85,3 +85,17 @@ test("a file left with no rows is gone; lines that couldn't be read stay where t
   const out = layoutRows([{ id: "a" }], line, { files, unread: [{ after: "a", text: "{broken" }, { after: null, text: "<<<<<<< HEAD" }, { after: "gone", text: "=======" }] });
   assert.deepEqual(out, [{ name: "0001.ndjson", text: '<<<<<<< HEAD\n{"id":"a"}\n{broken\n=======\n' }]);
 });
+
+test("lines that couldn't be read at the same place are written back in the order they were read", () => {
+  const files = [{ name: "0001.ndjson", ids: ["a", "b"] }];
+  const unread = [
+    { after: null, text: "first" },
+    { after: null, text: "second" },
+    { after: "a", text: "third" },
+    { after: "gone", text: "fourth" },
+    { after: "a", text: "fifth" },
+    { after: "b", text: "sixth" },
+  ];
+  const out = layoutRows([{ id: "a" }, { id: "b" }], line, { files, unread });
+  assert.deepEqual(out, [{ name: "0001.ndjson", text: 'first\nsecond\n{"id":"a"}\nthird\nfifth\n{"id":"b"}\nsixth\nfourth\n' }]);
+});

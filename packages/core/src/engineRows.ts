@@ -69,6 +69,21 @@ export function readRowsThroughEngine(
   diagnostics: ValidationError[],
   unread: UnreadLine[],
 ): { rows: Row[]; rowFiles: { name: string; ids: string[] }[] } {
+  const { handle, rows, rowFiles } = holdRowsFiles(fields, files, diagnostics, unread);
+  call("rows.free", { handle });
+  return { rows, rowFiles };
+}
+
+/**
+ * readRowsThroughEngine, the rows kept by the engine as `handle` (let go with `rows.free`): a table
+ * held from its files, which it can write back as they were read (`rowsFilesThroughEngine`).
+ */
+export function holdRowsFiles(
+  fields: readonly string[],
+  files: readonly RowsFileBytes[],
+  diagnostics: ValidationError[],
+  unread: UnreadLine[],
+): { handle: number; rows: Row[]; rowFiles: { name: string; ids: string[] }[] } {
   const handle = call<number>("rows.new", { fields });
   try {
     const counts = files.map((f) => callBytes<number>("rows.read", { handle, file: f.label, stripBom: f.stripBom, ...(f.zip ?? {}) }, f.bytes));
@@ -98,8 +113,50 @@ export function readRowsThroughEngine(
       rowFiles.push({ name: f.name, ids: rows.slice(at, at + counts[i]!).map((r) => r.id) });
       at += counts[i]!;
     });
-    return { rows, rowFiles };
-  } finally {
+    return { handle, rows, rowFiles };
+  } catch (e) {
     call("rows.free", { handle });
+    throw e;
   }
+}
+
+/**
+ * A rows file as the engine writes it: its name, and its text, or none when it's the file on disk.
+ * `compare`: what's on disk isn't known (a save that may be part done), so the file there is compared
+ * with the text before it's written.
+ */
+export interface RowsFileOut {
+  name: string;
+  text?: string;
+  compare?: true;
+}
+
+/**
+ * A held table's rows as its rows files, as layoutRows lays them out (#867, step 3c): `names` are
+ * the rows files it was read from, in order; `computed`, the fields not stored. A row is written as
+ * its line, so one nobody edited keeps its bytes; a file whose lines are those on disk (as read, or as
+ * the last save wrote them) isn't given (no `text`), and needn't be read to be compared. `save` is
+ * said back to `rowsSaved` once the files are written, or once writing them failed.
+ */
+export function rowsFilesThroughEngine(held: { handle: number }, options: { names: readonly string[]; computed?: readonly string[]; limit?: number }): { files: RowsFileOut[]; save: number } {
+  const w = callWindow("rows.files", { handle: held.handle, names: options.names, computed: options.computed ?? [], ...(options.limit === undefined ? {} : { limit: options.limit }) });
+  const out: RowsFileOut[] = [];
+  let t = 0;
+  let from = 0;
+  const next = (): string => {
+    const end = w.ends[t++]!;
+    const text = w.texts.slice(from, end);
+    from = end;
+    return text;
+  };
+  for (const kind of w.kinds) {
+    const name = next();
+    out.push(kind === 0 ? { name } : kind === 1 ? { name, text: next() } : { name, text: next(), compare: true });
+  }
+  return { files: out, save: w.numbers[0]! };
+}
+
+/** The save `rowsFilesThroughEngine` gave landed, or didn't: what the rows files on disk now hold, as far as the engine knows. */
+export function rowsSaved(held: { handle: number }, save: number, landed: boolean): void {
+  call("rows.saved", { handle: held.handle, save, landed });
 }
