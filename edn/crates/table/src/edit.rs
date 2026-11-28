@@ -375,6 +375,26 @@ struct Batch<'r> {
     /// Rows put in one after another, not yet in the order: where, and their slots. Put in together
     /// before anything else looks at places (`flush`).
     pending: Option<(usize, Vec<usize>)>,
+    /// What undoes each change that changed something, in the order made (step 3b): the batch's
+    /// inverse is these, last first. Exact, as history's events can't be: prior values as they
+    /// were, and a row put back after the row it followed.
+    inverse: Vec<J>,
+}
+
+/// A change, as `BundleChange` writes it.
+fn undo_change(op: &str, row: &str, rest: Vec<(&str, J)>) -> J {
+    let mut m = Map::new();
+    m.insert("op".into(), op.into());
+    m.insert("row".into(), row.into());
+    for (k, v) in rest {
+        m.insert(k.into(), v);
+    }
+    J::Object(m)
+}
+
+/// `page` or `to` when there's one: a change without it is one to none.
+fn maybe(key: &'static str, v: Option<J>) -> Vec<(&'static str, J)> {
+    v.map(|v| vec![(key, v)]).unwrap_or_default()
 }
 
 /// Whether a slot's row holds exactly these values, written the same (keys in any order).
@@ -416,12 +436,20 @@ impl Batch<'_> {
         Ok(())
     }
 
+    /// The row before a place, by id, or null at the start: where a row put back goes after.
+    fn before_place(&self, place: usize) -> J {
+        if place == 0 { J::Null } else { J::from(self.rows.id(place - 1)) }
+    }
+
     /// `applyChanges`'s `rowFor`: the row, brought back if this batch took it out.
     fn row_for(&mut self, id: &str) -> Result<Option<usize>, String> {
         if let Some(slot) = self.rows.slot_of(id) {
             return Ok(Some(slot));
         }
         let Some(gone) = self.removed.remove(id) else { return Ok(None) };
+        // Brought back, it's taken out again by the undo.
+        let back = values(self.rows, gone.slot)?;
+        self.inverse.push(undo_change("delete", id, [vec![("values", J::Object(back))], maybe("page", gone.page.clone()), vec![("cells", J::Array(gone.cells.clone()))]].concat()));
         let end = self.rows.len();
         self.rows.insert_place(end, gone.slot)?;
         self.rows.set_slot_of(id, Some(gone.slot));
@@ -454,18 +482,20 @@ impl Batch<'_> {
             Change::Set { row, field, to } => {
                 let Some(slot) = self.row_for(&row)? else { return Ok(()) };
                 let mut target = values(self.rows, slot)?;
+                let prior = target.get(&field).cloned();
                 match to {
                     None => {
                         target.shift_remove(&field);
                     }
                     Some(v) => {
-                        target.insert(field, v);
+                        target.insert(field.clone(), v);
                     }
                 }
                 let line = render(self.rows.origin_line(slot), &target);
                 if line == self.rows.slot_line(slot) {
                     return Ok(());
                 }
+                self.inverse.push(undo_change("set", &row, [vec![("field", J::from(field.as_str()))], maybe("to", prior)].concat()));
                 // In its own slot while no row has been added, removed or moved.
                 let as_read = line == self.rows.origin_line(slot);
                 if self.rows.overwrite(slot, &line, as_read)? {
@@ -504,6 +534,8 @@ impl Batch<'_> {
                 };
                 self.rows.set_slot_of(&row, Some(slot));
                 self.last_put = Some((row.clone(), at));
+                let put = self::values(self.rows, slot)?;
+                self.inverse.push(undo_change("delete", &row, [vec![("values", J::Object(put))], maybe("page", page.clone()), vec![("cells", J::Array(cells.clone()))]].concat()));
                 if let Some(page) = page {
                     self.pages.insert(row.clone(), Some(page.clone()));
                     self.effects.push(Effect::Page(row.clone(), Some(page)));
@@ -529,6 +561,11 @@ impl Batch<'_> {
                     return Ok(());
                 }
                 let place = self.rows.place_of(slot).expect("a row found is in the table");
+                self.inverse.push(undo_change(
+                    "insert",
+                    &row,
+                    [vec![("values", J::Object(now.clone())), ("after", self.before_place(place))], maybe("page", has_page.clone()), vec![("cells", J::Array(has_cells.clone()))]].concat(),
+                ));
                 self.rows.remove_place(place);
                 self.rows.set_slot_of(&row, None);
                 self.rows.set_gone(&row, Some(slot));
@@ -544,14 +581,20 @@ impl Batch<'_> {
             }
             Change::Move { row, after } => {
                 let Some(place) = self.place(&row) else { return Ok(()) };
+                let was = self.before_place(place);
                 let slot = self.rows.remove_place(place);
                 let at = self.after(&after);
                 self.rows.insert_place(at, slot)?;
+                if at != place {
+                    self.inverse.push(undo_change("move", &row, vec![("after", was)]));
+                }
             }
             Change::Page { row, to } => {
                 if self.row_for(&row)?.is_none() {
                     return Ok(());
                 }
+                let prior = self.pages.get(&row).cloned().flatten();
+                self.inverse.push(undo_change("page", &row, maybe("to", prior)));
                 self.pages.insert(row.clone(), to.clone());
                 self.effects.push(Effect::Page(row, to));
             }
@@ -559,6 +602,10 @@ impl Batch<'_> {
                 if self.row_for(&row)?.is_none() {
                     return Ok(());
                 }
+                let list = self.cells.entry(row.clone()).or_default();
+                // The line it had (the first, when a merge left two: the one that applies, D54).
+                let prior = list.iter().find(|c| c.get("field").and_then(J::as_str) == Some(field.as_str())).cloned();
+                self.inverse.push(undo_change("cell", &row, [vec![("field", J::from(field.as_str()))], maybe("to", prior)].concat()));
                 let list = self.cells.entry(row.clone()).or_default();
                 list.retain(|c| c.get("field").and_then(J::as_str) != Some(field.as_str()));
                 self.effects.push(Effect::Drop(row.clone(), Some(field)));
@@ -653,6 +700,8 @@ pub struct Applied {
     pub changed: Vec<String>,
     pub events: Vec<J>,
     pub effects: Vec<J>,
+    /// The changes that undo the batch exactly, in the order to apply them.
+    pub inverse: Vec<J>,
 }
 
 /// What each row a batch names would hold after it, by id (None: not in the table).
@@ -678,7 +727,7 @@ pub fn named_after(rows: &mut Rows, input: &J, removed: &Carried) -> Result<(Vec
         }
     }
     let mark = rows.mark();
-    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None };
+    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None, inverse: Vec::new() };
     let mut done = Ok(());
     for change in changes {
         done = batch.apply(change, &computed);
@@ -740,7 +789,7 @@ pub fn apply_carrying(rows: &mut Rows, input: &J, removed: &mut Carried) -> Resu
     let cells_before: HashMap<String, Map<String, J>> = named.iter().map(|id| (id.clone(), cells_by_field(cells.get(id).map_or(&[][..], Vec::as_slice)))).collect();
 
     let mark = rows.mark();
-    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None };
+    let mut batch = Batch { rows, pages, cells, removed: removed.clone(), effects: Vec::new(), last_put: None, pending: None, inverse: Vec::new() };
     let mut done = Ok(());
     for change in changes {
         done = batch.apply(change, &computed);
@@ -751,7 +800,8 @@ pub fn apply_carrying(rows: &mut Rows, input: &J, removed: &mut Carried) -> Resu
     if done.is_ok() {
         done = batch.flush();
     }
-    let Batch { rows, cells, effects, removed: taken_out, .. } = batch;
+    let Batch { rows, cells, effects, removed: taken_out, mut inverse, .. } = batch;
+    inverse.reverse();
     if let Err(e) = done {
         rows.undo_to(mark);
         return Err(e);
@@ -839,7 +889,7 @@ pub fn apply_carrying(rows: &mut Rows, input: &J, removed: &mut Carried) -> Resu
                 J::Object(m)
             })
             .collect();
-        Ok(Applied { changed, events, effects })
+        Ok(Applied { changed, events, effects, inverse })
     };
     match finish(rows) {
         Ok(applied) => {
@@ -1014,6 +1064,139 @@ mod tests {
             want.sort();
             assert_eq!(got, want, "round {round}, by its events: {changes:?}");
             assert_eq!((0..r.len()).map(|i| r.id(i)).collect::<Vec<_>>(), ids);
+        }
+    }
+
+    /// The caller's half: pages and cells kept as `effects` say, given for the rows a batch names.
+    struct Caller {
+        pages: HashMap<String, J>,
+        cells: Vec<J>,
+    }
+
+    impl Caller {
+        fn input(&self, changes: &[J]) -> J {
+            let named: HashSet<&str> = changes.iter().filter_map(|c| c["row"].as_str()).collect();
+            let pages: Map<String, J> = self.pages.iter().filter(|(k, _)| named.contains(k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+            let cells: Vec<J> = self.cells.iter().filter(|c| named.contains(c["id"].as_str().unwrap_or(""))).cloned().collect();
+            json!({ "changes": changes, "pages": pages, "cells": cells })
+        }
+        fn replay(&mut self, effects: &[J]) {
+            for e in effects {
+                match e["op"].as_str().unwrap() {
+                    "page" => match e.get("to") {
+                        Some(t) => {
+                            self.pages.insert(e["row"].as_str().unwrap().into(), t.clone());
+                        }
+                        None => {
+                            self.pages.remove(e["row"].as_str().unwrap());
+                        }
+                    },
+                    "cells-drop" => {
+                        let row = e["row"].as_str().unwrap();
+                        let field = e.get("field").and_then(J::as_str);
+                        self.cells.retain(|c| !(c["id"] == row && field.is_none_or(|f| c["field"] == f)));
+                    }
+                    _ => self.cells.extend(e["cells"].as_array().unwrap().iter().cloned()),
+                }
+            }
+        }
+        fn run(&mut self, r: &mut Rows, changes: &[J]) -> Applied {
+            let got = apply(r, &self.input(changes)).unwrap();
+            self.replay(&got.effects);
+            got
+        }
+        /// Pages and cells as they stand, in an order that doesn't depend on how they got there.
+        fn state(&self) -> (Vec<(String, String)>, Vec<String>) {
+            let mut p: Vec<(String, String)> = self.pages.iter().map(|(k, v)| (k.clone(), v.to_string())).collect();
+            p.sort();
+            let mut c: Vec<String> = self.cells.iter().map(|c| written(c, true)).collect();
+            c.sort();
+            (p, c)
+        }
+    }
+
+    /// A batch of every kind of change, then its inverse (as undo keeps it), then the inverse's
+    /// (as redo does): the rows, byte for byte and in order, and their pages and cells, are as
+    /// they were before the batch, and then as they were after it.
+    #[test]
+    fn undo_gives_back_every_row_as_it_was_and_redo_as_it_became() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut int = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let values = [json!("B"), json!("é"), json!(1.5), json!(100), json!([1, 2]), J::Null, json!(""), json!(0)];
+        for round in 0..300 {
+            let n = 2 + int(7);
+            let text: Vec<String> = (0..n)
+                .map(|i| {
+                    let mut line = format!(r#"{{"id":"r{i}""#);
+                    for (k, raw) in [("title", r#""T""#), ("status", "1.50"), ("x", r#"{"k" : 1}"#)] {
+                        if int(3) != 0 {
+                            line.push_str(&format!(r#",  "{k}": {raw}"#));
+                        }
+                    }
+                    line.push('}');
+                    line
+                })
+                .collect();
+            let mut r = table(&text.iter().map(String::as_str).collect::<Vec<_>>());
+            let mut caller = Caller { pages: HashMap::new(), cells: Vec::new() };
+            for i in 0..n {
+                if int(3) == 0 {
+                    caller.pages.insert(format!("r{i}"), json!("a page\n"));
+                }
+                if int(4) == 0 {
+                    caller.cells.push(json!({ "id": format!("r{i}"), "field": "title", "note": "n" }));
+                }
+            }
+            let read = lines(&r);
+            let read_state = caller.state();
+            let mut changes = Vec::new();
+            let mut fresh = 0;
+            for _ in 0..1 + int(6) {
+                let id = format!("r{}", int(n));
+                let other = format!("r{}", int(n));
+                let held = r.row_of(&id).map(|p| serde_json::from_slice::<J>(r.line(p)).unwrap());
+                let has_page = caller.pages.get(&id).cloned();
+                let has_cells: Vec<J> = caller.cells.iter().filter(|c| c["id"] == id.as_str()).cloned().collect();
+                let value = values[int(values.len())].clone();
+                let field = ["title", "status", "x", "y"][int(4)];
+                let after = if int(3) == 0 { J::Null } else { json!(other) };
+                match int(8) {
+                    0 => {
+                        if let Some(was) = held {
+                            let mut d = json!({ "op": "delete", "row": id, "values": was, "cells": has_cells });
+                            if let Some(p) = has_page {
+                                d["page"] = p;
+                            }
+                            changes.push(d);
+                        }
+                    }
+                    1 => {
+                        fresh += 1;
+                        let new = format!("new{fresh}");
+                        changes.push(json!({ "op": "insert", "row": new, "values": { "id": new, "title": values[int(values.len())] }, "after": if int(3) == 0 { J::Null } else { json!(other) }, "page": "new page\n" }));
+                    }
+                    2 => changes.push(json!({ "op": "move", "row": id, "after": after })),
+                    3 => changes.push(json!({ "op": "page", "row": id, "to": "edited\n" })),
+                    4 => changes.push(json!({ "op": "page", "row": id })),
+                    5 => changes.push(json!({ "op": "cell", "row": id, "field": "title", "to": { "id": id, "field": "title", "note": "changed" } })),
+                    6 => changes.push(json!({ "op": "set", "row": id, "field": field })),
+                    _ => changes.push(json!({ "op": "set", "row": id, "field": field, "to": value })),
+                }
+            }
+            let done = caller.run(&mut r, &changes);
+            let after = lines(&r);
+            let after_state = caller.state();
+            let undone = caller.run(&mut r, &done.inverse);
+            assert_eq!(lines(&r), read, "round {round}: undo: {changes:?}");
+            assert_eq!(caller.state(), read_state, "round {round}: undo, pages and cells: {changes:?}");
+            caller.run(&mut r, &undone.inverse);
+            assert_eq!(lines(&r), after, "round {round}: redo: {changes:?}");
+            assert_eq!(caller.state(), after_state, "round {round}: redo, pages and cells: {changes:?}");
         }
     }
 
