@@ -24,6 +24,9 @@ struct Held {
 /// How many views of a table are kept; one asked again after it's gone is worked out again.
 const VIEWS_KEPT: usize = 8;
 
+/// How many problems there are, of each kind, for the query (as JSON) they're of.
+type Totals = (String, usize, Vec<(String, usize)>);
+
 /// A held table: its rows, which of its fields hold their kind, its latest views, and its problems as last asked.
 struct Table {
     rows: Rows,
@@ -31,6 +34,8 @@ struct Table {
     views: Vec<(u32, Shown)>,
     next_view: u32,
     problems: Option<(String, crate::problems::Problems)>,
+    /// How many problems there are of each kind, for the query they're of: kept up by each edit.
+    problem_totals: Option<Totals>,
 }
 
 impl Table {
@@ -152,16 +157,34 @@ fn targets_of(held: &Held, input: &J) -> Result<crate::problems::Targets, String
     Ok(targets)
 }
 
-/// Every problem of a table, each as its JSON says it (which names rows by id, never by place).
-fn every_problem(rows: &Rows, input: &J, targets: &crate::problems::Targets) -> Result<Option<(crate::problems::Problems, Vec<String>)>, String> {
-    let Some(p) = crate::problems::problems(rows, input, targets)? else { return Ok(None) };
-    let all: Vec<J> = serde_json::from_str(&p.window(rows, 0, p.found.len())).map_err(|e| e.to_string())?;
-    let said = all.iter().map(|f| f.to_string()).collect();
-    Ok(Some((p, said)))
-}
 
 /// `rows.apply`: changes to a held table's rows (step 3a, `edit.rs`). With `problems` (what
 /// `rows.problems` is asked), the problems the changes made and the ones they ended.
+/// Each problem counted, so one said twice and now once is one ended: what `after` has that `before`
+/// hadn't, and what `before` had that `after` hasn't.
+fn changed_problems<'a>(before: &'a [String], after: &'a [String]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let less = |from: &'a [String], take: &'a [String]| {
+        let mut left: HashMap<&str, usize> = HashMap::new();
+        for s in take {
+            *left.entry(s.as_str()).or_default() += 1;
+        }
+        let mut out = Vec::new();
+        for s in from {
+            match left.get_mut(s.as_str()) {
+                Some(n) if *n > 0 => *n -= 1,
+                _ => out.push(s.as_str()),
+            }
+        }
+        out
+    };
+    (less(after, before), less(before, after))
+}
+
+/// A problem's code, from its JSON (`{"code":"…",…}`).
+fn code_of(said: &str) -> &str {
+    said.strip_prefix("{\"code\":\"").and_then(|r| r.split('"').next()).unwrap_or("")
+}
+
 fn apply(input: &J) -> Result<String, String> {
     let h = handle(input)?;
     with(|held| {
@@ -171,16 +194,44 @@ fn apply(input: &J) -> Result<String, String> {
             None => None,
         };
         let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
-        let before = match (&asked, &targets) {
-            (Some(p), Some(targets)) => every_problem(&t.rows, p, targets)?.map(|(_, said)| said),
-            _ => None,
-        };
+        // The problems a batch could change, before it: its rows and the values they hold before and
+        // after it (the batch tried and taken back), never the whole table again.
+        let mut scoped_before = None;
+        if let (Some(p), Some(targets)) = (&asked, &targets) {
+            let key = p.to_string();
+            // How many there are, of each kind: worked out whole once, then kept up by each batch.
+            if t.problem_totals.as_ref().is_none_or(|(k, _, _)| *k != key) {
+                t.problem_totals = crate::problems::problems(&t.rows, p, targets)?.map(|all| (key.clone(), all.found.len(), all.counts.iter().map(|(c, n)| (c.to_string(), *n)).collect()));
+            }
+            if t.problem_totals.is_some() {
+                let (named, after) = crate::edit::named_after(&mut t.rows, input)?;
+                let mut values: Vec<serde_json::Map<String, J>> = Vec::new();
+                for id in &named {
+                    if let Some(row) = t.rows.row_of(id) {
+                        if let Ok(J::Object(m)) = serde_json::from_slice::<J>(t.rows.line(row)) {
+                            values.push(m);
+                        }
+                    }
+                    if let Some(Some(m)) = after.get(id) {
+                        values.push(m.clone());
+                    }
+                }
+                let schema = p.get("schema").cloned().unwrap_or(J::Null);
+                if let Some(scope) = crate::problems::Scope::of(&t.rows, &schema, named, &values.iter().collect::<Vec<_>>())? {
+                    scoped_before = crate::problems::scoped(&t.rows, p, targets, &scope)?.map(|said| (scope, said));
+                }
+            }
+        }
         let applied = crate::edit::apply(&mut t.rows, input)?;
         // What was worked out of the rows before is of other rows now.
         if !applied.changed.is_empty() {
             t.views.clear();
             t.problems = None;
             t.conformance = Conformance::new();
+            // Kept up only by a batch that asks: one that doesn't leaves them to be counted again.
+            if scoped_before.is_none() {
+                t.problem_totals = None;
+            }
         }
         let mut out = String::from("{\"changed\":");
         out.push_str(&crate::edit::json(&J::from(applied.changed)));
@@ -188,33 +239,26 @@ fn apply(input: &J) -> Result<String, String> {
         out.push_str(&crate::edit::json(&J::Array(applied.events)));
         out.push_str(",\"effects\":");
         out.push_str(&crate::edit::json(&J::Array(applied.effects)));
-        if let (Some(p), Some(targets), Some(was)) = (&asked, &targets, before) {
-            if let Some((now, said)) = every_problem(&t.rows, p, targets)? {
-                // Each problem counted, so one said twice and now once is one ended.
-                let mut left: HashMap<&str, usize> = HashMap::new();
-                for s in &was {
-                    *left.entry(s.as_str()).or_default() += 1;
-                }
-                let mut found = Vec::new();
-                for s in &said {
-                    match left.get_mut(s.as_str()) {
-                        Some(n) if *n > 0 => *n -= 1,
-                        _ => found.push(s.as_str()),
+        if let (Some(p), Some(targets), Some((scope, was))) = (&asked, &targets, scoped_before) {
+            if let Some(said) = crate::problems::scoped(&t.rows, p, targets, &scope)? {
+                let (found, gone) = changed_problems(&was, &said);
+                let (key, mut total, mut counts) = t.problem_totals.take().expect("worked out above");
+                for s in &gone {
+                    total -= 1;
+                    if let Some(c) = counts.iter_mut().find(|(c, _)| c == code_of(s)) {
+                        c.1 -= 1;
                     }
                 }
-                let mut ended: HashMap<&str, usize> = HashMap::new();
-                for s in &said {
-                    *ended.entry(s.as_str()).or_default() += 1;
-                }
-                let mut gone = Vec::new();
-                for s in &was {
-                    match ended.get_mut(s.as_str()) {
-                        Some(n) if *n > 0 => *n -= 1,
-                        _ => gone.push(s.as_str()),
+                for s in &found {
+                    total += 1;
+                    match counts.iter_mut().find(|(c, _)| c == code_of(s)) {
+                        Some(c) => c.1 += 1,
+                        None => counts.push((code_of(s).to_string(), 1)),
                     }
                 }
-                out.push_str(&format!(",\"problems\":{{\"total\":{},\"counts\":{{", now.found.len()));
-                for (i, (code, n)) in now.counts.iter().enumerate() {
+                counts.retain(|(_, n)| *n > 0);
+                out.push_str(&format!(",\"problems\":{{\"total\":{total},\"counts\":{{"));
+                for (i, (code, n)) in counts.iter().enumerate() {
                     if i > 0 {
                         out.push(',');
                     }
@@ -225,7 +269,7 @@ fn apply(input: &J) -> Result<String, String> {
                 out.push_str("],\"gone\":[");
                 out.push_str(&gone.join(","));
                 out.push_str("]}");
-                t.problems = Some((p.to_string(), now));
+                t.problem_totals = Some((key, total, counts));
             }
         }
         out.push('}');
@@ -251,7 +295,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None });
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None });
                 held.next.to_string()
             }))
         }

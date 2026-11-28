@@ -368,6 +368,12 @@ struct Batch<'r> {
     cells: HashMap<String, Vec<J>>,
     removed: HashMap<String, Removed>,
     effects: Vec<Effect>,
+    /// The row this batch put in last and its place, while nothing since has moved a row: a paste
+    /// puts each row after the one before it, found here without looking.
+    last_put: Option<(String, usize)>,
+    /// Rows put in one after another, not yet in the order: where, and their slots. Put in together
+    /// before anything else looks at places (`flush`).
+    pending: Option<(usize, Vec<usize>)>,
 }
 
 /// Whether a slot's row holds exactly these values, written the same (keys in any order).
@@ -394,8 +400,19 @@ impl Batch<'_> {
         match after {
             After::Start => 0,
             After::End => self.rows.len(),
-            After::Row(a) => self.place(a).map_or(self.rows.len(), |p| p + 1),
+            After::Row(a) => match &self.last_put {
+                Some((id, place)) if id == a => place + 1,
+                _ => self.place(a).map_or(self.rows.len(), |p| p + 1),
+            },
         }
+    }
+
+    /// The rows put in one after another, into the order together.
+    fn flush(&mut self) -> Result<(), String> {
+        if let Some((at, slots)) = self.pending.take() {
+            self.rows.insert_places(at, &slots)?;
+        }
+        Ok(())
     }
 
     /// `applyChanges`'s `rowFor`: the row, brought back if this batch took it out.
@@ -420,6 +437,18 @@ impl Batch<'_> {
     }
 
     fn apply(&mut self, change: Change, computed: &HashSet<String>) -> Result<(), String> {
+        // Only an insert straight after another keeps the place it knows: anything else may move rows,
+        // and looks at places, so the rows put in so far go in first.
+        let chained = match &change {
+            Change::Insert { after: After::Row(a), .. } => self.pending.is_some() && self.last_put.as_ref().is_some_and(|(id, _)| id == a),
+            _ => false,
+        };
+        if !chained {
+            self.flush()?;
+        }
+        if !matches!(change, Change::Insert { .. }) {
+            self.last_put = None;
+        }
         match change {
             Change::Set { row, field, to } => {
                 let Some(slot) = self.row_for(&row)? else { return Ok(()) };
@@ -460,9 +489,20 @@ impl Batch<'_> {
                     None => self.rows.push_line(written(&J::Object(values), false).as_bytes(), None)?,
                 };
                 self.rows.set_gone(&row, None);
-                let at = self.after(&after);
-                self.rows.insert_place(at, slot)?;
+                // After the row put in just before it: with it, into the order together.
+                let at = match &mut self.pending {
+                    Some((from, slots)) if self.last_put.as_ref().is_some_and(|(id, _)| matches!(&after, After::Row(a) if a == id)) => {
+                        slots.push(slot);
+                        *from + slots.len() - 1
+                    }
+                    _ => {
+                        let at = self.after(&after);
+                        self.pending = Some((at, vec![slot]));
+                        at
+                    }
+                };
                 self.rows.set_slot_of(&row, Some(slot));
+                self.last_put = Some((row.clone(), at));
                 if let Some(page) = page {
                     self.pages.insert(row.clone(), Some(page.clone()));
                     self.effects.push(Effect::Page(row.clone(), Some(page)));
@@ -614,6 +654,48 @@ pub struct Applied {
     pub effects: Vec<J>,
 }
 
+/// What each row a batch names would hold after it, by id (None: not in the table).
+pub type NamedAfter = HashMap<String, Option<Map<String, J>>>;
+
+/// The rows a batch names, by id, and what each would hold after it (None: not in the table): the
+/// batch applied and taken back, so nothing changes. For the problems a batch could change.
+pub fn named_after(rows: &mut Rows, input: &J) -> Result<(Vec<String>, NamedAfter), String> {
+    let changes = parse(input.get("changes").and_then(J::as_array).ok_or("the input needs \"changes\", a list")?)?;
+    let computed: HashSet<String> = input.get("computed").and_then(J::as_array).map(|xs| xs.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+    let pages: HashMap<String, Option<J>> = input.get("pages").and_then(J::as_object).map(|o| o.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect()).unwrap_or_default();
+    let mut cells: HashMap<String, Vec<J>> = HashMap::new();
+    for c in input.get("cells").and_then(J::as_array).into_iter().flatten() {
+        if let Some(id) = c.get("id").and_then(J::as_str) {
+            cells.entry(id.to_string()).or_default().push(c.clone());
+        }
+    }
+    let mut named: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+    for c in &changes {
+        if seen.insert(c.row().to_string()) {
+            named.push(c.row().to_string());
+        }
+    }
+    let mark = rows.mark();
+    let mut batch = Batch { rows, pages, cells, removed: HashMap::new(), effects: Vec::new(), last_put: None, pending: None };
+    let mut done = Ok(());
+    for change in changes {
+        done = batch.apply(change, &computed);
+        if done.is_err() {
+            break;
+        }
+    }
+    if done.is_ok() {
+        done = batch.flush();
+    }
+    let rows = batch.rows;
+    let after: Result<NamedAfter, String> = done.and_then(|()| {
+        named.iter().map(|id| Ok((id.clone(), match rows.slot_of(id) { Some(s) => Some(values(rows, s)?), None => None }))).collect()
+    });
+    rows.undo_to(mark);
+    Ok((named, after?))
+}
+
 /// `rows.apply`'s work on a held table's rows: `input` has `changes`, and the `pages`, `cells`
 /// and `computed` fields of the rows they name. Changes nothing when it's an error.
 pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
@@ -646,7 +728,7 @@ pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
     let cells_before: HashMap<String, Map<String, J>> = named.iter().map(|id| (id.clone(), cells_by_field(cells.get(id).map_or(&[][..], Vec::as_slice)))).collect();
 
     let mark = rows.mark();
-    let mut batch = Batch { rows, pages, cells, removed: HashMap::new(), effects: Vec::new() };
+    let mut batch = Batch { rows, pages, cells, removed: HashMap::new(), effects: Vec::new(), last_put: None, pending: None };
     let mut done = Ok(());
     for change in changes {
         done = batch.apply(change, &computed);
@@ -654,95 +736,109 @@ pub fn apply(rows: &mut Rows, input: &J) -> Result<Applied, String> {
             break;
         }
     }
+    if done.is_ok() {
+        done = batch.flush();
+    }
     let Batch { rows, cells, effects, .. } = batch;
     if let Err(e) = done {
         rows.undo_to(mark);
         return Err(e);
     }
-    rows.commit(mark);
-
-    // After: in the order the rows are now, then the rows that have gone, as rowsChanges says them.
-    let mut now: Vec<(usize, String, usize)> = Vec::new();
-    let mut gone: Vec<(usize, String)> = Vec::new();
-    let mut changed = Vec::new();
-    for id in &named {
-        let slot = rows.slot_of(id);
-        let place = slot.and_then(|s| rows.place_of(s));
-        let was = before.get(id);
-        match (slot.zip(place), was) {
-            (Some((s, p)), _) => {
-                now.push((p, id.clone(), s));
-                if was.is_none_or(|(wp, line, _)| *wp != p || line.as_slice() != rows.slot_line(s)) {
+    // Worked out before the edit is kept: a read that fails after it would say nothing changed when it had.
+    let finish = |rows: &mut Rows| -> Result<Applied, String> {
+        // After: in the order the rows are now, then the rows that have gone, as rowsChanges says them.
+        let mut now: Vec<(usize, String, usize)> = Vec::new();
+        let mut gone: Vec<(usize, String)> = Vec::new();
+        let mut changed = Vec::new();
+        for id in &named {
+            let slot = rows.slot_of(id);
+            let place = slot.and_then(|s| rows.place_of(s));
+            let was = before.get(id);
+            match (slot.zip(place), was) {
+                (Some((s, p)), _) => {
+                    now.push((p, id.clone(), s));
+                    if was.is_none_or(|(wp, line, _)| *wp != p || line.as_slice() != rows.slot_line(s)) {
+                        changed.push(id.clone());
+                    }
+                }
+                (None, Some((wp, _, _))) => {
+                    gone.push((*wp, id.clone()));
                     changed.push(id.clone());
                 }
-            }
-            (None, Some((wp, _, _))) => {
-                gone.push((*wp, id.clone()));
-                changed.push(id.clone());
-            }
-            (None, None) => {}
-        }
-    }
-    now.sort_unstable();
-    gone.sort_unstable();
-    let mut events = Vec::new();
-    let empty_cells = Map::new();
-    for (_, id, slot) in &now {
-        let was = before.get(id).map(|(_, _, v)| v);
-        let after = values(rows, *slot)?;
-        let mut these = Vec::new();
-        row_changes(&mut these, id, was, Some(&after), &computed);
-        let cells_now = cells_by_field(cells.get(id).map_or(&[][..], Vec::as_slice));
-        for e in &mut these {
-            if e["op"] == "insert" && !cells_now.is_empty() {
-                e.as_object_mut().expect("an event").insert("cells".into(), J::Object(cells_now.clone()));
+                (None, None) => {}
             }
         }
-        events.extend(these);
-        if was.is_some() {
-            cell_changes(&mut events, id, cells_before.get(id).unwrap_or(&empty_cells), &cells_now);
-        }
-    }
-    for (_, id) in &gone {
-        let was = &before[id].2;
-        let mut these = Vec::new();
-        row_changes(&mut these, id, Some(was), None, &computed);
-        let cells_were = cells_before.get(id).unwrap_or(&empty_cells);
-        for e in &mut these {
-            if !cells_were.is_empty() {
-                e.as_object_mut().expect("an event").insert("cells".into(), J::Object(cells_were.clone()));
+        now.sort_unstable();
+        gone.sort_unstable();
+        let mut events = Vec::new();
+        let empty_cells = Map::new();
+        for (_, id, slot) in &now {
+            let was = before.get(id).map(|(_, _, v)| v);
+            let after = values(rows, *slot)?;
+            let mut these = Vec::new();
+            row_changes(&mut these, id, was, Some(&after), &computed);
+            let cells_now = cells_by_field(cells.get(id).map_or(&[][..], Vec::as_slice));
+            for e in &mut these {
+                if e["op"] == "insert" && !cells_now.is_empty() {
+                    e.as_object_mut().expect("an event").insert("cells".into(), J::Object(cells_now.clone()));
+                }
+            }
+            events.extend(these);
+            if was.is_some() {
+                cell_changes(&mut events, id, cells_before.get(id).unwrap_or(&empty_cells), &cells_now);
             }
         }
-        events.extend(these);
-    }
-    let effects = effects
-        .into_iter()
-        .map(|e| {
-            let mut m = Map::new();
-            match e {
-                Effect::Page(row, to) => {
-                    m.insert("op".into(), "page".into());
-                    m.insert("row".into(), row.into());
-                    if let Some(t) = to {
-                        m.insert("to".into(), t);
+        for (_, id) in &gone {
+            let was = &before[id].2;
+            let mut these = Vec::new();
+            row_changes(&mut these, id, Some(was), None, &computed);
+            let cells_were = cells_before.get(id).unwrap_or(&empty_cells);
+            for e in &mut these {
+                if !cells_were.is_empty() {
+                    e.as_object_mut().expect("an event").insert("cells".into(), J::Object(cells_were.clone()));
+                }
+            }
+            events.extend(these);
+        }
+        let effects = effects
+            .into_iter()
+            .map(|e| {
+                let mut m = Map::new();
+                match e {
+                    Effect::Page(row, to) => {
+                        m.insert("op".into(), "page".into());
+                        m.insert("row".into(), row.into());
+                        if let Some(t) = to {
+                            m.insert("to".into(), t);
+                        }
+                    }
+                    Effect::Drop(row, field) => {
+                        m.insert("op".into(), "cells-drop".into());
+                        m.insert("row".into(), row.into());
+                        if let Some(f) = field {
+                            m.insert("field".into(), f.into());
+                        }
+                    }
+                    Effect::Add(cells) => {
+                        m.insert("op".into(), "cells-add".into());
+                        m.insert("cells".into(), J::Array(cells));
                     }
                 }
-                Effect::Drop(row, field) => {
-                    m.insert("op".into(), "cells-drop".into());
-                    m.insert("row".into(), row.into());
-                    if let Some(f) = field {
-                        m.insert("field".into(), f.into());
-                    }
-                }
-                Effect::Add(cells) => {
-                    m.insert("op".into(), "cells-add".into());
-                    m.insert("cells".into(), J::Array(cells));
-                }
-            }
-            J::Object(m)
-        })
-        .collect();
-    Ok(Applied { changed, events, effects })
+                J::Object(m)
+            })
+            .collect();
+        Ok(Applied { changed, events, effects })
+    };
+    match finish(rows) {
+        Ok(applied) => {
+            rows.commit(mark);
+            Ok(applied)
+        }
+        Err(e) => {
+            rows.undo_to(mark);
+            Err(e)
+        }
+    }
 }
 
 /// A value as JavaScript's JSON.stringify writes it, for answers.

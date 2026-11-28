@@ -27,15 +27,25 @@ import { readZip, type LazyZipEntry } from "../../packages/core/src/zip.ts";
 import { openNodeDatabase } from "../../packages/core/src/sqlite-node.ts";
 import { buildIndexFromBytes } from "../../packages/app/src/indexed.ts";
 import { withCell } from "../../packages/app/src/edits.ts";
-import type { ParsedBundle, ParsedTable, Row } from "../../packages/core/src/types.ts";
+import { enumValues, type ParsedBundle, type ParsedTable, type Row } from "../../packages/core/src/types.ts";
+import { problemsOf } from "../../packages/core/src/problems.ts";
 
-const [file, binding, times] = process.argv.slice(2) as [string, "wasm" | "native", string | undefined];
+const [file, binding, times, which] = process.argv.slice(2) as [string, "wasm" | "native", string | undefined, string | undefined];
 const N = Number(times ?? 20);
 setFormulaEngine((await loadEdn({ binding })) as never);
 
 const bytes = new Uint8Array(readFileSync(file));
 const read = Object.values((await readTableArchive(bytes, { rows: "later" })).tables)[0]!;
-const schema = read.schema;
+// "strict": constraints most rows break (as engine-check.mts), the most problems there are to compare.
+const strict = which === "strict";
+const schema = !strict
+  ? read.schema
+  : {
+      ...read.schema,
+      fields: read.schema.fields.map((f) =>
+        f.name === "amount" ? { ...f, constraints: { ...f.constraints, maximum: 50000 } } : f.name === "title" ? { ...f, constraints: { ...f.constraints, unique: true } } : f.name === "note" ? { ...f, constraints: { ...f.constraints, maxLength: 10 } } : f,
+      ),
+    };
 const parts = readZip(bytes, { lazy: (name) => name.includes("/rows/") })
   .filter((e) => e.name.includes("/rows/"))
   .sort((a, b) => (a.name < b.name ? -1 : 1)) as unknown as (LazyZipEntry & { name: string })[];
@@ -47,7 +57,7 @@ for (const p of parts) {
   for await (const c of p.chunks()) text += decoder.decode(c, { stream: true });
   for (const line of text.split("\n")) if (line.trim()) rows.push(JSON.parse(line) as Row);
 }
-const table: ParsedTable = { ...read, rows, indexed: undefined, loading: undefined } as ParsedTable;
+const table: ParsedTable = { ...read, schema, rows, indexed: undefined, loading: undefined } as ParsedTable;
 const ids = rows.map((r) => r.id);
 const field = schema.fields.find((f) => f.type === "string" && !f.computed)!.name;
 
@@ -91,6 +101,12 @@ say(
   "a row removed",
   await timed((i) => applyToHeld(held, table, [{ op: "delete", table: "t", row: ids[at(i) + 2]!, values: rows[at(i) + 2]! }])),
 );
+
+// With the problems the edit made and ended asked for, as an app asks on every edit.
+const problemsInput = { schema: { ...schema, fields: schema.fields.map((f) => ({ ...f, choices: enumValues(f) })) }, bodies: [], attachments: null, targets: {} };
+say("engine, with problems", "one cell", await timed((i) => applyToHeld(held, table, [{ ...one(i), row: ids[at(i) + 5]! } as never], { problems: problemsInput })));
+// Memory with every problem found again: slow enough with strict rules to leave out (SKIP_MEMORY=1).
+if (!process.env.SKIP_MEMORY) say("memory: withCell + problemsOf", "one cell", await timed((i) => problemsOf(withCell(table, ids[at(i)]!, field, `edited ${i}`), "t")));
 
 // Memory, as today.
 say("memory: withCell", "one cell", await timed((i) => withCell(table, ids[at(i)]!, field, `edited ${i}`)));

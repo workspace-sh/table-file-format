@@ -35,7 +35,10 @@ export interface ProblemsChanged {
 
 /** A held table after changes. */
 export interface HeldApplied {
-  /** The rows the changes changed, moved, added or took away. */
+  /**
+   * The rows the changes changed, moved, added or took away. A row the batch names is here when its
+   * place moved, even only because another went in before it.
+   */
   changed: string[];
   /** The edits, as history says them (`rowsChanges`), each table-core's EditChange. */
   events: EditChange[];
@@ -47,7 +50,9 @@ export interface HeldApplied {
 }
 
 /**
- * A held table's rows changed, as `applyChanges` changes rows in memory. `table` is the held
+ * A held table's rows changed, as `applyChanges` changes rows in memory. A `set` of a row's `id`
+ * is refused, where applyChanges would rename the row (diffBundle never makes one): a caller with
+ * such a batch applies it in memory instead. `table` is the held
  * table's schema, pages and cells as they are before. `problems`: what `rows.problems` is asked
  * (`heldProblems`' input), to be told the problems that changed. Throws, having changed nothing,
  * when the engine can't take a change (one that isn't a row's).
@@ -92,20 +97,33 @@ export function heldRowsAll(held: HeldRows): Row[] {
 /**
  * `applyChanges` with each table's rows' changes applied by the engine: the bundle the same
  * changes give in memory (rows made again from the engine's, so none is the same object as
- * before). Without an engine, applyChanges itself.
+ * before). The changes go in the order given, a run at a time: a run of rows' changes to the
+ * engine, a run of the others here, since a change to a field or a table can change what a row's
+ * change does after it. Without an engine, applyChanges itself.
  */
 export function applyChangesThroughEngine(bundle: ParsedBundle, changes: readonly BundleChange[]): ParsedBundle {
   if (!formulaEngineSet()) return applyChanges(bundle, changes);
+  let out = bundle;
+  let at = 0;
+  while (at < changes.length) {
+    const rows = isRowChange(changes[at]!);
+    let end = at;
+    while (end < changes.length && isRowChange(changes[end]!) === rows) end++;
+    const run = changes.slice(at, end);
+    out = rows ? rowsThroughEngine(out, run as RowChange[]) : applyChanges(out, run);
+    at = end;
+  }
+  return out;
+}
+
+/** A run of rows' changes applied by the engine, each table's held for it and let go after. */
+function rowsThroughEngine(bundle: ParsedBundle, changes: readonly RowChange[]): ParsedBundle {
   const byTable = new Map<string, RowChange[]>();
   for (const c of changes) {
-    if (!isRowChange(c)) continue;
     if (!byTable.has(c.table)) byTable.set(c.table, []);
     byTable.get(c.table)!.push(c);
   }
-  const out = applyChanges(
-    bundle,
-    changes.filter((c) => !isRowChange(c)),
-  );
+  const out: ParsedBundle = { ...bundle, tables: { ...bundle.tables } };
   for (const [name, rowChanges] of byTable) {
     const table = out.tables[name];
     if (!table) continue;

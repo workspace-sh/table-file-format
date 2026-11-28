@@ -234,3 +234,99 @@ test("asked, the answer says the problems the changes made and the ones they end
     }
   }
 });
+
+test("a batch of rows' changes and others is applied in its order, as applyChanges applies it", { skip }, () => {
+  const rows: Row[] = [
+    { id: "a", n: 1, total: 5 },
+    { id: "b", n: 2, total: 6 },
+  ];
+  const plain: Field[] = [
+    { name: "n", type: "number" },
+    { name: "total", type: "number" },
+  ];
+  const base = (): ParsedBundle => ({ path: "/x.table", meta: { title: "X" }, tables: { t: { path: "/x.table/tables/t", schema: { fields: plain }, rows, views: [], meta: {} } } });
+  const cases: [string, BundleChange[]][] = [
+    // The delete compares `total` while it's a stored value: changed since, the row stays. Made
+    // computed only after, it's no longer compared.
+    [
+      "a delete, then its field made computed",
+      [
+        { op: "delete", table: "t", row: "a", values: { id: "a", n: 1, total: 99 } },
+        { op: "field", table: "t", name: "total", to: { name: "total", type: "number", computed: { kind: "formula", expr: "n" } } as Field },
+      ],
+    ],
+    // A cell set, then its table taken away and added again: the new table's rows are the content's.
+    [
+      "a cell set, then its table removed and added again",
+      [
+        { op: "set", table: "t", row: "a", field: "x", to: 1 },
+        { op: "table-remove", table: "t" },
+        { op: "table-add", table: "t", content: { schema: { fields: plain }, rows: [{ id: "a", n: 1 }], views: [], meta: {} as never } },
+        { op: "set", table: "t", row: "a", field: "n", to: 7 },
+      ],
+    ],
+  ];
+  for (const [name, changes] of cases) {
+    const want = applyChanges(base(), changes).tables.t!;
+    const got = applyChangesThroughEngine(base(), changes).tables.t!;
+    assert.deepEqual(got.rows, want.rows, name);
+    assert.deepEqual(got.schema, want.schema, name);
+  }
+});
+
+test("the problems batches make and end, worked out from what each names, keep up with the whole table's, batch after batch", { skip }, () => {
+  let checked = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const r = random(seed * 13);
+    let table: ParsedTable = { path: "", schema: problemSchema, rows: problemRows(seed, 80), views: [], meta: {} as never };
+    const bodies = [table.rows[0]!.id, table.rows[3]!.id, "gone page"];
+    const attachments = ["a.png", "b.png", "unused.png", "c.png"];
+    const input = {
+      schema: { ...problemSchema, fields: problemSchema.fields.map((f) => ({ ...f, choices: enumValues(f) })) },
+      bodies,
+      attachments,
+      targets: {},
+    };
+    const held = holdRows(
+      problemSchema.fields.map((f) => f.name),
+      table.rows,
+    );
+    try {
+      const all = () => call<{ found: unknown[]; total: number; counts: Record<string, number> }>("rows.problems", { handle: held.handle, ...input, from: 0, to: 1e9 });
+      let was = all().found.map((f) => JSON.stringify(f));
+      for (let round = 0; round < 4; round++) {
+        const next = JSON.parse(JSON.stringify(table)) as ParsedTable;
+        for (let k = 0; k < 1 + r.int(5); k++) {
+          const at = r.int(next.rows.length);
+          const roll = r.int(5);
+          if (roll === 0) next.rows.splice(at, 1);
+          else if (roll === 1) next.rows.splice(at, 0, { ...problemRows(seed * 97 + round * 7 + k, 1)[0]!, id: `n${seed}-${round}-${k}` });
+          else if (roll === 2) {
+            const [moved] = next.rows.splice(at, 1);
+            next.rows.splice(r.int(next.rows.length + 1), 0, moved!);
+          } else next.rows[at] = { ...next.rows[at]!, ...problemRows(seed * 31 + round * 5 + k, 1)[0]!, id: next.rows[at]!.id };
+        }
+        const wrap = (t: ParsedTable): ParsedBundle => ({ path: "", meta: {} as never, tables: { t } });
+        const changes = diffBundle(wrap(table), wrap(next)).filter(isRowChange);
+        const applied = applyToHeld(held, table, changes, { problems: input })!;
+        const now = all();
+        const said = now.found.map((f) => JSON.stringify(f));
+        const left = [...was];
+        for (const g of applied.problems!.gone.map((f) => JSON.stringify(f))) {
+          const i = left.indexOf(g);
+          assert.ok(i >= 0, `seed ${seed}, round ${round}: ended a problem there wasn't: ${g}`);
+          left.splice(i, 1);
+        }
+        assert.deepEqual([...left, ...applied.problems!.found.map((f) => JSON.stringify(f))].sort(), [...said].sort(), `seed ${seed}, round ${round}`);
+        assert.equal(applied.problems!.total, now.total, `seed ${seed}, round ${round}: total`);
+        assert.deepEqual(applied.problems!.counts, now.counts, `seed ${seed}, round ${round}: counts`);
+        checked += said.length;
+        was = said;
+        table = applyChanges(wrap(table), changes).tables.t!;
+      }
+    } finally {
+      freeRows(held);
+    }
+  }
+  assert.ok(checked > 1000, `${checked} problems compared`);
+});

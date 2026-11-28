@@ -135,6 +135,8 @@ pub struct Rows {
 enum OrderStep {
     Replaced(u32, u32),
     Inserted(u32),
+    /// Rows put in together at a place: how many.
+    InsertedMany(u32, u32),
     Removed(u32, u32),
 }
 
@@ -675,13 +677,17 @@ impl Rows {
         if !matches!(read, Ok(true)) || !id.is_some_and(|c| matches!(c.kind, kind::TEXT | kind::ESCAPED)) {
             return Err("an edit wrote a line that isn't a row with an id".into());
         }
-        self.edits.try_reserve(line.len()).map_err(|_| too_large())?;
-        self.rows.try_reserve(1).map_err(|_| too_large())?;
-        self.ids.try_reserve(1).map_err(|_| too_large())?;
-        self.cells.try_reserve(n).map_err(|_| too_large())?;
-        self.extras.try_reserve(extras.len()).map_err(|_| too_large())?;
+        // Room for a sixteenth more of the table at a time, not twice it: the first edit after a
+        // table is read would otherwise reserve as much again as it holds (72 MB of cells for a
+        // million rows of eight fields).
+        let more = (self.rows.len() / 16).max(64);
+        grow(&mut self.edits, line.len(), more * 64).map_err(|_| too_large())?;
+        grow(&mut self.rows, 1, more).map_err(|_| too_large())?;
+        grow(&mut self.ids, 1, more).map_err(|_| too_large())?;
+        grow(&mut self.cells, n, more * n).map_err(|_| too_large())?;
+        grow(&mut self.extras, extras.len(), extras.len()).map_err(|_| too_large())?;
         self.ensure_order();
-        self.places.try_reserve(1).map_err(|_| too_large())?;
+        grow(&mut self.places, 1, more).map_err(|_| too_large())?;
         let slot = self.rows.len() as u32;
         let start = self.edits.len() as u32;
         self.edits.extend_from_slice(line);
@@ -752,6 +758,8 @@ impl Rows {
     /// The row at a place is now the one in `slot`.
     pub fn replace_place(&mut self, at: usize, slot: usize) {
         self.ensure_order();
+        // Places made first: an entry left as it was before the first changed place would be wrong after.
+        self.make_places();
         let order = self.order.as_mut().expect("made");
         let old = std::mem::replace(&mut order[at], slot as u32) as usize;
         if self.id_log.is_some() {
@@ -767,10 +775,26 @@ impl Rows {
     pub fn insert_place(&mut self, at: usize, slot: usize) -> Result<(), String> {
         self.ensure_order();
         let order = self.order.as_mut().expect("made");
-        order.try_reserve(1).map_err(|_| "the table is too large to edit".to_string())?;
+        let step = (order.len() / 16).max(64);
+        grow(order, 1, step).map_err(|_| "the table is too large to edit".to_string())?;
         order.insert(at, slot as u32);
         if self.id_log.is_some() {
             self.order_log.push(OrderStep::Inserted(at as u32));
+        }
+        self.places_made = false;
+        self.places_from = self.places_from.min(at);
+        Ok(())
+    }
+
+    /// Rows put in together at a place, in this order: a paste, one move of the rows after them.
+    pub fn insert_places(&mut self, at: usize, slots: &[usize]) -> Result<(), String> {
+        self.ensure_order();
+        let order = self.order.as_mut().expect("made");
+        let step = (order.len() / 16).max(slots.len());
+        grow(order, slots.len(), step).map_err(|_| "the table is too large to edit".to_string())?;
+        order.splice(at..at, slots.iter().map(|&s| s as u32));
+        if self.id_log.is_some() {
+            self.order_log.push(OrderStep::InsertedMany(at as u32, slots.len() as u32));
         }
         self.places_made = false;
         self.places_from = self.places_from.min(at);
@@ -852,6 +876,9 @@ impl Rows {
                     OrderStep::Inserted(at) => {
                         order.remove(at as usize);
                     }
+                    OrderStep::InsertedMany(at, n) => {
+                        order.drain(at as usize..(at + n) as usize);
+                    }
                     OrderStep::Removed(at, slot) => order.insert(at as usize, slot),
                 }
             }
@@ -874,6 +901,14 @@ pub struct Mark {
     edits: usize,
     extras: usize,
     ordered: bool,
+}
+
+/// Room in `v` for `need` more, adding `step` at a time (at least `need`) when there isn't.
+fn grow<T>(v: &mut Vec<T>, need: usize, step: usize) -> Result<(), std::collections::TryReserveError> {
+    if v.capacity() - v.len() >= need {
+        return Ok(());
+    }
+    v.try_reserve_exact(step.max(need))
 }
 
 /// Keeps a line that isn't a row, or says the file is too large to.
