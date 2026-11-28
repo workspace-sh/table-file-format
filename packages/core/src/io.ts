@@ -8,7 +8,7 @@ import type { BundleMeta, CellFormula, ParsedBundle, ParsedTable, Row, TableMeta
 import { CELLS_DIR, cellDiagnostics, layoutCells, parseCellsText } from "./cells.js";
 import { parseOptionalJsonText, parseRowsText, parseSchemaText, UnreadableSchemaError } from "./parse-text.js";
 import { rowsThroughEngine } from "./engine.js";
-import { readRowsThroughEngine, type RowsFileBytes } from "./engineRows.js";
+import { readRowsThroughEngine, rowsFilesThroughEngine, rowsSaved, type RowsFileBytes } from "./engineRows.js";
 import { repeatedFieldIds, withFieldIds } from "./fieldIds.js";
 import { canonicalSchema } from "./fieldForm.js";
 import { normaliseBody, pretty, rowLine, stampMeta, tableMetaOnly } from "./serialize.js";
@@ -361,6 +361,13 @@ export interface WriteTableInput {
   /** Which rows each rows file held (ParsedTable.rowFiles): written back to the same files. */
   rowFiles?: { name: string; ids: string[] }[];
   /**
+   * The table's rows held by the engine (#867, step 3c), and the names of the rows files they were
+   * read from, in order: the rows files are written by the engine, each row as its line as read or
+   * as an edit wrote it, and a file whose lines are all as read isn't written (nor read to compare).
+   * `rows` are still the table's rows, for its cells and its pages.
+   */
+  held?: { handle: number; names: readonly string[] };
+  /**
    * The table's edit history as text (SPEC section 14), for a table that
    * arrived with one (from an archive). Written only when the table has
    * no `history.ndjson` yet: one that is there is never changed here.
@@ -424,8 +431,12 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
   let rowsWritten: { name: string; text: string }[] | null = null;
   const cellsDir = joinPath(dir, CELLS_DIR);
   let cellsWritten: { name: string; text: string }[] | null = null;
-  const stage = async (target: string, content: string) => {
-    if ((await fs.readText(target)) === content) return;
+  // The engine's save, if its rows are held: said to it once the files are written, or once writing them fails.
+  const held = "held" in input ? input.held : undefined;
+  let save: number | null = null;
+  // `differs`: known to differ from the file there, so it isn't read to compare.
+  const stage = async (target: string, content: string, differs = false) => {
+    if (!differs && (await fs.readText(target)) === content) return;
     const tmp = target + ".tmp";
     await fs.writeText(tmp, content);
     staged.push({ tmp, target });
@@ -437,12 +448,20 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     // Rows not read yet (`loading`) aren't here to write either.
     if (!("indexed" in input && input.indexed) && !("loading" in input && input.loading)) {
       // Each row back in its file, and only the files that changed (D51).
-      rowsWritten = layoutRows(input.rows, rowLine(input.schema), {
-        ...(input.rowFiles ? { files: input.rowFiles } : {}),
-        ...(input.unread ? { unread: input.unread } : {}),
-      });
       await fs.mkdir(rowsDir);
-      for (const file of rowsWritten) await stage(joinPath(rowsDir, file.name), file.text);
+      if (held) {
+        // The engine's: a file it gives no text for is the file on disk.
+        const out = rowsFilesThroughEngine(held, { names: held.names, computed: input.schema.fields.filter((f) => f.computed).map((f) => f.name) });
+        save = out.save;
+        rowsWritten = out.files.map((f) => ({ name: f.name, text: f.text ?? "" }));
+        for (const file of out.files) if (file.text !== undefined) await stage(joinPath(rowsDir, file.name), file.text, !file.compare);
+      } else {
+        rowsWritten = layoutRows(input.rows, rowLine(input.schema), {
+          ...(input.rowFiles ? { files: input.rowFiles } : {}),
+          ...(input.unread ? { unread: input.unread } : {}),
+        });
+        for (const file of rowsWritten) await stage(joinPath(rowsDir, file.name), file.text);
+      }
       // Cells' own formulas, beside the rows they follow (D52).
       cellsWritten = layoutCells(input.schema, input.rows, input.cells, input.unreadCells);
       if (cellsWritten.length > 0) await fs.mkdir(cellsDir);
@@ -476,22 +495,30 @@ export async function writeTableTo(fs: TableFs, dir: string, input: WriteTableIn
     // the directory returns to exactly its pre-call state, then
     // surface the original error. Cleanup failures are swallowed —
     // stray temps are inert by the reader contract.
+    // Nothing on disk changed: what the engine knows is there still is.
     await Promise.allSettled(staged.map((s) => fs.remove(s.tmp)));
     throw err;
   }
 
-  // ---- Commit: atomic per-file renames. No content writes happen here.
-  for (const { tmp, target } of staged) {
-    await fs.rename(tmp, target);
-  }
+  try {
+    // ---- Commit: atomic per-file renames. No content writes happen here.
+    for (const { tmp, target } of staged) {
+      await fs.rename(tmp, target);
+    }
 
-  // ---- Trim: deletions strictly after every rename has landed.
-  if (rowsWritten) {
-    // Rows files no longer holding rows, and formatVersion 1's rows.ndjson, now in rows/.
-    const kept = new Set(rowsWritten.map((f) => f.name));
-    for (const name of rowsFileOrder(((await fs.list(rowsDir)) ?? []).map((e) => e.name))) if (!kept.has(name)) await fs.remove(joinPath(rowsDir, name));
-    await fs.remove(joinPath(dir, LEGACY_ROWS_FILE));
+    // ---- Trim: deletions strictly after every rename has landed.
+    if (rowsWritten) {
+      // Rows files no longer holding rows, and formatVersion 1's rows.ndjson, now in rows/.
+      const kept = new Set(rowsWritten.map((f) => f.name));
+      for (const name of rowsFileOrder(((await fs.list(rowsDir)) ?? []).map((e) => e.name))) if (!kept.has(name)) await fs.remove(joinPath(rowsDir, name));
+      await fs.remove(joinPath(dir, LEGACY_ROWS_FILE));
+    }
+  } catch (err) {
+    // Some renamed, some not: the engine compares every file with what's there next time.
+    if (held && save !== null) rowsSaved(held, save, false);
+    throw err;
   }
+  if (held && save !== null) rowsSaved(held, save, true);
   if (cellsWritten) {
     const kept = new Set(cellsWritten.map((f) => f.name));
     for (const entry of (await fs.list(cellsDir)) ?? []) if (!entry.directory && !kept.has(entry.name)) await fs.remove(joinPath(cellsDir, entry.name));
