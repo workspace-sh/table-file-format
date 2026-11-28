@@ -43,6 +43,11 @@ struct Table {
     /// Edits to undo, the latest last, and undone edits to redo (step 3b).
     undo: std::collections::VecDeque<Step>,
     redo: Vec<Step>,
+    /// What the rows files on disk hold (step 3c), and the save under way: its number, what it writes,
+    /// and the fields it leaves out, until it's said to have landed (`rows.saved`).
+    disk: crate::save::OnDisk,
+    saving: Option<(u64, std::collections::HashMap<String, crate::save::Lines>, Vec<String>)>,
+    next_save: u64,
 }
 
 /// An edit, as undo keeps it: the changes that take it back, exactly, and the stretch of edits
@@ -490,7 +495,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             }
             Ok(with(|held| {
                 held.next += 1;
-                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None, next_step: 0, carried: None, undo: Default::default(), redo: Vec::new() });
+                held.tables.insert(held.next, Table { rows: Rows::new(&fields), conformance: Conformance::new(), views: Vec::new(), next_view: 0, problems: None, problem_totals: None, next_step: 0, carried: None, undo: Default::default(), redo: Vec::new(), disk: Default::default(), saving: None, next_save: 0 });
                 held.next.to_string()
             }))
         }
@@ -556,6 +561,18 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
         "rows.undoNames" => undo_names(input),
         "rows.undoDepth" => table(input, |t| Ok(undo_depth(t))),
         "rows.dropSteps" => drop_steps(input),
+        // A save `rows.files` gave landed, or didn't (it may be part done): what's on disk is what it
+        // wrote, or isn't known, and the next save gives every file, to compare.
+        "rows.saved" => table(input, |t| {
+            let save = input.get("save").and_then(J::as_u64).ok_or("the input needs \"save\": the number rows.files gave")?;
+            let landed = input.get("landed").and_then(J::as_bool).ok_or("the input needs \"landed\": whether the save landed")?;
+            t.disk = match t.saving.take() {
+                Some((n, files, computed)) if n == save && landed => crate::save::OnDisk::Saved { files, computed },
+                // Another save since, or this one not landed: what's there isn't known.
+                _ => crate::save::OnDisk::Unknown,
+            };
+            Ok("null".to_string())
+        }),
         "rows.ids" => table(input, |t| {
             let shown = t.view(input)?;
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
@@ -662,8 +679,10 @@ impl Window {
 
 /// `rows.window`: rows `from` up to `to` of a held table.
 pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
-    if op != "rows.window" {
-        return Err(format!("{op:?} isn't an operation that gives rows; there is rows.window"));
+    match op {
+        "rows.window" => {}
+        "rows.files" => return files(input),
+        _ => return Err(format!("{op:?} isn't an operation that gives rows; there are rows.window, rows.files")),
     }
     table(input, |t| {
         let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
@@ -751,6 +770,44 @@ pub(crate) fn window(op: &str, input: &J) -> Result<Window, String> {
                     }
                     _ => {}
                 }
+            }
+        }
+        Ok(w)
+    })
+}
+
+/// `rows.files`: a held table's rows as its rows files (`save::layout`), in order: per file, its kind
+/// (0: it's the file on disk, its name alone; 1: its text follows its name; 2: its text follows, to
+/// compare with the file there before writing it), and in `texts` its name and its text; and in
+/// `numbers`, the save's number, for `rows.saved`. `names`: the rows files read, in order;
+/// `computed`: the fields not stored; `limit`: how large a file grows before the next (25 MB).
+fn files(input: &J) -> Result<Window, String> {
+    let strings = |key: &str| -> Result<Vec<String>, String> {
+        match input.get(key) {
+            None | Some(J::Null) => Ok(Vec::new()),
+            Some(J::Array(a)) => a.iter().map(|v| v.as_str().map(str::to_string).ok_or_else(|| format!("{key:?} holds names, as text"))).collect(),
+            Some(_) => Err(format!("{key:?} is a list of names")),
+        }
+    };
+    let names = strings("names")?;
+    let computed = strings("computed")?;
+    let limit = input.get("limit").and_then(J::as_u64).map_or(crate::save::ROWS_FILE_BYTES, |l| l as usize);
+    table(input, |t| {
+        let (saved, written) = crate::save::layout(&t.rows, &names, &computed, limit, &t.disk)?;
+        t.next_save += 1;
+        t.saving = Some((t.next_save, written, computed));
+        let mut w = Window::default();
+        w.numbers.push(t.next_save as f64);
+        let mut units = 0u32;
+        for f in saved {
+            w.kinds.push(match (&f.text, f.compare) {
+                (None, _) => 0,
+                (Some(_), false) => 1,
+                (Some(_), true) => 2,
+            });
+            w.text(&f.name, &mut units);
+            if let Some(text) = f.text {
+                w.text(&text, &mut units);
             }
         }
         Ok(w)

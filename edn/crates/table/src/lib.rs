@@ -20,6 +20,7 @@ pub mod edit;
 pub mod held;
 pub mod problems;
 pub mod rows;
+pub mod save;
 pub mod view;
 
 use serde_json::Value as J;
@@ -49,6 +50,7 @@ pub const OPS: &[&str] = &[
     "rows.undoNames",
     "rows.undoDepth",
     "rows.dropSteps",
+    "rows.saved",
     "rows.free",
     "check.new",
     "check.begin",
@@ -62,7 +64,7 @@ pub const OPS: &[&str] = &[
 pub const BYTES_OPS: &[&str] = &["rows.read", "check.piece"];
 
 /// The operations `window` knows: rows out as typed arrays.
-pub const WINDOW_OPS: &[&str] = &["rows.window"];
+pub const WINDOW_OPS: &[&str] = &["rows.window", "rows.files"];
 
 /// The checks `check` answers: a yes or no about one text.
 fn checks(op: &str) -> Option<fn(&str) -> bool> {
