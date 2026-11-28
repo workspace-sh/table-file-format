@@ -71,6 +71,7 @@ pub struct Extra {
     pub value: Cell,
 }
 
+/// Where a row's line is: in a rows file as read, or (`file` EDITS) among the lines edits wrote.
 #[derive(Clone, Copy, Debug)]
 struct RowAt {
     file: u32,
@@ -78,21 +79,67 @@ struct RowAt {
     len: u32,
 }
 
+/// The `file` of a row whose line an edit wrote.
+const EDITS: u32 = u32::MAX;
+
 /// A table's rows, held by the engine.
+///
+/// Each row is a slot: its line, its id and its cells, made once and never changed. Slots are
+/// only ever added, so an edit (step 3) writes the row it changes as a new slot, and a row
+/// removed keeps its slot until the table is let go. A row's place in the table is its place in
+/// `order`; until an edit adds, removes or moves a row there's no `order`, and a row's place is its
+/// slot. Everything outside this file names rows by place.
 pub struct Rows {
     names: Vec<String>,
     by_name: HashMap<String, usize>,
     files: Vec<(String, Vec<u8>)>,
+    /// By slot.
     rows: Vec<RowAt>,
+    /// By slot.
     ids: Vec<Cell>,
-    /// Row-major: `rows × names`.
+    /// Slot-major: `slots × names`.
     cells: Vec<Cell>,
-    /// By row, in row order.
+    /// By slot, in slot order.
     extras: Vec<Extra>,
     lines: Vec<Line>,
+    /// A live row's slot, by its id.
     by_id: HashMap<u64, u32>,
     by_id_rest: HashMap<Box<[u8]>, u32>,
+    /// Slots by place, once an edit has added, removed or moved a row.
+    order: Option<Vec<u32>>,
+    /// Places by slot (`DEAD` for a row that isn't in the table), made again when `order` changes.
+    places: Vec<u32>,
+    places_made: bool,
+    /// The first place whose row's place may be out of date, when they aren't made.
+    places_from: usize,
+    /// The lines edits wrote.
+    edits: Vec<u8>,
+    /// The slot as read of each row an edit wrote: what its line is written from, so values
+    /// nobody changed keep their bytes.
+    origin: HashMap<u32, u32>,
+    /// Rows an edit took out, by id: the slot each was last, so one put back as it was is its line as it was.
+    gone: HashMap<Box<str>, u32>,
+    /// While an edit is under way: each id it pointed elsewhere, and the slot it was (`mark`);
+    /// and each it set as gone, and what it was.
+    id_log: Option<Vec<(Box<str>, Option<u32>)>>,
+    gone_log: Vec<(Box<str>, Option<u32>)>,
+    /// And each change to `order`, to undo in turn.
+    order_log: Vec<OrderStep>,
+    /// Rows written over in their own slot (`overwrite`): where each line was as read.
+    read_at: HashMap<u32, RowAt>,
+    /// While an edit is under way: each slot it wrote over, as it was.
+    slot_log: Vec<(u32, RowAt, Cell, Vec<Cell>, bool)>,
 }
+
+/// A change to `order`, as `undo_to` undoes it.
+enum OrderStep {
+    Replaced(u32, u32),
+    Inserted(u32),
+    Removed(u32, u32),
+}
+
+/// A slot whose row isn't in the table.
+pub const DEAD: u32 = u32::MAX;
 
 fn hash(b: &[u8]) -> u64 {
     // FNV-1a: ids are short, and this needs no state between runs.
@@ -143,11 +190,33 @@ impl Rows {
             lines: Vec::new(),
             by_id: HashMap::new(),
             by_id_rest: HashMap::new(),
+            order: None,
+            places: Vec::new(),
+            places_made: true,
+            places_from: usize::MAX,
+            edits: Vec::new(),
+            origin: HashMap::new(),
+            gone: HashMap::new(),
+            id_log: None,
+            gone_log: Vec::new(),
+            order_log: Vec::new(),
+            read_at: HashMap::new(),
+            slot_log: Vec::new(),
         }
     }
 
+    /// How many rows the table has.
     pub fn len(&self) -> usize {
-        self.rows.len()
+        self.order.as_ref().map_or(self.rows.len(), Vec::len)
+    }
+
+    /// A row's slot, by its place.
+    #[inline]
+    pub fn slot(&self, row: usize) -> usize {
+        match &self.order {
+            None => row,
+            Some(o) => o[row] as usize,
+        }
     }
 
     /// The bytes of the files read, given back for another use: the rows are let go.
@@ -156,7 +225,7 @@ impl Rows {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.rows.is_empty()
+        self.len() == 0
     }
 
     pub fn names(&self) -> &[String] {
@@ -174,12 +243,20 @@ impl Rows {
             + (self.ids.capacity() + self.cells.capacity()) * std::mem::size_of::<Cell>()
             + self.extras.capacity() * std::mem::size_of::<Extra>()
             + self.by_id.capacity() * 16
+            + self.edits.capacity()
+            + (self.order.as_ref().map_or(0, Vec::capacity) + self.places.capacity()) * 4
     }
 
-    /// A row's line, as read.
+    /// A row's line: as read, or as an edit wrote it.
     pub fn line(&self, row: usize) -> &[u8] {
-        let r = self.rows[row];
-        &self.files[r.file as usize].1[r.start as usize..(r.start + r.len) as usize]
+        self.slot_line(self.slot(row))
+    }
+
+    /// A slot's line.
+    pub fn slot_line(&self, slot: usize) -> &[u8] {
+        let r = self.rows[slot];
+        let bytes = if r.file == EDITS { &self.edits } else { &self.files[r.file as usize].1 };
+        &bytes[r.start as usize..(r.start + r.len) as usize]
     }
 
     /// A line that isn't a row, as read.
@@ -189,7 +266,18 @@ impl Rows {
 
     /// A row's id.
     pub fn id(&self, row: usize) -> String {
-        self.text(row, self.ids[row]).unwrap_or_default()
+        self.slot_id(self.slot(row))
+    }
+
+    /// A slot's id.
+    pub fn slot_id(&self, slot: usize) -> String {
+        let c = self.ids[slot];
+        let line = self.slot_line(slot);
+        match c.kind {
+            kind::TEXT => String::from_utf8_lossy(&line[c.start as usize..(c.start + c.len) as usize]).into_owned(),
+            kind::ESCAPED => serde_json::from_slice(&line[c.start as usize - 1..(c.start + c.len) as usize + 1]).unwrap_or_default(),
+            _ => String::new(),
+        }
     }
 
     /// The schema field a name is, if it's one.
@@ -201,19 +289,27 @@ impl Rows {
     pub fn cell_named(&self, row: usize, field: Option<usize>, name: &str) -> Cell {
         match field {
             Some(f) => self.cells(row)[f],
-            None if name == "id" => self.ids[row],
+            None if name == "id" => self.ids[self.slot(row)],
             None => self.extras(row).iter().find(|e| e.key == name).map_or(Cell::default(), |e| e.value),
         }
     }
 
     /// Whether any row has a key the schema doesn't name by this name.
     pub fn has_extra(&self, name: &str) -> bool {
-        self.extras.iter().any(|e| e.key == name)
+        self.extras.iter().any(|e| e.key == name && self.live(e.row as usize))
+    }
+
+    /// Whether a slot's row is in the table.
+    fn live(&self, slot: usize) -> bool {
+        match &self.order {
+            None => true,
+            Some(_) => self.places.get(slot).is_some_and(|&p| p != DEAD),
+        }
     }
 
     /// Where a row's id is in its line.
     pub fn id_cell(&self, row: usize) -> Cell {
-        self.ids[row]
+        self.ids[self.slot(row)]
     }
 
     /// A cell's bytes in its row.
@@ -235,13 +331,23 @@ impl Rows {
 
     /// A row's cells, in the schema's order.
     pub fn cells(&self, row: usize) -> &[Cell] {
+        self.slot_cells(self.slot(row))
+    }
+
+    /// A slot's cells, in the schema's order.
+    pub fn slot_cells(&self, slot: usize) -> &[Cell] {
         let n = self.names.len();
-        &self.cells[row * n..(row + 1) * n]
+        &self.cells[slot * n..(slot + 1) * n]
     }
 
     /// The keys the schema doesn't name, in a row.
     pub fn extras(&self, row: usize) -> &[Extra] {
-        let row = row as u32;
+        self.slot_extras(self.slot(row))
+    }
+
+    /// The keys the schema doesn't name, in a slot.
+    pub fn slot_extras(&self, slot: usize) -> &[Extra] {
+        let row = slot as u32;
         let from = self.extras.partition_point(|e| e.row < row);
         let to = self.extras.partition_point(|e| e.row <= row);
         &self.extras[from..to]
@@ -249,8 +355,20 @@ impl Rows {
 
     /// The row an id is, if any.
     pub fn row_of(&self, id: &str) -> Option<usize> {
+        let slot = self.slot_of(id)?;
+        match &self.order {
+            None => Some(slot),
+            Some(_) => {
+                debug_assert!(self.places_made, "places are made at the end of every edit");
+                self.places.get(slot).filter(|&&p| p != DEAD).map(|&p| p as usize)
+            }
+        }
+    }
+
+    /// The slot of the row an id is, if any.
+    pub fn slot_of(&self, id: &str) -> Option<usize> {
         let found = match self.by_id.get(&hash(id.as_bytes())) {
-            Some(&r) if self.id(r as usize) == id => Some(r),
+            Some(&r) if self.slot_id(r as usize) == id => Some(r),
             _ => self.by_id_rest.get(id.as_bytes()).copied(),
         };
         found.map(|r| r as usize)
@@ -298,6 +416,9 @@ impl Rows {
     /// device, over P2P), so what's too large to hold is an error, never an abort: nothing here
     /// allocates on what a file says without asking first. Refused, the table is as it was.
     pub fn read_within(&mut self, name: &str, bytes: Vec<u8>, strip_bom: bool, limits: Limits) -> Result<usize, String> {
+        if self.order.is_some() || !self.edits.is_empty() {
+            return Err(format!("{name} can't be read into a table that has been edited"));
+        }
         let mut bytes = lossy(bytes)?;
         if strip_bom && bytes.starts_with("\u{feff}".as_bytes()) {
             bytes.drain(..3);
@@ -415,6 +536,344 @@ impl Rows {
         debug_assert_eq!(self.cells.len(), self.rows.len() * n);
         Ok(())
     }
+}
+
+/// What an edit changes in the rows, a step at a time (`edit.rs` decides which steps).
+impl Rows {
+    /// How many slots there are: rows as read, and rows edits wrote.
+    pub fn slots(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// The slot a row an edit wrote was written from: the row as read, or the row as inserted.
+    pub fn origin_of(&self, slot: usize) -> usize {
+        self.origin.get(&(slot as u32)).map_or(slot, |&o| o as usize)
+    }
+
+    /// The line a row an edit wrote was written from, as read (or as inserted).
+    pub fn origin_line(&self, slot: usize) -> &[u8] {
+        match self.read_at.get(&(slot as u32)) {
+            Some(r) => &self.files[r.file as usize].1[r.start as usize..(r.start + r.len) as usize],
+            None => self.slot_line(self.origin_of(slot)),
+        }
+    }
+
+    /// Whether rows are still in their slots' order: no row added, removed or moved.
+    pub fn in_slot_order(&self) -> bool {
+        self.order.is_none()
+    }
+
+    /// A row's line written over in its own slot, as long as the rows are in their slots' order
+    /// and neither line has a key the schema doesn't name: so an edit to a cell needs no order
+    /// (one for a million rows is 4 MB). `as_read`: the line is the row's as read. False, and
+    /// nothing done, when it can't be.
+    pub fn overwrite(&mut self, slot: usize, line: &[u8], as_read: bool) -> Result<bool, String> {
+        if self.order.is_some() || !self.slot_extras(slot).is_empty() {
+            return Ok(false);
+        }
+        let n = self.names.len();
+        let mut cells = vec![Cell::default(); n];
+        let mut extras: Vec<(String, Cell)> = Vec::new();
+        let mut seen_extras: HashMap<String, usize> = HashMap::new();
+        let mut id: Option<Cell> = None;
+        let read = {
+            let mut de = serde_json::Deserializer::from_slice(line);
+            let got = de.deserialize_any(RowVisitor { line, by_name: &self.by_name, cells: &mut cells, extras: &mut extras, seen_extras: &mut seen_extras, id: &mut id });
+            got.and_then(|is_row| de.end().map(|()| is_row))
+        };
+        if !matches!(read, Ok(true)) || !extras.is_empty() || !id.is_some_and(|c| matches!(c.kind, kind::TEXT | kind::ESCAPED)) {
+            return Ok(false);
+        }
+        let was = self.rows[slot];
+        let at = if as_read {
+            match self.read_at.get(&(slot as u32)) {
+                Some(&r) => r,
+                None => return Ok(false),
+            }
+        } else {
+            if self.edits.len() + line.len() > u32::MAX as usize {
+                return Err("the table is too large to edit".into());
+            }
+            self.edits.try_reserve(line.len()).map_err(|_| "the table is too large to edit".to_string())?;
+            let start = self.edits.len() as u32;
+            self.edits.extend_from_slice(line);
+            RowAt { file: EDITS, start, len: line.len() as u32 }
+        };
+        let first = !self.read_at.contains_key(&(slot as u32));
+        if self.id_log.is_some() {
+            self.slot_log.push((slot as u32, was, self.ids[slot], self.slot_cells(slot).to_vec(), first));
+        }
+        if first {
+            self.read_at.insert(slot as u32, was);
+        }
+        self.rows[slot] = at;
+        self.ids[slot] = id.expect("checked");
+        self.cells[slot * n..(slot + 1) * n].copy_from_slice(&cells);
+        Ok(true)
+    }
+
+    fn ensure_order(&mut self) {
+        if self.order.is_none() {
+            // Room for some rows more, so the first ones added don't make either again.
+            let n = self.rows.len();
+            let room = n + n / 16 + 16;
+            let mut order = Vec::with_capacity(room);
+            order.extend(0..n as u32);
+            let mut places = Vec::with_capacity(room);
+            places.extend(0..n as u32);
+            self.order = Some(order);
+            self.places = places;
+            self.places_made = true;
+            self.places_from = usize::MAX;
+        }
+    }
+
+    /// A slot's place in the table, if its row is in it.
+    pub fn place_of(&mut self, slot: usize) -> Option<usize> {
+        if self.order.is_none() {
+            return (slot < self.rows.len()).then_some(slot);
+        }
+        self.make_places();
+        self.places.get(slot).filter(|&&p| p != DEAD).map(|&p| p as usize)
+    }
+
+    /// Places made again after rows were added, removed or moved.
+    pub fn make_places(&mut self) {
+        if self.places_made {
+            return;
+        }
+        let order = self.order.as_ref().expect("places are only unmade with an order");
+        // Rows before the first place changed are where they were: only those from it on move.
+        if self.places.len() < self.rows.len() {
+            self.places.resize(self.rows.len(), DEAD);
+        }
+        let from = self.places_from.min(order.len());
+        for (at, &slot) in order.iter().enumerate().skip(from) {
+            self.places[slot as usize] = at as u32;
+        }
+        self.places_from = usize::MAX;
+        self.places_made = true;
+    }
+
+    /// A line an edit wrote, held as a new slot (not yet in the table): `origin`, the slot it was
+    /// written from. An error, and nothing held, when it isn't a row with an id.
+    pub fn push_line(&mut self, line: &[u8], origin: Option<usize>) -> Result<usize, String> {
+        let too_large = || "the table is too large to edit".to_string();
+        if self.rows.len() >= u32::MAX as usize - 1 || self.edits.len() + line.len() > u32::MAX as usize {
+            return Err(too_large());
+        }
+        let n = self.names.len();
+        let mut cells = vec![Cell::default(); n];
+        let mut extras: Vec<(String, Cell)> = Vec::new();
+        let mut seen_extras: HashMap<String, usize> = HashMap::new();
+        let mut id: Option<Cell> = None;
+        let read = {
+            let mut de = serde_json::Deserializer::from_slice(line);
+            let got = de.deserialize_any(RowVisitor { line, by_name: &self.by_name, cells: &mut cells, extras: &mut extras, seen_extras: &mut seen_extras, id: &mut id });
+            got.and_then(|is_row| de.end().map(|()| is_row))
+        };
+        if !matches!(read, Ok(true)) || !id.is_some_and(|c| matches!(c.kind, kind::TEXT | kind::ESCAPED)) {
+            return Err("an edit wrote a line that isn't a row with an id".into());
+        }
+        self.edits.try_reserve(line.len()).map_err(|_| too_large())?;
+        self.rows.try_reserve(1).map_err(|_| too_large())?;
+        self.ids.try_reserve(1).map_err(|_| too_large())?;
+        self.cells.try_reserve(n).map_err(|_| too_large())?;
+        self.extras.try_reserve(extras.len()).map_err(|_| too_large())?;
+        self.ensure_order();
+        self.places.try_reserve(1).map_err(|_| too_large())?;
+        let slot = self.rows.len() as u32;
+        let start = self.edits.len() as u32;
+        self.edits.extend_from_slice(line);
+        self.rows.push(RowAt { file: EDITS, start, len: line.len() as u32 });
+        self.ids.push(id.unwrap_or_default());
+        self.cells.extend_from_slice(&cells);
+        self.extras.extend(extras.into_iter().map(|(key, value)| Extra { row: slot, key, value }));
+        self.places.push(DEAD);
+        if let Some(o) = origin {
+            // Written over in its slot before: its line as read is where that one's is.
+            if let Some(&r) = self.read_at.get(&(o as u32)) {
+                self.read_at.insert(slot, r);
+            }
+            let o = self.origin_of(o) as u32;
+            self.origin.insert(slot, o);
+        }
+        Ok(slot as usize)
+    }
+
+    /// The row an id is, as a slot, set (or, with None, the id named no row).
+    pub fn set_slot_of(&mut self, id: &str, slot: Option<usize>) {
+        let was = self.slot_of(id).map(|s| s as u32);
+        if let Some(log) = self.id_log.as_mut() {
+            log.push((id.into(), was));
+        }
+        self.point(id, slot);
+    }
+
+    fn point(&mut self, id: &str, slot: Option<usize>) {
+        let h = hash(id.as_bytes());
+        let first = self.by_id.get(&h).copied().filter(|&r| self.slot_id(r as usize) == id);
+        match (first, slot) {
+            (Some(_), Some(s)) => {
+                self.by_id.insert(h, s as u32);
+            }
+            (Some(_), None) => {
+                self.by_id.remove(&h);
+            }
+            (None, Some(s)) => {
+                if self.by_id_rest.contains_key(id.as_bytes()) || self.by_id.contains_key(&h) {
+                    self.by_id_rest.insert(id.as_bytes().into(), s as u32);
+                } else {
+                    self.by_id.insert(h, s as u32);
+                }
+            }
+            (None, None) => {
+                self.by_id_rest.remove(id.as_bytes());
+            }
+        }
+    }
+
+    /// The slot a row taken out by an edit was last, if it hasn't been put back.
+    pub fn gone_slot(&self, id: &str) -> Option<usize> {
+        self.gone.get(id).map(|&s| s as usize)
+    }
+
+    /// A row taken out (Some, its slot), or put back (None).
+    pub fn set_gone(&mut self, id: &str, slot: Option<usize>) {
+        let was = match slot {
+            Some(s) => self.gone.insert(id.into(), s as u32),
+            None => self.gone.remove(id),
+        };
+        if self.id_log.is_some() {
+            self.gone_log.push((id.into(), was));
+        }
+    }
+
+    /// The row at a place is now the one in `slot`.
+    pub fn replace_place(&mut self, at: usize, slot: usize) {
+        self.ensure_order();
+        let order = self.order.as_mut().expect("made");
+        let old = std::mem::replace(&mut order[at], slot as u32) as usize;
+        if self.id_log.is_some() {
+            self.order_log.push(OrderStep::Replaced(at as u32, old as u32));
+        }
+        if self.places_made {
+            self.places[old] = DEAD;
+            self.places[slot] = at as u32;
+        }
+    }
+
+    /// A row put in at a place, those from there on one further along.
+    pub fn insert_place(&mut self, at: usize, slot: usize) -> Result<(), String> {
+        self.ensure_order();
+        let order = self.order.as_mut().expect("made");
+        order.try_reserve(1).map_err(|_| "the table is too large to edit".to_string())?;
+        order.insert(at, slot as u32);
+        if self.id_log.is_some() {
+            self.order_log.push(OrderStep::Inserted(at as u32));
+        }
+        self.places_made = false;
+        self.places_from = self.places_from.min(at);
+        Ok(())
+    }
+
+    /// The row at a place taken out of the table: its slot.
+    pub fn remove_place(&mut self, at: usize) -> usize {
+        self.ensure_order();
+        let slot = self.order.as_mut().expect("made").remove(at) as usize;
+        if self.id_log.is_some() {
+            self.order_log.push(OrderStep::Removed(at as u32, slot as u32));
+        }
+        if let Some(p) = self.places.get_mut(slot) {
+            *p = DEAD;
+        }
+        self.places_made = false;
+        self.places_from = self.places_from.min(at);
+        slot
+    }
+
+    /// What `undo_to` puts the rows back to.
+    /// Until `commit` or `undo_to`, what changes is kept to undo.
+    pub fn mark(&mut self) -> Mark {
+        self.id_log = Some(Vec::new());
+        self.gone_log.clear();
+        self.order_log.clear();
+        self.slot_log.clear();
+        Mark { slots: self.rows.len(), edits: self.edits.len(), extras: self.extras.len(), ordered: self.order.is_some() }
+    }
+
+    /// The edit since the mark stands.
+    pub fn commit(&mut self, _m: Mark) {
+        self.id_log = None;
+        self.gone_log.clear();
+        self.order_log.clear();
+        self.slot_log.clear();
+        if self.order.is_some() {
+            self.make_places();
+        }
+    }
+
+    /// The rows as they were at a mark: an edit the engine couldn't finish changes nothing.
+    pub fn undo_to(&mut self, m: Mark) {
+        let n = self.names.len();
+        // Rows written over in their slots, as they were (their lines are still here).
+        for (slot, at, id, cells, first) in std::mem::take(&mut self.slot_log).into_iter().rev() {
+            let s = slot as usize;
+            self.rows[s] = at;
+            self.ids[s] = id;
+            self.cells[s * n..(s + 1) * n].copy_from_slice(&cells);
+            if first {
+                self.read_at.remove(&slot);
+            }
+        }
+        // Ids next, while every slot they name is still here to read.
+        for (id, was) in self.id_log.take().unwrap_or_default().into_iter().rev() {
+            self.point(&id, was.map(|s| s as usize));
+        }
+        for (id, was) in std::mem::take(&mut self.gone_log).into_iter().rev() {
+            match was {
+                Some(s) => self.gone.insert(id, s),
+                None => self.gone.remove(&id),
+            };
+        }
+        for s in m.slots..self.rows.len() {
+            self.origin.remove(&(s as u32));
+            self.read_at.remove(&(s as u32));
+        }
+        self.rows.truncate(m.slots);
+        self.ids.truncate(m.slots);
+        self.cells.truncate(m.slots * n);
+        self.extras.truncate(m.extras);
+        self.edits.truncate(m.edits);
+        if let Some(order) = self.order.as_mut() {
+            for step in std::mem::take(&mut self.order_log).into_iter().rev() {
+                match step {
+                    OrderStep::Replaced(at, old) => order[at as usize] = old,
+                    OrderStep::Inserted(at) => {
+                        order.remove(at as usize);
+                    }
+                    OrderStep::Removed(at, slot) => order.insert(at as usize, slot),
+                }
+            }
+        }
+        if !m.ordered {
+            self.order = None;
+        }
+        self.places_made = self.order.is_none();
+        self.places.clear();
+        self.places_from = 0;
+        if self.order.is_some() {
+            self.make_places();
+        }
+    }
+}
+
+/// The rows as they were before an edit, to go back to if it can't be finished.
+pub struct Mark {
+    slots: usize,
+    edits: usize,
+    extras: usize,
+    ordered: bool,
 }
 
 /// Keeps a line that isn't a row, or says the file is too large to.

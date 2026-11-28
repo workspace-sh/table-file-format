@@ -110,19 +110,7 @@ fn problems(input: &J) -> Result<String, String> {
     let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
     let to = input.get("to").and_then(J::as_u64).map_or(0, |x| x as usize);
     with(|held| {
-        // A relation's target: the ids its rows hold, from a table held here or as the caller gives them.
-        let mut targets = crate::problems::Targets::new();
-        for (field, target) in input.get("targets").and_then(J::as_object).into_iter().flatten() {
-            let ids: std::collections::HashSet<String> = match (target.get("handle").and_then(J::as_u64), target.get("ids").and_then(J::as_array)) {
-                (Some(t), _) => {
-                    let other = held.tables.get(&(t as u32)).ok_or_else(|| format!("no table is held as {t}"))?;
-                    (0..other.rows.len()).map(|r| other.rows.id(r)).collect()
-                }
-                (None, Some(ids)) => ids.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
-                _ => continue,
-            };
-            targets.insert(field.clone(), ids);
-        }
+        let targets = targets_of(held, input)?;
         let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
         if t.problems.as_ref().map(|(k, _)| k) != Some(&key) {
             match crate::problems::problems(&t.rows, input, &targets)? {
@@ -142,6 +130,104 @@ fn problems(input: &J) -> Result<String, String> {
         }
         out.push_str("},\"found\":");
         out.push_str(&p.window(&t.rows, from, to));
+        out.push('}');
+        Ok(out)
+    })
+}
+
+/// A relation's target: the ids its rows hold, from a table held here or as the caller gives them.
+fn targets_of(held: &Held, input: &J) -> Result<crate::problems::Targets, String> {
+    let mut targets = crate::problems::Targets::new();
+    for (field, target) in input.get("targets").and_then(J::as_object).into_iter().flatten() {
+        let ids: std::collections::HashSet<String> = match (target.get("handle").and_then(J::as_u64), target.get("ids").and_then(J::as_array)) {
+            (Some(t), _) => {
+                let other = held.tables.get(&(t as u32)).ok_or_else(|| format!("no table is held as {t}"))?;
+                (0..other.rows.len()).map(|r| other.rows.id(r)).collect()
+            }
+            (None, Some(ids)) => ids.iter().filter_map(|s| s.as_str().map(str::to_string)).collect(),
+            _ => continue,
+        };
+        targets.insert(field.clone(), ids);
+    }
+    Ok(targets)
+}
+
+/// Every problem of a table, each as its JSON says it (which names rows by id, never by place).
+fn every_problem(rows: &Rows, input: &J, targets: &crate::problems::Targets) -> Result<Option<(crate::problems::Problems, Vec<String>)>, String> {
+    let Some(p) = crate::problems::problems(rows, input, targets)? else { return Ok(None) };
+    let all: Vec<J> = serde_json::from_str(&p.window(rows, 0, p.found.len())).map_err(|e| e.to_string())?;
+    let said = all.iter().map(|f| f.to_string()).collect();
+    Ok(Some((p, said)))
+}
+
+/// `rows.apply`: changes to a held table's rows (step 3a, `edit.rs`). With `problems` (what
+/// `rows.problems` is asked), the problems the changes made and the ones they ended.
+fn apply(input: &J) -> Result<String, String> {
+    let h = handle(input)?;
+    with(|held| {
+        let asked = input.get("problems").filter(|p| p.is_object()).cloned();
+        let targets = match &asked {
+            Some(p) => Some(targets_of(held, p)?),
+            None => None,
+        };
+        let t = held.tables.get_mut(&h).ok_or_else(|| format!("no table is held as {h}"))?;
+        let before = match (&asked, &targets) {
+            (Some(p), Some(targets)) => every_problem(&t.rows, p, targets)?.map(|(_, said)| said),
+            _ => None,
+        };
+        let applied = crate::edit::apply(&mut t.rows, input)?;
+        // What was worked out of the rows before is of other rows now.
+        if !applied.changed.is_empty() {
+            t.views.clear();
+            t.problems = None;
+            t.conformance = Conformance::new();
+        }
+        let mut out = String::from("{\"changed\":");
+        out.push_str(&crate::edit::json(&J::from(applied.changed)));
+        out.push_str(",\"events\":");
+        out.push_str(&crate::edit::json(&J::Array(applied.events)));
+        out.push_str(",\"effects\":");
+        out.push_str(&crate::edit::json(&J::Array(applied.effects)));
+        if let (Some(p), Some(targets), Some(was)) = (&asked, &targets, before) {
+            if let Some((now, said)) = every_problem(&t.rows, p, targets)? {
+                // Each problem counted, so one said twice and now once is one ended.
+                let mut left: HashMap<&str, usize> = HashMap::new();
+                for s in &was {
+                    *left.entry(s.as_str()).or_default() += 1;
+                }
+                let mut found = Vec::new();
+                for s in &said {
+                    match left.get_mut(s.as_str()) {
+                        Some(n) if *n > 0 => *n -= 1,
+                        _ => found.push(s.as_str()),
+                    }
+                }
+                let mut ended: HashMap<&str, usize> = HashMap::new();
+                for s in &said {
+                    *ended.entry(s.as_str()).or_default() += 1;
+                }
+                let mut gone = Vec::new();
+                for s in &was {
+                    match ended.get_mut(s.as_str()) {
+                        Some(n) if *n > 0 => *n -= 1,
+                        _ => gone.push(s.as_str()),
+                    }
+                }
+                out.push_str(&format!(",\"problems\":{{\"total\":{},\"counts\":{{", now.found.len()));
+                for (i, (code, n)) in now.counts.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    out.push_str(&format!("\"{code}\":{n}"));
+                }
+                out.push_str("},\"found\":[");
+                out.push_str(&found.join(","));
+                out.push_str("],\"gone\":[");
+                out.push_str(&gone.join(","));
+                out.push_str("]}");
+                t.problems = Some((p.to_string(), now));
+            }
+        }
         out.push('}');
         Ok(out)
     })
@@ -225,6 +311,7 @@ pub(crate) fn call(op: &str, input: &J) -> Option<Result<String, String>> {
             Ok(out)
         }),
         "rows.problems" => problems(input),
+        "rows.apply" => apply(input),
         "rows.ids" => table(input, |t| {
             let shown = t.view(input)?;
             let from = input.get("from").and_then(J::as_u64).unwrap_or(0) as usize;
