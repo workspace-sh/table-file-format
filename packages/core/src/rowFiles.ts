@@ -130,21 +130,27 @@ export function layoutRows(
     groups[at]!.push({ id: row.id, text: line(row) });
   }
   // Lines that couldn't be read, after the row they followed (before every row: the first file's start;
-  // after a row that's gone: the end).
+  // after a row that's gone: the end), in the order they were read.
+  let front = 0;
+  const end: string[] = [];
   for (const u of options.unread ?? []) {
     if (u.after === null) {
-      groups[0]!.unshift({ id: null, text: u.text });
+      groups[0]!.splice(front++, 0, { id: null, text: u.text });
       continue;
     }
     const k = groups.findIndex((g) => g.some((e) => e.id === u.after));
     if (k < 0) {
-      const filled = [...groups].reverse().find((g) => g.length > 0) ?? groups[0]!;
-      filled.push({ id: null, text: u.text });
+      end.push(u.text);
       continue;
     }
     const lines = groups[k]!;
-    lines.splice(lines.findIndex((e) => e.id === u.after) + 1, 0, { id: null, text: u.text });
+    // After its row, and after the lines put there before it.
+    let at = lines.findIndex((e) => e.id === u.after) + 1;
+    while (at < lines.length && lines[at]!.id === null) at++;
+    lines.splice(at, 0, { id: null, text: u.text });
   }
+  const filled = [...groups].reverse().find((g) => g.length > 0) ?? groups[0]!;
+  for (const text of end) filled.push({ id: null, text });
 
   const out: { name: string; text: string }[] = [];
   groups.forEach((lines, k) => {
