@@ -21,7 +21,8 @@ test("the schema-errors example in words: the conflict first, then values, warni
   assert.equal(items[0]!.group, "decisions");
   assert.equal(items[0]!.title, "Two versions of row 35");
   // Plain words for anyone; the file and its lines for whoever looks closer.
-  assert.equal(items[0]!.where, "row 35");
+  // The title names the row, so the line under it says what differs instead of naming it again.
+  assert.equal(items[0]!.where, "Differs in problem");
   assert.match(items[0]!.technical!.where, /^rows\/0001\.ndjson · lines /);
   assert.equal(items[0]!.technical!.lines.length, 5);
   assert.match(items[0]!.technical!.lines[0]!.text, /^<<<<<<</);
