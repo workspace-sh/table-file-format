@@ -332,6 +332,231 @@ pub fn problems(r: &Rows, input: &J, targets: &Targets) -> Result<Option<Problem
     Ok(Some(Problems { spec, bodies, attachments, found, counts }))
 }
 
+/// What a batch of edits could change the problems of (step 3a): the rows it names, and the values
+/// those rows held before it or hold after it, by what reaches other rows. A problem outside it is
+/// the same before and after.
+#[derive(Default)]
+pub struct Scope {
+    pub ids: HashSet<String>,
+    /// Each unique field's values (by schema field), as `JSON.stringify` writes them.
+    unique: Vec<HashSet<String>>,
+    /// Each key's values, as a repeat of it is found.
+    keys: Vec<HashSet<String>>,
+    /// Each choice field's texts.
+    choices: Vec<HashSet<String>>,
+    /// Attachments' files.
+    files: HashSet<String>,
+}
+
+/// A JSON value as `js` gives a cell of it (for an edit's values, which are JSON, not a row's cells).
+fn js_of(v: Option<&J>) -> (bool, Option<String>) {
+    // (empty, its JSON.stringify)
+    match v {
+        None => (true, None),
+        Some(J::Null) => (true, Some("null".into())),
+        Some(J::String(s)) if s.is_empty() => (true, Some("\"\"".into())),
+        Some(x) => {
+            let mut out = String::new();
+            write_js(&mut out, x);
+            (false, Some(out))
+        }
+    }
+}
+
+impl Scope {
+    /// The scope of rows named `ids`, with these values (each row's before and after, where it has them).
+    pub fn of(r: &Rows, schema: &J, ids: impl IntoIterator<Item = String>, values: &[&serde_json::Map<String, J>]) -> Result<Option<Scope>, String> {
+        let Some(spec) = spec(r, schema)? else { return Ok(None) };
+        let mut s = Scope { ids: ids.into_iter().collect(), unique: vec![HashSet::new(); spec.fields.len()], keys: vec![HashSet::new(); spec.keys.len()], choices: vec![HashSet::new(); spec.fields.len()], files: HashSet::new() };
+        for row in values {
+            for (i, f) in spec.fields.iter().enumerate() {
+                if f.computed {
+                    continue;
+                }
+                let v = row.get(&f.name);
+                if f.unique {
+                    if let (false, Some(k)) = js_of(v) {
+                        s.unique[i].insert(k);
+                    }
+                }
+                if !f.choices.is_empty() {
+                    match v {
+                        Some(J::String(t)) => {
+                            s.choices[i].insert(t.clone());
+                        }
+                        Some(J::Array(xs)) => {
+                            for x in xs {
+                                if let J::String(t) = x {
+                                    s.choices[i].insert(t.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                if f.attachment {
+                    if let Some(J::String(t)) = v {
+                        s.files.insert(t.clone());
+                    }
+                }
+            }
+            for (k, (code, names)) in spec.keys.iter().enumerate() {
+                let parts: Vec<(bool, Option<String>)> = names.iter().map(|n| js_of(if n == "id" { row.get("id") } else { row.get(n) })).collect();
+                if *code == Code::KeyUnique && parts.iter().any(|(e, _)| *e) {
+                    continue;
+                }
+                s.keys[k].insert(parts.into_iter().map(|(_, j)| j.unwrap_or_default()).collect::<Vec<_>>().join("\u{0}"));
+            }
+        }
+        Ok(Some(s))
+    }
+}
+
+/// The problems a scope holds, each as its JSON says it (which names rows by id, never by place):
+/// what `problems` finds of the table, inside the scope. None when the engine can't promise
+/// memory's answer.
+pub fn scoped(r: &Rows, input: &J, targets: &Targets, scope: &Scope) -> Result<Option<Vec<String>>, String> {
+    let schema = input.get("schema").ok_or("the input needs \"schema\"")?;
+    let Some(spec) = spec(r, schema)? else { return Ok(None) };
+    let bodies = strings(input.get("bodies"));
+    let attachments = input.get("attachments").and_then(J::as_array).map(|x| x.iter().filter_map(|s| s.as_str().map(str::to_string)).collect::<Vec<_>>());
+    let value = |row: usize, field: &Field| js(r, row, r.cell_named(row, field.index, &field.name));
+    let mut found: Vec<Found> = Vec::new();
+
+    // The rows named: their values' problems, and their links.
+    for id in &scope.ids {
+        let Some(row) = r.row_of(id) else { continue };
+        for (i, field) in spec.fields.iter().enumerate() {
+            if field.computed {
+                continue;
+            }
+            value_problems(field, &value(row, field), &mut |code, item| found.push(Found { code, row: row as u32, field: i as u32, at: item, key: NONE }));
+        }
+        for (i, field) in spec.fields.iter().enumerate() {
+            let Some(there) = field.relation_table.as_ref().and_then(|_| targets.get(&field.name)) else { continue };
+            let v = value(row, field);
+            let ids: Vec<(u32, Js)> = match &v {
+                Js::Json(raw) => match view::items(raw) {
+                    Some(xs) => xs.into_iter().enumerate().map(|(n, x)| (n as u32, x)).collect(),
+                    None => vec![(NONE, v.clone())],
+                },
+                _ => vec![(NONE, v.clone())],
+            };
+            for (n, id) in ids {
+                if let Js::Str(s) = &id {
+                    if !s.is_empty() && !there.contains(s.as_ref()) {
+                        found.push(Found { code: Code::RelationDangling, row: row as u32, field: i as u32, at: n, key: NONE });
+                    }
+                }
+            }
+        }
+    }
+
+    // A unique field's repeats, of the values in scope: every row holding one, the first not a repeat.
+    for (i, field) in spec.fields.iter().enumerate() {
+        let wanted = &scope.unique[i];
+        if wanted.is_empty() || !field.unique || field.computed {
+            continue;
+        }
+        // Texts are compared as they are before they're written out: most rows are passed over at once.
+        let texts: HashSet<String> = wanted.iter().filter_map(|k| serde_json::from_str::<String>(k).ok()).collect();
+        let mut first: HashMap<String, u32> = HashMap::new();
+        for row in 0..r.len() {
+            let v = value(row, field);
+            if view::is_empty(&v) {
+                continue;
+            }
+            if let Js::Str(s) = &v {
+                if !texts.contains(s.as_ref()) {
+                    continue;
+                }
+            }
+            let k = stringify(&v);
+            if !wanted.contains(&k) {
+                continue;
+            }
+            match first.entry(k) {
+                std::collections::hash_map::Entry::Occupied(e) => found.push(Found { code: Code::Unique, row: row as u32, field: i as u32, at: *e.get(), key: NONE }),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(row as u32);
+                }
+            }
+        }
+    }
+    // A key's repeats, likewise.
+    for (k, (code, names)) in spec.keys.iter().enumerate() {
+        let wanted = &scope.keys[k];
+        if wanted.is_empty() {
+            continue;
+        }
+        let mut first: HashMap<String, u32> = HashMap::new();
+        for row in 0..r.len() {
+            let values: Vec<Js> = names.iter().map(|n| js(r, row, r.cell_named(row, r.field(n), n))).collect();
+            if *code == Code::KeyUnique && values.iter().any(view::is_empty) {
+                continue;
+            }
+            let key = values.iter().map(|v: &Js| if matches!(v, Js::Undefined) { String::new() } else { stringify(v) }).collect::<Vec<_>>().join("\u{0}");
+            if !wanted.contains(&key) {
+                continue;
+            }
+            match first.entry(key) {
+                std::collections::hash_map::Entry::Occupied(e) => found.push(Found { code: *code, row: row as u32, field: NONE, at: *e.get(), key: k as u32 }),
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(row as u32);
+                }
+            }
+        }
+    }
+    // A choice no row has, of the choices in scope.
+    for (i, field) in spec.fields.iter().enumerate() {
+        if scope.choices[i].is_empty() || field.choices.is_empty() || field.computed {
+            continue;
+        }
+        for (c, choice) in field.choices.iter().enumerate() {
+            if !scope.choices[i].contains(choice) {
+                continue;
+            }
+            let mut used = false;
+            for row in 0..r.len() {
+                texts_held(value(row, field), |s| used |= s == choice);
+                if used {
+                    break;
+                }
+            }
+            if !used {
+                found.push(Found { code: Code::ChoiceUnused, row: NONE, field: i as u32, at: c as u32, key: NONE });
+            }
+        }
+    }
+    // A page whose row isn't there, of the rows named.
+    for (i, id) in bodies.iter().enumerate() {
+        if scope.ids.contains(id) && r.row_of(id).is_none() {
+            found.push(Found { code: Code::BodyOrphaned, row: NONE, field: NONE, at: i as u32, key: NONE });
+        }
+    }
+    // A file no row holds, of the files in scope.
+    let files = attachments.unwrap_or_default();
+    for (i, file) in files.iter().enumerate() {
+        if !scope.files.contains(file) {
+            continue;
+        }
+        let held = spec.fields.iter().filter(|f| f.attachment).any(|f| (0..r.len()).any(|row| matches!(value(row, f), Js::Str(s) if s == file.as_str())));
+        if !held {
+            found.push(Found { code: Code::AttachmentOrphaned, row: NONE, field: NONE, at: i as u32, key: NONE });
+        }
+    }
+    Ok(Some(
+        found
+            .iter()
+            .map(|f| {
+                let mut out = String::new();
+                render(&mut out, f, &spec, &bodies, &files, Some(r), &|row| r.id(row as usize));
+                out
+            })
+            .collect(),
+    ))
+}
+
 /// How many of each kind, in the order each kind is first found.
 fn counted(found: &[Found]) -> Vec<(&'static str, usize)> {
     let mut counts: Vec<(&'static str, usize)> = Vec::new();

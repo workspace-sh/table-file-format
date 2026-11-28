@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import type { BundleMeta, EditChange, ParsedTable } from "@workspace.sh/table-core";
+import type { BundleMeta, EditChange, ParsedBundle, ParsedTable } from "@workspace.sh/table-core";
+import { applyChanges, applyToHeld, checkRules, diffBundle, freeRows, holdRows, isRowChange } from "@workspace.sh/table-core";
 import { bundles as fixtures } from "@workspace.sh/table-fixtures";
 
 import { initialAppState, tableApp, type AppAction, type AppState } from "./appState.ts";
@@ -424,4 +425,46 @@ test("a table set to repeat its loops: its meta says so, the file is to be writt
   assert.deepEqual(kept(s), []);
   assert.equal(run(s, { type: "undo" }).tables[KEY]!.meta?.iteration, undefined);
   assert.equal(run(s, { type: "setIteration", iteration: null }).tables[KEY]!.meta?.iteration, undefined);
+});
+
+test("rowsChanges through the engine (#867, step 3a): the edits a held table's changes make are said as rowsChanges says them of the rows in memory", { skip: checkRules() !== null ? false : "needs the engine" }, () => {
+  const table = examples().tables[KEY]!;
+  const fields = table.schema.fields.map((f) => f.name);
+  const bundleOf = (t: ParsedTable): ParsedBundle => ({ path: "/p.table", meta: { title: "P" } as BundleMeta, tables: { projects: t } });
+  let said = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    let a = seed;
+    const int = (n: number) => ((a = (Math.imul(a, 1103515245) + 12345) >>> 0), (a >>> 8) % n);
+    const r = { int, pick: <T,>(xs: T[]) => xs[int(xs.length)]! };
+    const next: ParsedTable = JSON.parse(JSON.stringify(table));
+    for (let k = 1 + r.int(5); k > 0; k--) {
+      const at = r.int(next.rows.length);
+      const id = next.rows[at]!.id;
+      switch (r.int(5)) {
+        case 0:
+          next.rows.splice(at, 0, { id: `new${seed}-${k}`, owner: "n" });
+          break;
+        case 1:
+          next.rows.splice(at, 1);
+          next.cells = next.cells?.filter((c) => c.id !== id);
+          break;
+        case 2:
+          next.cells = [...(next.cells ?? []).filter((c) => !(c.id === id && c.field === "owner")), { id, field: "owner", note: `n${k}` }];
+          break;
+        default:
+          next.rows[at] = { ...next.rows[at]!, owner: r.pick(["x", "", null, 3]) };
+      }
+    }
+    const changes = diffBundle(bundleOf(table), bundleOf(next)).filter(isRowChange);
+    const after = applyChanges(bundleOf(table), changes).tables.projects!;
+    const held = holdRows(fields, table.rows);
+    try {
+      const applied = applyToHeld(held, table, changes);
+      assert.deepEqual(applied.events, rowsChanges(table, after), `seed ${seed}`);
+      said += applied.events.length;
+    } finally {
+      freeRows(held);
+    }
+  }
+  assert.ok(said > 100, `${said} events`);
 });
